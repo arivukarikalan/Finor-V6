@@ -1,0 +1,1815 @@
+import { useState, useEffect, useRef } from 'react';
+import { apiRequest } from '../services/api';
+import { useAuthStore } from '../context/authStore';
+import { News } from './News';
+import { 
+  Settings, 
+  Newspaper, 
+  MessageSquareCode, 
+  MessageSquare,
+  Sparkles,
+  Loader2, 
+  CheckCircle2, 
+  AlertTriangle, 
+  Trash2, 
+  Clock, 
+  LogOut,
+  AlertCircle,
+  Send,
+  Brain,
+  Plus,
+  Mic,
+  Sun,
+  Moon,
+  Menu,
+  ArrowDown,
+  Pencil,
+  ThumbsUp,
+  ThumbsDown,
+  Copy,
+  Check
+} from 'lucide-react';
+import { marked } from 'marked';
+
+type SubTabId = 'news' | 'settings' | 'ai-chat';
+
+// Configure marked options and custom renderer once
+marked.use({
+  renderer: {
+    tablecell(tokenOrContent: any, flagsOrUndefined?: any) {
+      let content = '';
+      let isHeader = false;
+      let align = '';
+
+      if (flagsOrUndefined !== undefined) {
+        content = tokenOrContent;
+        isHeader = flagsOrUndefined.header;
+        align = flagsOrUndefined.align ? ` align="${flagsOrUndefined.align}"` : '';
+      } else if (tokenOrContent && typeof tokenOrContent === 'object') {
+        content = tokenOrContent.text || '';
+        isHeader = tokenOrContent.header ?? tokenOrContent.flags?.header ?? false;
+        const alignVal = tokenOrContent.align ?? tokenOrContent.flags?.align;
+        align = alignVal ? ` align="${alignVal}"` : '';
+      } else {
+        content = String(tokenOrContent || '');
+      }
+
+      const tag = isHeader ? 'th' : 'td';
+      let className = '';
+
+      if (!isHeader) {
+        const clean = content.replace(/\*\*/g, '').trim();
+        // Render positive values and top performers in mint green (#10b981)
+        // and negative values and laggards in soft red/coral (#ef4444).
+        if (clean.startsWith('-') || clean.includes('-₹') || clean.includes('- ₹') || (clean.startsWith('(') && clean.endsWith(')'))) {
+          className = ' class="val-negative"';
+        } else if (clean.startsWith('+') || clean.includes('+₹') || clean.includes('+ ₹')) {
+          className = ' class="val-positive"';
+        }
+      }
+
+      const parsedContent = marked.parseInline(content);
+      return `<${tag}${align}${className}>${parsedContent}</${tag}>`;
+    },
+    table(token: any) {
+      let headerHtml = '';
+      let bodyHtml = '';
+
+      if (token.header && Array.isArray(token.header)) {
+        const headerCells = token.header.map((cell: any) => {
+          return this.tablecell(cell);
+        }).join('');
+        headerHtml = `<thead><tr>${headerCells}</tr></thead>`;
+      }
+
+      if (token.rows && Array.isArray(token.rows)) {
+        const bodyRows = token.rows.map((row: any) => {
+          const rowCells = row.map((cell: any) => {
+            return this.tablecell(cell);
+          }).join('');
+          return `<tr>${rowCells}</tr>`;
+        }).join('');
+        bodyHtml = `<tbody>${bodyRows}</tbody>`;
+      }
+
+      return `
+        <div class="table-responsive-wrapper overflow-x-auto max-w-full my-4 rounded-xl border border-slate-200/50 dark:border-white/10">
+          <table class="min-w-full border-collapse">
+            ${headerHtml}
+            ${bodyHtml}
+          </table>
+        </div>
+      `;
+    },
+    code(tokenOrCode: any, langOrUndefined?: any) {
+      let code = '';
+      let lang = '';
+
+      if (langOrUndefined !== undefined) {
+        code = tokenOrCode;
+        lang = langOrUndefined || 'code';
+      } else if (tokenOrCode && typeof tokenOrCode === 'object') {
+        code = tokenOrCode.text || '';
+        lang = tokenOrCode.lang || 'code';
+      } else {
+        code = String(tokenOrCode || '');
+        lang = 'code';
+      }
+
+      const escapedCode = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+
+      return `
+        <div class="code-block-wrapper my-4 rounded-xl border overflow-hidden shadow-lg">
+          <div class="code-block-header flex items-center justify-between px-4 py-2 text-[10px] border-b font-mono select-none">
+            <span>${lang}</span>
+            <button 
+              type="button"
+              class="code-block-copy transition-colors flex items-center gap-1 cursor-pointer font-sans text-[10px] bg-transparent border-0 py-0.5 px-2 rounded"
+              onclick="
+                const codeNode = this.closest('.code-block-wrapper').querySelector('code');
+                navigator.clipboard.writeText(codeNode.textContent);
+                this.textContent = 'Copied!';
+                setTimeout(() => this.textContent = 'Copy code', 2000);
+              "
+            >
+              Copy code
+            </button>
+          </div>
+          <pre class="p-4 overflow-x-auto text-[11px] font-mono select-text whitespace-pre"><code>${escapedCode}</code></pre>
+        </div>
+      `;
+    }
+  }
+});
+
+const MarkdownView = ({ text, isLightMode }: { text: string; isLightMode: boolean }) => {
+  if (!text) return null;
+  const parsedHtml = marked.parse(text) as string;
+  return (
+    <div 
+      className={`markdown-body select-text text-xs leading-[1.6] ${isLightMode ? 'text-slate-800' : 'text-gray-200'}`}
+      dangerouslySetInnerHTML={{ __html: parsedHtml }} 
+    />
+  );
+};
+
+function cleanTextForCopy(text: string) {
+  return text
+    .replace(/\*\*/g, '')          // Remove bold markers
+    .replace(/#/g, '')             // Remove headings
+    .replace(/\|/g, '\t')          // Replace pipes with tabs
+    .replace(/\*/g, '•')           // Replace bullets
+    .replace(/^[ \t]*•[ \t]*/gm, '• '); // Clean bullet indentation
+}
+
+const MessageActions = ({
+  msg,
+  msgIdx,
+  activeChatId,
+  feedback,
+  onFeedback,
+  isLightMode
+}: {
+  msg: any;
+  msgIdx: number;
+  activeChatId: string;
+  feedback: Record<string, { type: 'up' | 'down'; comment?: string }>;
+  onFeedback: (chatId: string, idx: number, type: 'up' | 'down', comment?: string) => void;
+  isLightMode: boolean;
+}) => {
+  const [copied, setCopied] = useState(false);
+  const [showFeedbackInput, setShowFeedbackInput] = useState(false);
+  const [comment, setComment] = useState('');
+  
+  const key = `${activeChatId}_${msgIdx}`;
+  const currentFeedback = feedback[key];
+
+  const handleCopy = async () => {
+    try {
+      const clean = cleanTextForCopy(msg.content);
+      await navigator.clipboard.writeText(clean);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (currentFeedback?.type === 'down') {
+      setComment(currentFeedback.comment || '');
+      setShowFeedbackInput(true);
+    } else {
+      setShowFeedbackInput(false);
+    }
+  }, [currentFeedback]);
+
+  return (
+    <div className="flex flex-col gap-2 mt-2 select-none">
+      <div className="flex items-center gap-2 text-gray-500 text-[10px] md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+        <button
+          type="button"
+          onClick={handleCopy}
+          className={`p-1.5 rounded transition-all flex items-center gap-1 cursor-pointer hover:bg-slate-200/50 dark:hover:bg-neutral-800 text-[10px] ${
+            isLightMode ? 'hover:text-indigo-600' : 'hover:text-brand-400'
+          }`}
+          title="Copy response"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+          <span>{copied ? 'Copied!' : 'Copy'}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onFeedback(activeChatId, msgIdx, 'up')}
+          className={`p-1.5 rounded transition-all flex items-center gap-1 cursor-pointer hover:bg-slate-200/50 dark:hover:bg-neutral-800 text-[10px] ${
+            currentFeedback?.type === 'up' 
+              ? 'text-emerald-500 hover:text-emerald-600' 
+              : 'hover:text-emerald-500'
+          }`}
+          title="Helpful"
+        >
+          <ThumbsUp className="w-3.5 h-3.5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (currentFeedback?.type === 'down') {
+              onFeedback(activeChatId, msgIdx, 'down', undefined);
+            } else {
+              onFeedback(activeChatId, msgIdx, 'down', '');
+            }
+          }}
+          className={`p-1.5 rounded transition-all flex items-center gap-1 cursor-pointer hover:bg-slate-200/50 dark:hover:bg-neutral-800 text-[10px] ${
+            currentFeedback?.type === 'down' 
+              ? 'text-rose-500 hover:text-rose-600' 
+              : 'hover:text-rose-500'
+          }`}
+          title="Not helpful"
+        >
+          <ThumbsDown className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {showFeedbackInput && (
+        <div className="flex items-center gap-2 max-w-sm mt-1 animate-fadeIn">
+          <input
+            type="text"
+            placeholder="What was wrong with this response? (Optional)"
+            value={comment}
+            onChange={e => {
+              setComment(e.target.value);
+              onFeedback(activeChatId, msgIdx, 'down', e.target.value);
+            }}
+            className={`flex-1 px-2.5 py-1 text-[10px] rounded-lg border focus:outline-none focus:ring-0 ${
+              isLightMode 
+                ? 'bg-slate-100 border-slate-200 text-slate-700 focus:border-indigo-500/40' 
+                : 'bg-dark-depth-3 border-dark-border text-white focus:border-brand-500/40'
+            }`}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface ChatSession {
+  id: string;
+  title: string;
+  createdAt: number;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    engine?: string;
+    timestamp?: string;
+    responseTime?: number;
+    pendingConfirm?: {
+      tool: string;
+      args: {
+        stock_symbol: string;
+        trigger_type: string;
+        transaction_type: string;
+        quantity: number;
+        trigger_price_1: number;
+        trigger_price_2?: number;
+      };
+    };
+  }>;
+}
+
+const OrderConfirmationCard = ({ 
+  args, 
+  onConfirm, 
+  onCancel,
+  isLightMode
+}: { 
+  args: any; 
+  onConfirm: () => void; 
+  onCancel: () => void;
+  isLightMode: boolean;
+}) => {
+  return (
+    <div className={`mt-3 p-3.5 rounded-xl border select-none transition-all ${
+      isLightMode 
+        ? 'bg-slate-100/90 border-slate-200 text-slate-800' 
+        : 'bg-[#1a1a1c] border-indigo-500/20 text-gray-200'
+    }`}>
+      <div className="flex items-center gap-1.5 mb-2.5 border-b border-dashed pb-1.5 border-slate-200 dark:border-neutral-800/60">
+        <span className="text-[10px] font-black tracking-widest text-indigo-400 dark:text-brand-400 uppercase">
+          ⚠️ Confirm GTT Order
+        </span>
+      </div>
+      
+      <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-[10px] font-semibold mb-3">
+        <div>
+          <span className="text-gray-400 block text-[8px] uppercase tracking-wider">Stock</span>
+          <span className="font-bold text-slate-800 dark:text-white text-xs">{args.stock_symbol}</span>
+        </div>
+        <div>
+          <span className="text-gray-400 block text-[8px] uppercase tracking-wider">Action</span>
+          <span className={`px-2 py-0.5 rounded text-[9px] font-bold inline-block leading-none uppercase ${
+            args.transaction_type === 'BUY' 
+              ? 'bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20' 
+              : 'bg-rose-500/10 text-rose-500 dark:text-rose-400 border border-rose-500/20'
+          }`}>
+            {args.transaction_type}
+          </span>
+        </div>
+        <div>
+          <span className="text-gray-400 block text-[8px] uppercase tracking-wider">Quantity</span>
+          <span className="text-slate-700 dark:text-slate-300">{args.quantity} Shares</span>
+        </div>
+        <div>
+          <span className="text-gray-400 block text-[8px] uppercase tracking-wider">Trigger Price</span>
+          <span className="text-slate-700 dark:text-slate-300">₹{parseFloat(args.trigger_price_1).toFixed(2)}</span>
+        </div>
+        {args.trigger_type === 'OCO' && args.trigger_price_2 && (
+          <div className="col-span-2">
+            <span className="text-gray-400 block text-[8px] uppercase tracking-wider">Stoploss Price (OCO)</span>
+            <span className="text-slate-700 dark:text-slate-300">₹{parseFloat(args.trigger_price_2).toFixed(2)}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all border cursor-pointer ${
+            isLightMode 
+              ? 'border-slate-300 hover:bg-slate-200 text-slate-700 bg-white' 
+              : 'border-neutral-800 hover:bg-neutral-800 text-gray-400 bg-transparent'
+          }`}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          className="px-3 py-1 rounded-lg text-[9px] font-bold uppercase transition-all bg-indigo-600 hover:bg-indigo-500 text-white cursor-pointer shadow-md shadow-indigo-600/10"
+        >
+          Confirm Placement
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export const More = ({ 
+  defaultSubTab = 'news', 
+  setActiveTab 
+}: { 
+  defaultSubTab?: SubTabId; 
+  setActiveTab?: (tab: any) => void;
+}) => {
+  const { signOut } = useAuthStore();
+  const [activeSubTab, setActiveSubTab] = useState<SubTabId>(defaultSubTab);
+  
+  useEffect(() => {
+    setActiveSubTab(defaultSubTab);
+  }, [defaultSubTab]);
+  
+  // Theme state (synced with global finor_theme)
+  const [isLightMode, setIsLightMode] = useState<boolean>(() => {
+    return localStorage.getItem('finor_theme') === 'light';
+  });
+
+  useEffect(() => {
+    const isCurrentlyLight = document.documentElement.classList.contains('light');
+    if (isCurrentlyLight !== isLightMode) {
+      if (isLightMode) {
+        document.documentElement.classList.add('light');
+        localStorage.setItem('finor_theme', 'light');
+      } else {
+        document.documentElement.classList.remove('light');
+        localStorage.setItem('finor_theme', 'dark');
+      }
+      window.dispatchEvent(new Event('themechange'));
+    }
+  }, [isLightMode]);
+
+  useEffect(() => {
+    const handleThemeChange = () => {
+      const isLight = localStorage.getItem('finor_theme') === 'light';
+      setIsLightMode(isLight);
+    };
+    window.addEventListener('themechange', handleThemeChange);
+    return () => {
+      window.removeEventListener('themechange', handleThemeChange);
+    };
+  }, []);
+  
+  // Settings States
+  const [priceInterval, setPriceInterval] = useState<number>(10);
+  const [splitRatio, setSplitRatio] = useState<number>(() => {
+    return parseInt(localStorage.getItem('coreHoldSplitRatio') || '80', 10);
+  });
+  const [reentryDip, setReentryDip] = useState<number>(() => {
+    return parseInt(localStorage.getItem('reentryDipPct') || '-10', 10);
+  });
+  const [loadingSettings, setLoadingSettings] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
+  const [showConfirmClear, setShowConfirmClear] = useState(false);
+
+  // Status Alerts
+  const [success, setSuccess] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // AI Assistant States (Local storage chat history)
+  const [chats, setChats] = useState<ChatSession[]>(() => {
+    const saved = localStorage.getItem('finor_ai_chats');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Auto-delete chats older than 2 days
+        const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+        const validChats = parsed.filter((c: any) => c.createdAt > twoDaysAgo);
+        localStorage.setItem('finor_ai_chats', JSON.stringify(validChats));
+        return validChats;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return [];
+  });
+
+  const [activeChatId, setActiveChatId] = useState<string | null>(() => {
+    return localStorage.getItem('finor_ai_active_chat_id') || null;
+  });
+
+  const [messages, setMessages] = useState<Array<{ 
+    role: 'user' | 'assistant'; 
+    content: string; 
+    engine?: string; 
+    timestamp?: string;
+    responseTime?: number;
+    pendingConfirm?: {
+      tool: string;
+      args: {
+        stock_symbol: string;
+        trigger_type: string;
+        transaction_type: string;
+        quantity: number;
+        trigger_price_1: number;
+        trigger_price_2?: number;
+      };
+    };
+  }>>([]);
+
+  const [activeOrderWorkflow, setActiveOrderWorkflow] = useState<{
+    stock_symbol: string;
+    trigger_type: string;
+    transaction_type: string;
+    quantity: number;
+    trigger_price_1: number;
+    trigger_price_2?: number;
+  } | null>(null);
+
+  const [chatInput, setChatInput] = useState<string>('');
+  const [activeQuery, setActiveQuery] = useState<string>('');
+  const [sendingChat, setSendingChat] = useState<boolean>(false);
+  const [usageRemaining, setUsageRemaining] = useState<number | null>(null);
+
+  // Model Selector state
+  const [selectedModel, setSelectedModel] = useState<string>(() => {
+    return localStorage.getItem('aiChatSelectedModel') || 'default';
+  });
+
+  // Mobile sidebar drawer state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Rename states
+  const [editingChatId, setEditingChatId] = useState<string | null>(null);
+  const [editTitleText, setEditTitleText] = useState('');
+
+  // Scroll to bottom states
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Feedback states
+  const [feedback, setFeedback] = useState<Record<string, { type: 'up' | 'down'; comment?: string }>>(() => {
+    const saved = localStorage.getItem('finor_ai_feedback');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+
+
+  // Thinking step state
+  const [thinkingStep, setThinkingStep] = useState(1);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const promptChips = [
+    { label: '📊 Portfolio Analysis', text: 'Analyse my portfolio and show holdings summary' },
+    { label: '📈 Best Performer', text: 'Which stock in my portfolio is my best performer?' },
+    { label: '💰 Profit Booking', text: 'Should I book profit on any of my stocks?' },
+    { label: '📋 GTT Orders', text: 'Show my current GTT orders' },
+    { label: '🔍 Risk Analysis', text: 'What is my highest risk position right now?' }
+  ];
+
+  const getProgressBarColor = (val: number) => {
+    if (val > 50) return 'bg-emerald-500';
+    if (val >= 21) return 'bg-amber-500';
+    return 'bg-rose-500';
+  };
+
+
+
+  // Sync selected model
+  useEffect(() => {
+    localStorage.setItem('aiChatSelectedModel', selectedModel);
+  }, [selectedModel]);
+
+  // Sync activeChatId and load messages
+  useEffect(() => {
+    localStorage.setItem('finor_ai_active_chat_id', activeChatId || '');
+    if (activeChatId) {
+      const active = chats.find(c => c.id === activeChatId);
+      if (active) {
+        setMessages(active.messages);
+      }
+    } else {
+      setMessages([]);
+    }
+    setActiveOrderWorkflow(null); // Clear active workflow state when active chat changes
+    setUnreadCount(0);
+  }, [activeChatId]);
+
+  // Sync messages into the active chat session in the chats list
+  const updateActiveChatMessages = (newMessages: typeof messages) => {
+    if (!activeChatId) return;
+    setChats(prev => {
+      const updated = prev.map(c => c.id === activeChatId ? { ...c, messages: newMessages } : c);
+      localStorage.setItem('finor_ai_chats', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'ai-chat' && !showScrollBottom) {
+      scrollToBottom();
+    }
+  }, [messages, activeSubTab, sendingChat]);
+
+  // Cycle through thinking steps
+  useEffect(() => {
+    if (!sendingChat) {
+      setThinkingStep(1);
+      return;
+    }
+    const timers = [
+      setTimeout(() => setThinkingStep(2), 500),
+      setTimeout(() => setThinkingStep(3), 1300),
+      setTimeout(() => setThinkingStep(4), 1900),
+      setTimeout(() => setThinkingStep(5), 2600)
+    ];
+    return () => {
+      timers.forEach(t => clearTimeout(t));
+    };
+  }, [sendingChat]);
+
+  const getThinkingText = (step: number) => {
+    const query = activeQuery.toLowerCase();
+    
+    // GTT / Order Placement intent
+    if (query.includes('gtt') || query.includes('place') || query.includes('buy') || query.includes('sell') || query.includes('order')) {
+      switch (step) {
+        case 1: return "Analyzing GTT order intent...";
+        case 2: return "Verifying ticker symbols against exchange...";
+        case 3: return "Auditing account margin & bounds...";
+        case 4: return "Drafting order execution payload...";
+        default: return "Finalizing GTT response...";
+      }
+    }
+    
+    // Discipline / Behavior intent
+    if (query.includes('discipline') || query.includes('score') || query.includes('grade') || query.includes('violation') || query.includes('performance') || query.includes('coach')) {
+      switch (step) {
+        case 1: return "Fetching transaction logs from database...";
+        case 2: return "Calculating winner vs. loser holding periods...";
+        case 3: return "Scanning for risk rules violations...";
+        case 4: return "Generating behavioral grade profile...";
+        default: return "Composing discipline response...";
+      }
+    }
+    
+    // Portfolio / Holdings P&L intent
+    if (query.includes('portfolio') || query.includes('holding') || query.includes('invested') || query.includes('summary') || query.includes('performer') || query.includes('profit') || query.includes('loss') || query.includes('pnl')) {
+      switch (step) {
+        case 1: return "Requesting live market prices (LTP)...";
+        case 2: return "Calculating allocations and cost basis...";
+        case 3: return "Computing absolute & percentage P&L...";
+        case 4: return "Sorting top gains and laggards...";
+        default: return "Formatting portfolio report card...";
+      }
+    }
+
+    // Default general query
+    switch (step) {
+      case 1: return "Processing context query...";
+      case 2: return "Reading portfolio configurations...";
+      case 3: return "Retrieving historical trades...";
+      case 4: return "Synthesizing answer structure...";
+      default: return "Finishing response formatting...";
+    }
+  };
+
+  const fetchUsage = async () => {
+    try {
+      const usageRes = await apiRequest('/assistant/usage');
+      if (usageRes && typeof usageRes.remaining === 'number') {
+        setUsageRemaining(usageRes.remaining);
+      }
+    } catch (err) {
+      console.error('Failed to fetch usage limits:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'ai-chat') {
+      fetchUsage();
+    }
+  }, [activeSubTab]);
+
+  const handleSendChat = async (textToSend?: string, confirmArgs?: any) => {
+    const text = (textToSend || chatInput).trim();
+    if (!text) return;
+
+    // Check if we are in an active GTT order workflow and the user types a confirmation/cancellation keyword
+    if (activeOrderWorkflow && !confirmArgs) {
+      const cleanText = text.toLowerCase().replace(/[.,!]/g, '').trim();
+      const isAffirmation = ['yes', 'proceed', 'confirm', 'place order', 'do it', 'yup', 'yeah', 'go ahead', 'ok', 'okay'].includes(cleanText);
+      const isCancellation = ['no', 'cancel', 'stop', 'dont', "don't", 'reject'].includes(cleanText);
+      
+      if (isAffirmation) {
+        const msgIdx = messages.findLastIndex(m => m.pendingConfirm && m.pendingConfirm.tool === 'placeGttOrder');
+        if (msgIdx !== -1) {
+          if (!textToSend) setChatInput('');
+          await handleConfirmOrder(activeOrderWorkflow, msgIdx);
+          return;
+        }
+      } else if (isCancellation) {
+        const msgIdx = messages.findLastIndex(m => m.pendingConfirm && m.pendingConfirm.tool === 'placeGttOrder');
+        if (msgIdx !== -1) {
+          if (!textToSend) setChatInput('');
+          handleCancelOrder(msgIdx);
+          return;
+        }
+      }
+    }
+
+    if (!textToSend) setChatInput('');
+    setActiveQuery(text);
+
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const userMsg = { role: 'user' as const, content: text, timestamp: timeStr };
+
+    let currentChatId = activeChatId;
+    let currentChats = [...chats];
+
+    // If no active chat, create a new one (Auto-naming)
+    if (!currentChatId) {
+      const words = text.split(/\s+/);
+      const title = words.slice(0, 5).join(' ') + (words.length > 5 ? '...' : '');
+      const newId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+      
+      const newChat: ChatSession = {
+        id: newId,
+        title,
+        createdAt: Date.now(),
+        messages: [userMsg]
+      };
+
+      currentChatId = newId;
+      currentChats = [newChat, ...currentChats];
+      setChats(currentChats);
+      localStorage.setItem('finor_ai_chats', JSON.stringify(currentChats));
+      setActiveChatId(newId);
+      setMessages([userMsg]);
+    } else {
+      const updatedMessages = [...messages, userMsg];
+      setMessages(updatedMessages);
+      updateActiveChatMessages(updatedMessages);
+    }
+
+    setSendingChat(true);
+
+    const startTime = performance.now();
+
+    try {
+      // Load current messages for context window
+      const active = currentChats.find(c => c.id === currentChatId);
+      const activeMsgs = active ? active.messages : [userMsg];
+      const historyToSend = activeMsgs.slice(-7).map(m => ({
+        role: m.role,
+        content: m.content
+      }));
+
+      const res = await apiRequest('/assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          chatHistory: historyToSend.slice(0, -1), // exclude the user message just added
+          modelName: selectedModel,
+          confirmOrder: !!confirmArgs,
+          orderArgs: confirmArgs,
+          activeOrderWorkflow: activeOrderWorkflow
+        })
+      });
+
+      const endTime = performance.now();
+      const responseTime = parseFloat(((endTime - startTime) / 1000).toFixed(1));
+
+      if (res && res.reply) {
+        // If the reply contains a pending GTT confirmation, lock into the workflow state
+        if (res.pendingConfirm && res.pendingConfirm.tool === 'placeGttOrder') {
+          setActiveOrderWorkflow(res.pendingConfirm.args);
+        }
+
+        const assistantMsg = {
+          role: 'assistant' as const,
+          content: res.reply,
+          engine: res.engine,
+          timestamp: timeStr,
+          pendingConfirm: res.pendingConfirm,
+          responseTime
+        };
+
+        setMessages(prev => {
+          const updated = [...prev, assistantMsg];
+          
+          // If scrolled up, increment unreadCount
+          const el = scrollRef.current;
+          if (el && (el.scrollHeight - el.scrollTop - el.clientHeight > 300)) {
+            setUnreadCount(count => count + 1);
+          }
+
+          // Sync immediately
+          setChats(prevChats => {
+            const updatedChats = prevChats.map(c => c.id === currentChatId ? { ...c, messages: updated } : c);
+            localStorage.setItem('finor_ai_chats', JSON.stringify(updatedChats));
+            return updatedChats;
+          });
+
+          return updated;
+        });
+
+        if (typeof res.remaining === 'number') {
+          setUsageRemaining(res.remaining);
+        }
+      }
+    } catch (err: any) {
+      console.error('Assistant call failed:', err);
+      const errMsg = {
+        role: 'assistant' as const,
+        content: `⚠️ **Error:** ${err.message || 'Failed to contact AI server. Please check your connection.'}`,
+        engine: 'System error',
+        timestamp: timeStr
+      };
+      setMessages(prev => {
+        const updated = [...prev, errMsg];
+        setChats(prevChats => {
+          const updatedChats = prevChats.map(c => c.id === currentChatId ? { ...c, messages: updated } : c);
+          localStorage.setItem('finor_ai_chats', JSON.stringify(updatedChats));
+          return updatedChats;
+        });
+        return updated;
+      });
+    } finally {
+      setSendingChat(false);
+    }
+  };
+
+  const handleConfirmOrder = async (args: any, msgIdx: number) => {
+    if (!activeChatId) return;
+    
+    // Remove confirmation card from state to avoid double actions and show status
+    const updated = messages.map((m, i) => i === msgIdx ? { 
+      ...m, 
+      pendingConfirm: undefined, 
+      content: m.content + "\n\n⏳ *Placing order on broker/mock terminal...*" 
+    } : m);
+    
+    setMessages(updated);
+    updateActiveChatMessages(updated);
+
+    // Clear active workflow state immediately upon confirmation execution
+    setActiveOrderWorkflow(null);
+
+    // Trigger GTT placement query
+    await handleSendChat(`Confirming placement of ${args.transaction_type} GTT order for ${args.quantity} shares of ${args.stock_symbol} at trigger price ₹${args.trigger_price_1}`, args);
+  };
+
+  const handleCancelOrder = (msgIdx: number) => {
+    if (!activeChatId) return;
+    const updated = messages.map((m, i) => i === msgIdx ? { 
+      ...m, 
+      pendingConfirm: undefined, 
+      content: m.content + "\n\n❌ *Order placement cancelled by user.*" 
+    } : m);
+    setMessages(updated);
+    updateActiveChatMessages(updated);
+    
+    // Clear active workflow state
+    setActiveOrderWorkflow(null);
+  };
+
+  const handleNewChat = () => {
+    setActiveChatId(null);
+    setMessages([]);
+    setIsSidebarOpen(false);
+  };
+
+  const handleDeleteChat = (chatId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = chats.filter(c => c.id !== chatId);
+    setChats(updated);
+    localStorage.setItem('finor_ai_chats', JSON.stringify(updated));
+    if (activeChatId === chatId) {
+      if (updated.length > 0) {
+        setActiveChatId(updated[0].id);
+      } else {
+        setActiveChatId(null);
+      }
+    }
+  };
+
+  const handleStartRename = (chatId: string, currentTitle: string) => {
+    setEditingChatId(chatId);
+    setEditTitleText(currentTitle);
+  };
+
+  const handleSaveRename = (chatId: string) => {
+    if (editTitleText.trim()) {
+      setChats(prev => {
+        const updated = prev.map(c => c.id === chatId ? { ...c, title: editTitleText.trim() } : c);
+        localStorage.setItem('finor_ai_chats', JSON.stringify(updated));
+        return updated;
+      });
+    }
+    setEditingChatId(null);
+  };
+
+  const handleFeedback = (chatId: string, idx: number, type: 'up' | 'down', comment?: string) => {
+    const key = `${chatId}_${idx}`;
+    setFeedback(prev => {
+      const updated = { ...prev, [key]: { type, comment } };
+      localStorage.setItem('finor_ai_feedback', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    
+    // Check if scrolled up more than 300px from the bottom
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const isScrolledUp = distanceFromBottom > 300;
+    setShowScrollBottom(isScrolledUp);
+
+    // If back at bottom, reset unread count
+    if (!isScrolledUp) {
+      setUnreadCount(0);
+    }
+  };
+
+  // Swipe Gestures
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!touchStartX.current) return;
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    
+    const diffX = currentX - touchStartX.current;
+    const diffY = currentY - touchStartY.current;
+
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      // Swipe Right: Open Sidebar Drawer on mobile
+      if (diffX > 75 && !isSidebarOpen) {
+        setIsSidebarOpen(true);
+        touchStartX.current = 0; // reset
+      }
+      // Swipe Left: Close Sidebar Drawer
+      else if (diffX < -75 && isSidebarOpen) {
+        setIsSidebarOpen(false);
+        touchStartX.current = 0; // reset
+      }
+    }
+  };
+
+  const fetchSettings = async () => {
+    setLoadingSettings(true);
+    setError(null);
+    try {
+      const res = await apiRequest('/admin/settings');
+      if (res && res.price_refresh_interval) {
+        setPriceInterval(res.price_refresh_interval);
+      }
+    } catch (err: any) {
+      console.error('Failed to load settings:', err);
+      setError('Could not retrieve app configurations.');
+    } finally {
+      setLoadingSettings(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setSavingSettings(true);
+    setSuccess(null);
+    setError(null);
+    try {
+      await apiRequest('/admin/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price_refresh_interval: priceInterval })
+      });
+      
+      // Save local storage parameters
+      localStorage.setItem('coreHoldSplitRatio', String(splitRatio));
+      localStorage.setItem('reentryDipPct', String(reentryDip));
+
+      setSuccess('Settings updated successfully.');
+    } catch (err: any) {
+      console.error('Update settings failed:', err);
+      setError(err.message || 'Failed to save settings.');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const executeClearCache = async () => {
+    setShowConfirmClear(false);
+    setClearingCache(true);
+    setSuccess(null);
+    setError(null);
+    try {
+      const res = await apiRequest('/admin/clear-cache', { method: 'POST' });
+      setSuccess(res.message);
+    } catch (err: any) {
+      console.error('Clear cache failed:', err);
+      setError(err.message || 'Failed to clear cache.');
+    } finally {
+      setClearingCache(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'settings') {
+      fetchSettings();
+    }
+  }, [activeSubTab]);
+
+  return (
+    <div className={`w-full flex-1 flex flex-col ${activeSubTab === 'ai-chat' ? 'h-full overflow-hidden' : 'space-y-4 md:space-y-6'}`}>
+      
+      {/* Tab selectors */}
+      {(!isMobile || activeSubTab !== 'ai-chat') && (
+        <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-2 sm:gap-4 p-1.5 bg-dark-depth-2 rounded-2xl border border-dark-border select-none flex-shrink-0`}>
+          <button
+            onClick={() => { 
+              setActiveSubTab('news'); 
+              setSuccess(null); 
+              setError(null); 
+              if (setActiveTab) setActiveTab('more');
+            }}
+            className={`py-2 sm:py-3.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-300 cursor-pointer flex flex-row items-center justify-center gap-1 sm:gap-1.5 ${
+              activeSubTab === 'news'
+                ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/10'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Newspaper className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5" />
+            <span>Stock News</span>
+          </button>
+          
+          <button
+            onClick={() => { 
+              setActiveSubTab('settings'); 
+              setSuccess(null); 
+              setError(null); 
+              if (setActiveTab) setActiveTab('more');
+            }}
+            className={`py-2 sm:py-3.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-300 cursor-pointer flex flex-row items-center justify-center gap-1 sm:gap-1.5 ${
+              activeSubTab === 'settings'
+                ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/10'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Settings className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5" />
+            <span>Settings</span>
+          </button>
+
+          {!isMobile && (
+            <button
+              onClick={() => { 
+                setActiveSubTab('ai-chat'); 
+                setSuccess(null); 
+                setError(null); 
+                if (setActiveTab) setActiveTab('ai-chat');
+              }}
+              className={`py-2 sm:py-3.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-300 cursor-pointer flex flex-row items-center justify-center gap-1 sm:gap-1.5 ${
+                activeSubTab === 'ai-chat'
+                  ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/10'
+                  : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <MessageSquareCode className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5" />
+              <span>AI Assistant</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Global Alerts */}
+      {error && (
+        <div className="flex-shrink-0 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-xs font-medium flex items-center gap-2">
+          <AlertTriangle className="w-4.5 h-4.5 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {success && (
+        <div className="flex-shrink-0 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 text-xs font-medium flex items-center gap-2">
+          <CheckCircle2 className="w-4.5 h-4.5 flex-shrink-0" />
+          <span>{success}</span>
+        </div>
+      )}
+
+      {/* Subtab Contents router */}
+      <div className={activeSubTab === 'ai-chat' ? 'flex-1 min-h-0 flex flex-col h-full md:h-[calc(100vh-164px)] md:mt-4' : 'min-h-[400px]'}>
+        
+        {/* 1. News subtab */}
+        {activeSubTab === 'news' && <News />}
+
+        {/* 2. Settings subtab */}
+        {activeSubTab === 'settings' && (
+          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-6 max-w-xl mx-auto">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider border-b border-dark-border/40 pb-3 flex items-center gap-1.5">
+              <Settings className="w-4.5 h-4.5 text-brand-400" />
+              App Parameters
+            </h3>
+
+            {loadingSettings ? (
+              <div className="flex items-center justify-center py-10 gap-2 text-xs text-gray-500">
+                <Loader2 className="w-5 h-5 text-brand-500 animate-spin" />
+                <span>Loading settings...</span>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                
+                {/* Refresh Interval Selector */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">
+                    Price Refresh Interval
+                  </label>
+                  <div className="flex items-center gap-2.5">
+                    <select
+                      value={priceInterval}
+                      onChange={(e) => setPriceInterval(parseInt(e.target.value, 10))}
+                      className="px-3.5 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs font-semibold focus:outline-none focus:border-brand-500 transition-all flex-1"
+                    >
+                      <option value={5}>Every 5 minutes</option>
+                      <option value={10}>Every 10 minutes</option>
+                      <option value={15}>Every 15 minutes</option>
+                      <option value={30}>Every 30 minutes</option>
+                      <option value={60}>Every 60 minutes</option>
+                    </select>
+                    
+                    <button
+                      onClick={handleSaveSettings}
+                      disabled={savingSettings}
+                      className="px-4 py-2.5 bg-brand-500 hover:bg-brand-400 text-dark-depth-0 text-xs font-extrabold uppercase rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+                    >
+                      {savingSettings ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                    </button>
+                  </div>
+                  <p className="text-[9px] text-gray-400 mt-1 leading-relaxed">
+                    Set how frequently the system requests Yahoo Finance API for live market pricing ticks.
+                  </p>
+                </div>
+
+                {/* Core Hold Profit Harvest Split Ratio */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">
+                    Core Hold Profit Harvest Split Ratio (%)
+                  </label>
+                  <input
+                    type="number"
+                    min="10"
+                    max="90"
+                    value={splitRatio}
+                    onChange={(e) => setSplitRatio(Math.min(95, Math.max(5, parseInt(e.target.value, 10) || 80)))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 transition-all"
+                    placeholder="80"
+                  />
+                  <p className="text-[9px] text-gray-400 mt-1 leading-relaxed">
+                    Percentage of position to suggest selling when booking profit on Core Hold stocks (default: 80%).
+                  </p>
+                </div>
+
+                {/* Core Hold Re-entry Dip Alert */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">
+                    Core Hold Re-entry Dip Alert (%)
+                  </label>
+                  <input
+                    type="number"
+                    max="-1"
+                    min="-50"
+                    value={reentryDip}
+                    onChange={(e) => setReentryDip(Math.min(-1, Math.max(-90, parseInt(e.target.value, 10) || -10)))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 transition-all"
+                    placeholder="-10"
+                  />
+                  <p className="text-[9px] text-gray-400 mt-1 leading-relaxed">
+                    Percentage dip from current LTP to suggest re-entry on Core Hold stocks (e.g. -10%).
+                  </p>
+                </div>
+
+                {/* Maintenance Section */}
+                <div className="pt-4 border-t border-dark-border/40 space-y-4">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider">Maintenance</h4>
+                  
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-dark-depth-2/40 border border-dark-border/40">
+                    <div>
+                      <h5 className="text-xs font-bold text-white flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-gray-500" />
+                        Clear Cached Data
+                      </h5>
+                      <p className="text-[9px] text-gray-400 mt-0.5 leading-relaxed">
+                        Flush all locally saved historical charting prices and holding news announcements.
+                      </p>
+                    </div>
+                    
+                    <button
+                      onClick={() => setShowConfirmClear(true)}
+                      disabled={clearingCache}
+                      className="px-4 py-2 rounded-xl text-[10px] font-bold uppercase border border-dark-border bg-dark-depth-2 hover:bg-rose-500/10 hover:text-rose-500 hover:border-rose-500/20 text-gray-300 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {clearingCache ? <Loader2 className="w-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                      Clear Cache
+                    </button>
+                  </div>
+                </div>
+
+                {/* Account Settings */}
+                <div className="pt-4 border-t border-dark-border/40">
+                  <button
+                    onClick={signOut}
+                    className="w-full py-2.5 rounded-xl border border-dark-border hover:bg-rose-500/10 hover:border-rose-500/30 hover:text-rose-500 text-gray-400 transition-all text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    Sign Out Account
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. AI Chat subtab */}
+        {activeSubTab === 'ai-chat' && (
+          <div 
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            className={`flex-1 min-h-0 flex flex-row relative h-full w-full overflow-hidden md:rounded-2xl md:border ${
+              isLightMode 
+                ? 'bg-white md:border-slate-200 border-0' 
+                : 'bg-dark-depth-1 md:border-dark-border border-0'
+            }`}
+          >
+            {/* Backdrop overlay (mobile only) */}
+            {isSidebarOpen && (
+              <div 
+                onClick={() => setIsSidebarOpen(false)}
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-35 md:hidden transition-all animate-fadeIn"
+              />
+            )}
+
+            {/* Left Chat History Sidebar */}
+            <div className={`w-[200px] shrink-0 h-full border-r flex flex-col transition-transform duration-300 z-40 md:relative md:translate-x-0 ${
+              isLightMode 
+                ? 'bg-slate-50/50 border-slate-200' 
+                : 'bg-dark-depth-2 border-dark-border'
+            } ${
+              isSidebarOpen ? 'fixed left-0 top-0 bottom-0 translate-x-0' : 'fixed -translate-x-full md:translate-x-0'
+            }`}>
+              {/* Sidebar Header */}
+              <div className="p-4 border-b border-dark-border/40 flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">
+                  Chat History
+                </span>
+                
+                <button
+                  type="button"
+                  onClick={handleNewChat}
+                  className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
+                    isLightMode 
+                      ? 'border-slate-250 hover:bg-slate-100 text-slate-700 bg-white' 
+                      : 'border-dark-border hover:bg-dark-depth-3 text-gray-300'
+                  }`}
+                  title="New Chat"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Chat Sessions List */}
+              <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
+                {chats.length === 0 ? (
+                  <div className="text-center py-12 px-4 flex flex-col items-center justify-center space-y-3 select-none">
+                    <div className={`p-3 rounded-full border ${
+                      isLightMode 
+                        ? 'bg-slate-100 border-slate-200 text-slate-400' 
+                        : 'bg-dark-depth-3/60 border-dark-border text-gray-550'
+                    }`}>
+                      <MessageSquare className="w-5 h-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className={`text-[10px] font-black uppercase tracking-wider ${isLightMode ? 'text-slate-500' : 'text-gray-400'}`}>No Past Chats</p>
+                      <p className={`text-[10px] font-semibold max-w-[150px] mx-auto leading-relaxed ${isLightMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                        Start a new chat to begin.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  chats.map(chat => {
+                    const isEditing = editingChatId === chat.id;
+                    const isActive = activeChatId === chat.id;
+                    return (
+                      <div
+                        key={chat.id}
+                        onClick={() => { if (!isEditing) { setActiveChatId(chat.id); setIsSidebarOpen(false); } }}
+                        className={`group flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
+                          isActive 
+                            ? (isLightMode ? 'bg-indigo-55/70 text-indigo-700 border-l-2 border-indigo-600' : 'bg-brand-500/10 text-brand-400 border-l-2 border-brand-500') 
+                            : (isLightMode ? 'text-slate-650 hover:bg-slate-100 hover:text-slate-900 border-l-2 border-transparent' : 'text-gray-400 hover:bg-dark-depth-3/60 hover:text-white border-l-2 border-transparent')
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0 mr-2" onDoubleClick={() => handleStartRename(chat.id, chat.title)}>
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editTitleText}
+                              onChange={e => setEditTitleText(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleSaveRename(chat.id);
+                                if (e.key === 'Escape') setEditingChatId(null);
+                              }}
+                              onBlur={() => handleSaveRename(chat.id)}
+                              autoFocus
+                              className={`w-full px-1.5 py-0.5 text-xs rounded border focus:outline-none ${
+                                isLightMode 
+                                  ? 'bg-white border-slate-300 text-slate-850 focus:border-indigo-500' 
+                                  : 'bg-dark-depth-3 border-dark-border text-white focus:border-brand-500'
+                              }`}
+                            />
+                          ) : (
+                            <div className="truncate">
+                              <p className="truncate font-bold leading-normal">{chat.title}</p>
+                              <span className="text-[9px] text-gray-505 block mt-0.5">
+                                {new Date(chat.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+
+                        {!isEditing && (
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); handleStartRename(chat.id, chat.title); }}
+                              className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-neutral-800 transition-colors ${isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-gray-400 hover:text-white'}`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeleteChat(chat.id, e)}
+                              className={`p-1 rounded hover:bg-rose-500/10 hover:text-rose-500 transition-colors ${isLightMode ? 'text-slate-500' : 'text-gray-400'}`}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              
+              {/* Mobile-only subtab links in sidebar */}
+              {isMobile && (
+                <div className={`p-3 pb-20 border-t shrink-0 space-y-1.5 ${
+                  isLightMode 
+                    ? 'border-slate-200 bg-slate-50' 
+                    : 'border-dark-border/40 bg-dark-depth-3/20'
+                }`}>
+                  <span className="text-[9px] font-black uppercase tracking-wider text-gray-500 block px-2">
+                    Navigation
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSubTab('news');
+                      setIsSidebarOpen(false);
+                      if (setActiveTab) setActiveTab('more');
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      isLightMode
+                        ? 'text-slate-650 hover:bg-slate-100 hover:text-slate-900'
+                        : 'text-gray-400 hover:bg-dark-depth-3 hover:text-white'
+                    }`}
+                  >
+                    <Newspaper className="w-3.5 h-3.5" />
+                    <span>Go to Stock News</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSubTab('settings');
+                      setIsSidebarOpen(false);
+                      if (setActiveTab) setActiveTab('more');
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                      isLightMode
+                        ? 'text-slate-650 hover:bg-slate-100 hover:text-slate-900'
+                        : 'text-gray-400 hover:bg-dark-depth-3 hover:text-white'
+                    }`}
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>Go to Settings</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Right Chat Pane Container */}
+            <div className="flex-1 flex flex-col min-w-0 h-full relative">
+              {/* Header Top Bar */}
+              <div className={`flex flex-col relative select-none border-b ${
+                isLightMode ? 'border-slate-200 bg-white' : 'border-dark-border bg-dark-depth-1'
+              }`}>
+                <div className="flex items-center justify-between p-3.5 w-full relative min-h-[52px]">
+                  {/* Left Side: Menu button on mobile, Finor Title on desktop */}
+                  <div className="flex items-center md:static absolute left-3 top-1/2 -translate-y-1/2 z-10">
+                    <button
+                      type="button"
+                      onClick={() => setIsSidebarOpen(true)}
+                      className={`md:hidden p-1.5 rounded-lg border transition-all cursor-pointer ${
+                        isLightMode 
+                          ? 'border-slate-200 hover:bg-slate-100 text-slate-655' 
+                          : 'border-neutral-800 hover:bg-neutral-800 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <Menu className="w-4 h-4" />
+                    </button>
+                    
+                    <span className={`text-sm font-extrabold tracking-tight hidden md:flex items-center gap-1.5 ${
+                      isLightMode ? 'text-slate-900' : 'text-white'
+                    }`}>
+                      <Brain className="w-4 h-4 text-brand-500 shrink-0" />
+                      <span>Finor AI Coach</span>
+                    </span>
+                  </div>
+
+                  {/* Center Content: Model selector centered on mobile, adjacent to title on desktop */}
+                  <div className="flex items-center justify-center md:justify-start md:ml-4 w-full md:w-auto absolute md:static left-0 right-0 top-1/2 -translate-y-1/2 pointer-events-none md:pointer-events-auto">
+                    <div className="relative flex items-center gap-1.5 pointer-events-auto">
+                      <Sparkles className="w-3 h-3 text-brand-400 shrink-0" />
+                      <select
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        className="text-[10px] font-extrabold pl-1.5 pr-5 py-0.5 rounded-full border focus:outline-none transition-all cursor-pointer select-none appearance-none"
+                        style={{
+                          backgroundColor: isLightMode ? '#eff6ff' : 'rgba(99, 102, 241, 0.1)',
+                          color: isLightMode ? '#4f46e5' : '#818cf8',
+                          borderColor: isLightMode ? '#e0e7ff' : 'rgba(99, 102, 241, 0.2)',
+                          backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='${isLightMode ? '%234f46e5' : '%23818cf8'}' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
+                          backgroundRepeat: 'no-repeat',
+                          backgroundPosition: 'right 0.35rem center',
+                          backgroundSize: '0.6em'
+                        }}
+                      >
+                        <option value="default">Default (Auto-Switch)</option>
+                        <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  {/* Right Side: Usage & Mode */}
+                  <div className="flex items-center gap-2 md:static absolute right-3 top-1/2 -translate-y-1/2 z-10">
+                    {usageRemaining !== null && (
+                      <span className={`text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider px-2 py-1 rounded-lg select-none ${
+                        usageRemaining <= 20 
+                          ? 'bg-rose-500/10 text-rose-500 border border-rose-500/25 animate-pulse' 
+                          : (isLightMode ? 'bg-slate-100 text-slate-655' : 'bg-dark-depth-3 text-gray-400')
+                      }`}>
+                        {isMobile ? `${usageRemaining}/100` : `${usageRemaining} of 100 queries left`}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setIsLightMode(!isLightMode)}
+                      className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                        isLightMode 
+                          ? 'border-slate-200 hover:bg-slate-100 text-slate-655' 
+                          : 'border-neutral-800 hover:bg-neutral-800 text-gray-400 hover:text-white'
+                      }`}
+                      title={isLightMode ? "Switch to Dark Mode" : "Switch to Light Mode"}
+                    >
+                      {isLightMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Progress bar at the absolute bottom of header */}
+                <div className={`w-full h-[2px] absolute bottom-0 left-0 right-0 overflow-hidden ${isLightMode ? 'bg-slate-200/50' : 'bg-neutral-850/50'}`}>
+                  <div 
+                    className={`h-full transition-all duration-500 ${getProgressBarColor(usageRemaining !== null ? usageRemaining : 100)}`}
+                    style={{ width: `${usageRemaining !== null ? (usageRemaining / 100) * 100 : 100}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Messages list relative container */}
+              <div className="flex-1 min-h-0 flex flex-col relative">
+                <div 
+                  ref={scrollRef}
+                  onScroll={handleScroll}
+                  className={`flex-1 overflow-y-auto px-2 md:px-6 py-4 space-y-4 scrollbar-thin select-text ${
+                    isLightMode ? 'bg-white' : 'bg-dark-depth-1'
+                  }`}
+                >
+                  {messages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center py-10 space-y-8 select-none animate-fadeIn max-w-2xl mx-auto w-full">
+                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto shadow-lg ${
+                        isLightMode 
+                          ? 'bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-indigo-100/10' 
+                          : 'bg-brand-500/10 border border-brand-500/20 text-brand-400 shadow-brand-500/5'
+                      }`}>
+                        <Brain className="w-7 h-7" />
+                      </div>
+                      <div className="space-y-2">
+                        <h4 className={`text-sm font-black uppercase tracking-wider ${
+                          isLightMode ? 'text-slate-900' : 'text-white'
+                        }`}>
+                          Ask Your Portfolio Assistant
+                        </h4>
+                        <p className={`text-[10px] max-w-sm mt-1.5 leading-relaxed mx-auto ${
+                          isLightMode ? 'text-slate-500' : 'text-gray-400'
+                        }`}>
+                          Analyze holdings, evaluate discipline rules, check recent trade matches, or ask strategy questions. Fully injected with your live database context.
+                        </p>
+                      </div>
+                      
+                      {/* Default prompt suggestions */}
+                      <div className="flex flex-col sm:flex-row flex-wrap justify-center items-center gap-2 max-w-xl w-full pt-4 mx-auto select-none">
+                        {[
+                          'Analyse my portfolio',
+                          'Which stock is my best performer?',
+                          'Should I book profit on any stock?'
+                        ].map((prompt) => (
+                          <button
+                            key={prompt}
+                            type="button"
+                            onClick={() => handleSendChat(prompt)}
+                            disabled={sendingChat || usageRemaining === 0}
+                            className={`px-4 py-2 border rounded-full text-xs font-semibold cursor-pointer transition-all duration-300 disabled:opacity-40 shadow-sm ${
+                              isLightMode 
+                                ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:border-indigo-500/40' 
+                                : 'bg-dark-depth-2 hover:bg-dark-depth-3 border-dark-border/85 hover:border-brand-500/40 text-gray-300'
+                            }`}
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4 max-w-3xl mx-auto w-full">
+                      {messages.map((msg, idx) => {
+                        const time = msg.timestamp || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        return (
+                          <div key={idx} className="w-full">
+                            {msg.role === 'user' ? (
+                              <div className="flex justify-end w-full py-1">
+                                <div className="max-w-[88%] md:max-w-[80%] bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-2xl rounded-tr-none px-3.5 py-2.5 md:px-4 md:py-3 text-xs select-text leading-relaxed whitespace-pre-wrap shadow-md shadow-indigo-500/10">
+                                  <p className="select-text font-bold text-white tracking-wide">{msg.content}</p>
+                                  <span className="text-[8px] text-indigo-100/80 mt-1.5 block text-right font-medium">
+                                    {time}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex justify-start w-full py-1">
+                                <div className={`group max-w-[94%] md:max-w-[85%] border rounded-2xl rounded-tl-none px-3 py-2.5 md:px-4 md:py-3 shadow-md select-text ${
+                                  isLightMode 
+                                    ? 'bg-slate-50 border-slate-200/80 text-slate-800 shadow-slate-100' 
+                                    : 'bg-dark-depth-2 border-[#2d3748] text-gray-200 shadow-[#080b11]/30'
+                                }`}>
+                                  <div className="flex items-center gap-2 select-none mb-2 pb-1.5 border-b border-dashed border-slate-200 dark:border-[#2d3748]/55">
+                                    <div className={`w-5.5 h-5.5 rounded-full flex items-center justify-center shadow-sm shrink-0 select-none ${
+                                      isLightMode 
+                                        ? 'bg-slate-100 border border-slate-200 text-slate-600' 
+                                        : 'bg-brand-500/10 border border-brand-500/20 text-brand-400'
+                                    }`}>
+                                      <Brain className="w-3 h-3" />
+                                    </div>
+                                    
+                                    <span className={`text-[9px] font-black uppercase tracking-widest block ${
+                                      isLightMode ? 'text-slate-500' : 'text-gray-400'
+                                    }`}>
+                                      Finor AI
+                                    </span>
+                                    {msg.engine && (
+                                      <span className={`text-[8px] font-extrabold tracking-wider uppercase ${
+                                        isLightMode ? 'text-slate-400' : 'text-gray-500'
+                                      }`}>
+                                        ({msg.engine})
+                                      </span>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="text-xs leading-relaxed font-medium select-text">
+                                    <MarkdownView text={msg.content} isLightMode={isLightMode} />
+                                  </div>
+                                  
+                                  {msg.pendingConfirm && (
+                                    <OrderConfirmationCard 
+                                      args={msg.pendingConfirm.args}
+                                      onConfirm={() => handleConfirmOrder(msg.pendingConfirm!.args, idx)}
+                                      onCancel={() => handleCancelOrder(idx)}
+                                      isLightMode={isLightMode}
+                                    />
+                                  )}
+                                  
+                                  <MessageActions 
+                                    msg={msg}
+                                    msgIdx={idx}
+                                    activeChatId={activeChatId || ''}
+                                    feedback={feedback}
+                                    onFeedback={handleFeedback}
+                                    isLightMode={isLightMode}
+                                  />
+                                  
+                                  <div className="flex items-center justify-between mt-2 select-none gap-4">
+                                    <span className={`text-[8px] font-medium ${
+                                      isLightMode ? 'text-slate-400' : 'text-gray-500'
+                                    }`}>
+                                      {time}
+                                    </span>
+                                    {msg.responseTime !== undefined && (
+                                      <span className={`text-[8px] font-black flex items-center gap-0.5 ${
+                                        isLightMode ? 'text-indigo-650' : 'text-brand-400'
+                                      }`}>
+                                        ⚡ {msg.responseTime.toFixed(1)}s
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {sendingChat && (
+                        <div className="flex justify-start w-full py-1">
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center gap-2 select-none">
+                              <div className={`w-5.5 h-5.5 rounded-full flex items-center justify-center shadow-sm shrink-0 select-none ${
+                                isLightMode 
+                                  ? 'bg-slate-100 border border-slate-200 text-slate-600' 
+                                  : 'bg-brand-500/10 border border-brand-500/20 text-brand-400'
+                              }`}>
+                                <Brain className="w-3 h-3 animate-spin" />
+                              </div>
+                              <span className={`text-[9px] font-black uppercase tracking-widest block ${
+                                isLightMode ? 'text-slate-500' : 'text-gray-400'
+                              }`}>
+                                Finor AI is thinking...
+                              </span>
+                            </div>
+                            
+                            {/* Thinking sequential step card */}
+                            <div className={`p-4 rounded-xl border flex items-center gap-3 animate-pulse max-w-sm ${
+                              isLightMode 
+                                ? 'bg-slate-50 border-slate-200 text-slate-700 shadow-sm' 
+                                : 'bg-dark-depth-2 border-[#2d3748] text-gray-200'
+                            }`}>
+                              <Loader2 className="w-4 h-4 text-brand-500 animate-spin shrink-0" />
+                              <span className="text-xs font-semibold">{getThinkingText(thinkingStep)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div ref={messagesEndRef} />
+                    </div>
+                  )}
+                </div>
+
+                {/* Floating scroll to bottom badge */}
+                {showScrollBottom && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      scrollToBottom();
+                      setUnreadCount(0);
+                    }}
+                    className={`absolute p-2.5 rounded-full border shadow-xl flex items-center justify-center transition-all cursor-pointer z-25 hover:scale-105 active:scale-95 right-6 bottom-6 ${
+                      isLightMode 
+                        ? 'bg-white border-slate-200 text-indigo-650 hover:bg-slate-50 shadow-slate-200/50' 
+                        : 'bg-dark-depth-3 border-dark-border text-brand-400 hover:bg-dark-depth-2'
+                    }`}
+                  >
+                    <ArrowDown className="w-4.5 h-4.5 animate-bounce" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-500 text-white min-w-4 text-center leading-none animate-in zoom-in">
+                        {unreadCount}
+                      </span>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Bottom Sticky Input Area */}
+              <div 
+                className={`w-full shrink-0 px-4 py-3 border-t transition-all z-20 ${
+                  isLightMode 
+                    ? 'bg-white border-slate-200 text-slate-805' 
+                    : 'bg-dark-depth-1 border-[#2d3748] text-white'
+                }`}
+              >
+                <div className="max-w-3xl mx-auto w-full flex flex-col gap-2">
+                  {/* Prompt chips */}
+                  <div className="flex items-center gap-2 overflow-x-auto md:overflow-x-visible md:flex-wrap md:justify-center pb-1.5 md:pb-0 scrollbar-hidden select-none -mx-2 px-2 mask-gradient whitespace-nowrap">
+                    {promptChips.map((chip) => (
+                      <button
+                        key={chip.label}
+                        type="button"
+                        onClick={() => setChatInput(chip.text)}
+                        disabled={sendingChat || usageRemaining === 0}
+                        className={`px-3 py-1.5 border rounded-full text-[10px] font-bold whitespace-nowrap cursor-pointer transition-all shrink-0 ${
+                          isLightMode 
+                            ? 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:border-indigo-500/40 shadow-sm' 
+                            : 'bg-dark-depth-2 hover:bg-dark-depth-3 border-dark-border text-gray-300 hover:border-brand-500/40'
+                        }`}
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Form */}
+                  <form 
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleSendChat();
+                    }}
+                    className={`relative border rounded-3xl flex items-center px-4 py-2.5 shadow-inner gap-3 w-full ${
+                      isLightMode 
+                        ? 'bg-white border-slate-200 text-slate-805' 
+                        : 'bg-dark-depth-2/65 border-dark-border/80 text-white'
+                    }`}
+                  >
+                    <button 
+                      type="button" 
+                      className={`w-7 h-7 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                        isLightMode 
+                          ? 'bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-850 hover:bg-slate-200' 
+                          : 'bg-dark-depth-3 border-dark-border/60 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      disabled={sendingChat || usageRemaining === 0}
+                      placeholder={usageRemaining === 0 ? "Daily query limit reached (100/100)" : "Ask anything about your portfolio..."}
+                      className={`flex-1 bg-transparent border-0 text-xs focus:outline-none focus:ring-0 p-0 ${
+                        isLightMode ? 'text-slate-800 placeholder-slate-450' : 'text-white placeholder-gray-500'
+                      }`}
+                    />
+
+                    <button 
+                      type="button" 
+                      className={`w-7 h-7 flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                        isLightMode ? 'text-slate-400 hover:text-slate-700' : 'text-gray-500 hover:text-white'
+                      }`}
+                    >
+                      <Mic className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={sendingChat || !chatInput.trim() || usageRemaining === 0}
+                      className={`w-7 h-7 rounded-full disabled:opacity-40 flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                        isLightMode 
+                          ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' 
+                          : 'bg-brand-500 hover:bg-brand-400 text-dark-depth-0 text-white'
+                      }`}
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </form>
+                  
+                  <p className={`text-[8.5px] text-center mt-1 select-none font-medium tracking-wide ${
+                    isLightMode ? 'text-slate-450' : 'text-gray-500'
+                  }`}>
+                    Finor AI Coach can make mistakes. Verify critical trade details before taking actions.
+                  </p>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+      </div>
+
+      {showConfirmClear && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-depth-0/85 backdrop-blur-md">
+          <div className="glass-panel w-full max-w-sm rounded-3xl p-6 border border-dark-border shadow-2xl flex flex-col items-center text-center space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-3 bg-rose-500/10 text-rose-500 rounded-full border border-rose-500/20">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-white font-display">Clear Cache?</h3>
+              <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                This will delete all cached historical prices and stock news headlines. Fresh data will fetch on your next request.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 w-full">
+              <button
+                onClick={() => setShowConfirmClear(false)}
+                className="flex-1 py-2.5 rounded-xl border border-dark-border text-xs font-bold text-gray-400 hover:text-white hover:bg-dark-depth-2 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeClearCache}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs font-bold text-white transition-all cursor-pointer shadow-lg shadow-rose-500/10"
+              >
+                Yes, Clear Cache
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

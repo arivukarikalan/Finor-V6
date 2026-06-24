@@ -1,0 +1,1119 @@
+import { useState, useEffect, useRef } from 'react';
+import { apiRequest } from '../services/api';
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  RefreshCw, 
+  Upload, 
+  Search, 
+  SlidersHorizontal, 
+  AlertCircle, 
+  Trash2,
+  X,
+  FileSpreadsheet,
+  CheckCircle2,
+  Sparkles
+} from 'lucide-react';
+
+interface Holding {
+  id: string;
+  stock_symbol: string;
+  stock_name: string;
+  average_buy_price: number;
+  quantity: number;
+  ltp: number | null;
+  sector: string | null;
+  last_updated: string;
+}
+
+interface Trade {
+  id: string;
+  stock_symbol: string;
+  trade_type: 'BUY' | 'SELL';
+  quantity: number;
+  price: number;
+  trade_date: string;
+}
+
+export const Holdings = () => {
+  const [holdings, setHoldings] = useState<Holding[]>([]);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [stockSettings, setStockSettings] = useState<Record<string, { stoploss_price: number | null, position_tag: 'TRADING' | 'CORE_HOLD' }>>({});
+  const [considerExits, setConsiderExits] = useState<{ symbol: string; reason: string }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Edit Stock Settings State
+  const [editingStock, setEditingStock] = useState<Holding | null>(null);
+  const [editStoploss, setEditStoploss] = useState<string>('');
+  const [editTag, setEditTag] = useState<'TRADING' | 'CORE_HOLD'>('TRADING');
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // Search, Filter & Sort State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [performanceFilter, setPerformanceFilter] = useState<'all' | 'profit' | 'loss'>('all');
+  const [sortBy, setSortBy] = useState<'value' | 'return' | 'pl' | 'symbol'>('value');
+  
+  // CSV Import Modal State
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+
+  // AI Sentiment Gauge State
+  const [selectedAiStock, setSelectedAiStock] = useState<any | null>(null);
+  const [csvPreview, setCsvPreview] = useState<string>('');
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{ message: string; count: number } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const fetchCoreData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const holdingsData = await apiRequest('/holdings');
+      setHoldings(holdingsData);
+      
+      const tradesData = await apiRequest('/trades');
+      setTrades(tradesData);
+
+      // Fetch settings
+      const settingsData = await apiRequest('/holdings/settings');
+      setStockSettings(settingsData || {});
+
+      // Fetch consider exits from insights
+      if (holdingsData.length > 0) {
+        const insights = await apiRequest('/analytics/insights?viewMode=ALL_TIME');
+        setConsiderExits(insights.considerExits || []);
+      } else {
+        setConsiderExits([]);
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to fetch core data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCoreData();
+
+    const handleSyncComplete = () => {
+      fetchCoreData();
+    };
+
+    window.addEventListener('portfolio-sync-complete', handleSyncComplete);
+    return () => {
+      window.removeEventListener('portfolio-sync-complete', handleSyncComplete);
+    };
+  }, []);
+
+  const handleSyncPrices = async () => {
+    setSyncing(true);
+    setError(null);
+    try {
+      await apiRequest('/holdings/sync-prices', {
+        method: 'POST',
+      });
+      await fetchCoreData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to sync prices.');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const [showConfirmClear, setShowConfirmClear] = useState(false);
+
+  const handleClearAll = () => {
+    setShowConfirmClear(true);
+  };
+
+  const executeClearAll = async () => {
+    setShowConfirmClear(false);
+    setLoading(true);
+    try {
+      await apiRequest('/trades', { method: 'DELETE' });
+      setHoldings([]);
+      setTrades([]);
+    } catch (err: any) {
+      setError(err.message || 'Failed to clear data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // CSV Parsing and Upload
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setCsvFile(file);
+      setImportResult(null);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        // Get first 5 lines for preview
+        const preview = text.split('\n').slice(0, 5).join('\n');
+        setCsvPreview(preview);
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleImportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!csvFile) return;
+
+    setImporting(true);
+    setError(null);
+    setImportResult(null);
+
+    try {
+      const csvText = await csvFile.text();
+      const result = await apiRequest('/trades/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/csv',
+        },
+        body: csvText,
+      });
+
+      setImportResult(result);
+      setCsvFile(null);
+      setCsvPreview('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      
+      // Refresh database records
+      await fetchCoreData();
+    } catch (err: any) {
+      setError(err.message || 'Failed to import CSV.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // Financial Calculations
+  const totalInvested = holdings.reduce((sum, h) => sum + (h.average_buy_price * h.quantity), 0);
+  const totalValue = holdings.reduce((sum, h) => sum + ((h.ltp || h.average_buy_price) * h.quantity), 0);
+  const totalPL = totalValue - totalInvested;
+  const totalROI = totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
+
+  // Filter and Sort holdings list
+  const filteredHoldings = holdings
+    .filter(h => {
+      const matchesSearch = h.stock_symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            h.stock_name.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const currentLTP = h.ltp || h.average_buy_price;
+      const pl = (currentLTP - h.average_buy_price) * h.quantity;
+      
+      if (performanceFilter === 'profit') return matchesSearch && pl >= 0;
+      if (performanceFilter === 'loss') return matchesSearch && pl < 0;
+      return matchesSearch;
+    })
+    .sort((a, b) => {
+      const aLTP = a.ltp || a.average_buy_price;
+      const bLTP = b.ltp || b.average_buy_price;
+      
+      const aVal = aLTP * a.quantity;
+      const bVal = bLTP * b.quantity;
+      
+      const aCost = a.average_buy_price * a.quantity;
+      const bCost = b.average_buy_price * b.quantity;
+      
+      const aPL = aVal - aCost;
+      const bPL = bVal - bCost;
+      
+      const aROI = aCost > 0 ? (aPL / aCost) * 100 : 0;
+      const bROI = bCost > 0 ? (bPL / bCost) * 100 : 0;
+
+      if (sortBy === 'value') return bVal - aVal;
+      if (sortBy === 'pl') return bPL - aPL;
+      if (sortBy === 'return') return bROI - aROI;
+      return a.stock_symbol.localeCompare(b.stock_symbol);
+    });
+
+  // Calculate Holding Days since current buy cycle started
+  const getHoldingDays = (symbol: string) => {
+    // Filter trades for this symbol and sort chronologically (ascending)
+    const symbolTrades = trades
+      .filter(t => t.stock_symbol === symbol)
+      .sort((a, b) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+      
+    if (symbolTrades.length === 0) return 0;
+    
+    // Trace running quantity to find the start of the current cycle
+    let runningQty = 0;
+    let cycleStartDate = new Date(symbolTrades[0].trade_date);
+    
+    for (const trade of symbolTrades) {
+      if (runningQty === 0 && trade.trade_type === 'BUY') {
+        cycleStartDate = new Date(trade.trade_date);
+      }
+      
+      if (trade.trade_type === 'BUY') {
+        runningQty += trade.quantity;
+      } else {
+        runningQty = Math.max(0, runningQty - trade.quantity);
+      }
+    }
+    
+    const diffTime = Math.abs(Date.now() - cycleStartDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays;
+  };
+
+  return (
+    <div className="space-y-6">
+      
+      {/* Header Panel */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold font-display text-white">Holdings</h1>
+          <p className="text-xs text-gray-400 mt-1">
+            Displaying live stock positions calculated from your trade ledger.
+          </p>
+        </div>
+
+        {/* Buttons Toolbar */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSyncPrices}
+            disabled={syncing || holdings.length === 0}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-dark-border bg-dark-depth-2/40 text-xs font-semibold text-gray-200 hover:text-white hover:border-brand-500/40 transition-all cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-brand-500' : ''}`} />
+            Refresh Prices
+          </button>
+          
+          <button
+            onClick={() => setIsImportOpen(true)}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white shadow-lg shadow-brand-700/10 transition-all cursor-pointer"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Import CSV
+          </button>
+
+          {holdings.length > 0 && (
+            <button
+              onClick={handleClearAll}
+              className="p-2.5 rounded-xl border border-dark-border text-gray-400 hover:text-rose-500 hover:border-rose-500/20 transition-all cursor-pointer"
+              title="Clear all trades and holdings"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm font-medium flex items-start gap-2.5">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        
+        {/* Total Value Card */}
+        <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-xl pointer-events-none" />
+          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Current Value</span>
+          <h3 className="text-2xl font-extrabold text-white mt-1.5">
+            ₹{totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </h3>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-gray-500 font-medium">Invested:</span>
+            <span className="text-xs text-gray-300 font-semibold">
+              ₹{totalInvested.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+        </div>
+
+        {/* PNL Gain/Loss Card */}
+        <div className={`glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden`}>
+          <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-xl pointer-events-none ${totalPL >= 0 ? 'bg-emerald-500/5' : 'bg-rose-500/5'}`} />
+          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Profit / Loss</span>
+          <h3 className={`text-2xl font-extrabold mt-1.5 flex items-center gap-1.5 ${totalPL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+            {totalPL >= 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+            {totalPL >= 0 ? '+' : ''}
+            ₹{totalPL.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </h3>
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+              totalPL >= 0 
+                ? 'bg-emerald-500/10 border-emerald-500/10 text-emerald-500' 
+                : 'bg-rose-500/10 border-rose-500/10 text-rose-500'
+            }`}>
+              {totalPL >= 0 ? '+' : ''}{totalROI.toFixed(2)}% ROI
+            </span>
+          </div>
+        </div>
+
+        {/* Positions Count Card */}
+        <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-xl pointer-events-none" />
+          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Positions Held</span>
+          <h3 className="text-2xl font-extrabold text-white mt-1.5">
+            {holdings.length}
+          </h3>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-gray-500 font-medium">Total Sync'd Trades:</span>
+            <span className="text-xs text-gray-300 font-semibold">{trades.length}</span>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Filters and Sorting Panel */}
+      <div className="glass-panel rounded-2xl p-4 border border-dark-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+        
+        {/* Search */}
+        <div className="relative flex-1 max-w-md">
+          <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-500">
+            <Search className="w-4 h-4" />
+          </span>
+          <input
+            type="text"
+            placeholder="Search by symbol or name..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 transition-all placeholder:text-gray-500"
+          />
+        </div>
+
+        {/* Filters & Sorting buttons */}
+        <div className="flex flex-wrap items-center gap-3">
+          
+          {/* Performance filter */}
+          <div className="flex rounded-xl bg-dark-depth-2 border border-dark-border p-1">
+            {(['all', 'profit', 'loss'] as const).map((filter) => (
+              <button
+                key={filter}
+                onClick={() => setPerformanceFilter(filter)}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                  performanceFilter === filter
+                    ? 'bg-brand-600 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {filter}
+              </button>
+            ))}
+          </div>
+
+          {/* Sorter selection */}
+          <div className="flex items-center gap-1 bg-dark-depth-2 border border-dark-border rounded-xl px-2 py-1">
+            <SlidersHorizontal className="w-3.5 h-3.5 text-gray-500" />
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as any)}
+              className="bg-transparent text-[10px] font-bold text-gray-300 focus:outline-none border-none pr-6 pl-1 py-1 cursor-pointer"
+            >
+              <option value="value">Sort: Current Value</option>
+              <option value="pl">Sort: Profit & Loss</option>
+              <option value="return">Sort: Return %</option>
+              <option value="symbol">Sort: Ticker Name</option>
+            </select>
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* Consider Exit Warning Cards */}
+      {considerExits.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {considerExits.map((ce) => (
+            <div key={ce.symbol} className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-rose-500" />
+              <div>
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">🚨 Consider Exit: {ce.symbol}</h4>
+                <p className="text-[11px] text-gray-400 mt-1 leading-relaxed">{ce.reason}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Holdings List Grid */}
+      {loading ? (
+        <div className="text-center py-16">
+          <RefreshCw className="w-8 h-8 animate-spin text-brand-500 mx-auto mb-3" />
+          <p className="text-xs text-gray-400">Loading holdings data...</p>
+        </div>
+      ) : filteredHoldings.length === 0 ? (
+        <div className="glass-panel rounded-3xl p-16 text-center border border-dark-border">
+          <FileSpreadsheet className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+          <h3 className="text-lg font-bold text-white mb-2">No Open Holdings</h3>
+          <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+            {searchQuery 
+              ? "We couldn't find any stocks matching your query. Adjust your search or filters." 
+              : "Import your Zerodha tradebook CSV file to calculate and populate your portfolio holdings."}
+          </p>
+          {!searchQuery && (
+            <button
+              onClick={() => setIsImportOpen(true)}
+              className="mt-6 inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white transition-all cursor-pointer shadow-lg shadow-brand-700/10"
+            >
+              <Upload className="w-4 h-4" />
+              Upload Tradebook CSV
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredHoldings.map((h) => {
+            const currentLTP = h.ltp || h.average_buy_price;
+            const investedVal = h.average_buy_price * h.quantity;
+            const currentVal = currentLTP * h.quantity;
+            const pl = currentVal - investedVal;
+            const roi = investedVal > 0 ? (pl / investedVal) * 100 : 0;
+            const isProfit = pl >= 0;
+            const holdingDays = getHoldingDays(h.stock_symbol);
+            
+            const settings = stockSettings[h.stock_symbol] || { stoploss_price: null, position_tag: 'TRADING' };
+            const isCoreHold = settings.position_tag === 'CORE_HOLD';
+            const exitFlag = considerExits.find(ce => ce.symbol === h.stock_symbol);
+
+            return (
+              <div 
+                key={h.id} 
+                className="glass-panel rounded-2xl p-5 border border-dark-border flex flex-col justify-between"
+                style={exitFlag ? { borderColor: 'rgba(239, 68, 68, 0.3)', boxShadow: '0 0 10px rgba(239, 68, 68, 0.05)' } : {}}
+              >
+                
+                {/* Top Section: Ticker and PNL badge */}
+                <div className="flex items-start justify-between border-b border-dark-border/40 pb-3 mb-4">
+                  <div>
+                    <h4 className="text-lg font-bold text-white font-display tracking-tight flex items-center flex-wrap gap-1.5">
+                      {h.stock_symbol}
+                      {isCoreHold && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#D4AF37', borderColor: 'rgba(212, 175, 55, 0.2)', backgroundColor: 'rgba(212, 175, 55, 0.08)', border: '1px solid rgba(212, 175, 55, 0.2)' }}>
+                          ★ Core Hold
+                        </span>
+                      )}
+                      {h.ltp === null && (
+                        <span className="text-[9px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                          LTP Pending
+                        </span>
+                      )}
+                    </h4>
+                    <span className="text-[10px] text-gray-500 mt-0.5 block font-semibold uppercase tracking-wider">
+                      {h.stock_name}
+                    </span>
+                  </div>
+                  
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
+                      isProfit 
+                        ? 'bg-emerald-500/10 border-emerald-500/10 text-emerald-500' 
+                        : 'bg-rose-500/10 border-rose-500/10 text-rose-500'
+                    }`}>
+                      {isProfit ? '+' : ''}{roi.toFixed(2)}%
+                    </span>
+                    
+                    <button 
+                      onClick={() => {
+                        setEditingStock(h);
+                        setEditStoploss(settings.stoploss_price !== null ? String(settings.stoploss_price) : '');
+                        setEditTag(settings.position_tag);
+                      }}
+                      className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-dark-depth-2 transition-all cursor-pointer"
+                      title="Edit stop-loss & tag"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* exit warning inline */}
+                {exitFlag && (
+                  <div className="mb-4 p-2.5 text-[10px] font-semibold text-rose-500 bg-rose-500/10 border border-rose-500/25 rounded-xl flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-500" />
+                    <span>Consider Exit: Down 30%+ over 90+ days & negative news.</span>
+                  </div>
+                )}
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                  <div>
+                    <span className="text-[10px] text-gray-500 block">Quantity</span>
+                    <span className="text-sm font-bold text-white">{h.quantity}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 block">Avg. Price</span>
+                    <span className="text-sm font-bold text-white">₹{h.average_buy_price.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 block">Current LTP</span>
+                    <span className="text-sm font-bold text-white">₹{currentLTP.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 block">Stop-Loss Price</span>
+                    <span className="text-sm font-bold text-white">
+                      {settings.stoploss_price !== null ? `₹${settings.stoploss_price.toFixed(2)}` : 'Not Set'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 block">Holding Period</span>
+                    <span className="text-sm font-bold text-white">{holdingDays} Days</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 block">Position Type</span>
+                    <span className={`text-xs font-bold ${isCoreHold ? 'text-amber-500 font-extrabold' : 'text-gray-300'}`}>
+                      {isCoreHold ? 'Core Hold' : 'Trading Position'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bottom Section: Total Current Value and absolute PNL */}
+                <div className="border-t border-dark-border/40 pt-3 mt-4 flex items-center justify-between">
+                  <div>
+                    <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Current Value</span>
+                    <span className="text-base font-extrabold text-white block mt-0.5">
+                      ₹{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Net P&L</span>
+                    <span className={`text-sm font-bold block mt-0.5 ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {isProfit ? '+' : ''}₹{pl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* AI Mode Toggle Button */}
+                <button
+                  onClick={() => {
+                    setSelectedAiStock({
+                      stock: h,
+                      roi,
+                      holdingDays
+                    });
+                  }}
+                  className="mt-4 w-full py-2.5 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-[10px] font-extrabold uppercase tracking-wider flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition-all cursor-pointer select-none"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-brand-400" />
+                  AI Conviction Audit
+                </button>
+
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* CSV Import Modal (Floating Overlay) */}
+      {isImportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-depth-0/80 backdrop-blur-md">
+          <div className="glass-panel w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl border border-dark-border max-h-[90vh] flex flex-col">
+            
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-dark-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-brand-500" />
+                <h3 className="text-base font-bold text-white">Import Tradebook CSV</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsImportOpen(false);
+                  setImportResult(null);
+                }}
+                className="p-1 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              
+              {/* Instructions */}
+              <div className="p-4 rounded-xl bg-dark-depth-2/40 border border-dark-border/60 text-xs text-gray-300 leading-relaxed space-y-2">
+                <p className="font-bold text-white flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                  Zerodha Console Export Format Support
+                </p>
+                <p>
+                  Export your trades directly from your Zerodha Console ledger:
+                  <strong> Zerodha Console ➔ Reports ➔ Tradebook ➔ Download CSV</strong>. 
+                  Make sure columns like <code className="text-brand-400">symbol</code>, <code className="text-brand-400">trade_type</code>, 
+                  <code className="text-brand-400">quantity</code>, and <code className="text-brand-400">price</code> are present.
+                </p>
+              </div>
+
+              {/* Import Result Screen */}
+              {importResult ? (
+                <div className="text-center py-6 space-y-4">
+                  <div className="inline-flex p-4 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 mb-2">
+                    <CheckCircle2 className="w-12 h-12" />
+                  </div>
+                  <h4 className="text-lg font-bold text-white">Import Successful</h4>
+                  <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
+                    {importResult.message}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setIsImportOpen(false);
+                      setImportResult(null);
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white transition-all cursor-pointer mt-4"
+                  >
+                    Done
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleImportSubmit} className="space-y-6">
+                  
+                  {/* File Selector */}
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-gray-300 block">Select CSV File</label>
+                    <div className="border-2 border-dashed border-dark-border hover:border-brand-500/50 rounded-2xl p-8 text-center cursor-pointer transition-all relative">
+                      <input
+                        type="file"
+                        accept=".csv"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      />
+                      <FileSpreadsheet className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                      <p className="text-xs font-semibold text-white">
+                        {csvFile ? csvFile.name : 'Click to select or drag and drop'}
+                      </p>
+                      <p className="text-[10px] text-gray-500 mt-1">CSV files only (.csv)</p>
+                    </div>
+                  </div>
+
+                  {/* CSV Preview */}
+                  {csvPreview && (
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-gray-300 block">File Preview (First 5 lines)</label>
+                      <pre className="p-3.5 rounded-xl bg-dark-depth-0 border border-dark-border text-[10px] text-gray-400 font-mono overflow-x-auto">
+                        {csvPreview}
+                      </pre>
+                    </div>
+                  )}
+
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={importing || !csvFile}
+                    className="w-full py-3.5 px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition-all disabled:opacity-40 disabled:scale-100 flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-brand-700/20"
+                  >
+                    {importing ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Importing Trade Data...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4" />
+                        Upload & Sync Portfolio
+                      </>
+                    )}
+                  </button>
+
+                </form>
+              )}
+
+            </div>
+
+          </div>
+        </div>
+      )}
+      {showConfirmClear && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-depth-0/85 backdrop-blur-md">
+          <div className="glass-panel w-full max-w-sm rounded-3xl p-6 border border-dark-border shadow-2xl flex flex-col items-center text-center space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-3 bg-rose-500/10 text-rose-500 rounded-full border border-rose-500/20">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-white font-display">Clear All Portfolio Data?</h3>
+              <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                This action will permanently delete all your trades, holdings, and history. This cannot be undone.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 w-full">
+              <button
+                onClick={() => setShowConfirmClear(false)}
+                className="flex-1 py-2.5 rounded-xl border border-dark-border text-xs font-bold text-gray-400 hover:text-white hover:bg-dark-depth-2 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeClearAll}
+                className="flex-1 py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-xs font-bold text-white transition-all cursor-pointer shadow-lg shadow-rose-500/10"
+              >
+                Yes, Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Stock Settings Modal */}
+      {editingStock && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-depth-0/80 backdrop-blur-md">
+          <div className="glass-panel w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl border border-dark-border flex flex-col p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-2 border-b border-dark-border/40">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider">Configure Settings: {editingStock.stock_symbol}</h3>
+              <button 
+                onClick={() => setEditingStock(null)}
+                className="p-1 text-gray-400 hover:text-white rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="space-y-4 py-2">
+              {/* Position Tag Selector */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">Position Tag</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditTag('TRADING')}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                      editTag === 'TRADING'
+                        ? 'bg-brand-600 border-brand-500 text-white shadow-lg shadow-brand-700/10'
+                        : 'bg-dark-depth-2 border-dark-border text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    📈 Trading
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditTag('CORE_HOLD')}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border ${
+                      editTag === 'CORE_HOLD'
+                        ? 'bg-amber-600/20 border-amber-500/40 text-amber-500 shadow-lg shadow-amber-500/5'
+                        : 'bg-dark-depth-2 border-dark-border text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    ⭐ Core Hold
+                  </button>
+                </div>
+              </div>
+
+              {/* Stop-Loss Input */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block">Stop-Loss Price (₹)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g. 1500.00 (leave blank to unset)"
+                  value={editStoploss}
+                  onChange={(e) => setEditStoploss(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 transition-all placeholder:text-gray-500"
+                />
+                <span className="text-[9px] text-gray-500 leading-relaxed block">
+                  Used for panic sell detection. Buy Avg is ₹{editingStock.average_buy_price.toFixed(2)}.
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                onClick={() => setEditingStock(null)}
+                className="flex-1 py-2.5 rounded-xl border border-dark-border text-xs font-bold text-gray-400 hover:text-white hover:bg-dark-depth-2 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!editingStock) return;
+                  setSavingSettings(true);
+                  try {
+                    const stoplossVal = editStoploss === '' ? null : parseFloat(editStoploss);
+                    await apiRequest('/holdings/settings', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({
+                        symbol: editingStock.stock_symbol,
+                        stoploss_price: stoplossVal,
+                        position_tag: editTag
+                      })
+                    });
+                    setStockSettings(prev => ({
+                      ...prev,
+                      [editingStock.stock_symbol]: {
+                        stoploss_price: stoplossVal,
+                        position_tag: editTag
+                      }
+                    }));
+                    // Re-fetch consider exits to update warnings
+                    const insights = await apiRequest('/analytics/insights?viewMode=ALL_TIME');
+                    setConsiderExits(insights.considerExits || []);
+                    setEditingStock(null);
+                  } catch (err: any) {
+                    console.error("Save settings failed:", err);
+                    alert("Failed to save settings: " + err.message);
+                  } finally {
+                    setSavingSettings(false);
+                  }
+                }}
+                disabled={savingSettings}
+                className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-bold text-white transition-all cursor-pointer disabled:opacity-40 flex items-center justify-center gap-1.5"
+              >
+                {savingSettings && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Conviction Modal Overlay */}
+      {selectedAiStock && (
+        <AiConvictionModal
+          stock={selectedAiStock.stock}
+          roi={selectedAiStock.roi}
+          holdingDays={selectedAiStock.holdingDays}
+          onClose={() => setSelectedAiStock(null)}
+        />
+      )}
+
+    </div>
+  );
+};
+
+// ==========================================
+// Helper Sub-components: AI Conviction Modal
+// ==========================================
+
+interface AiConvictionData {
+  score: number;
+  label: 'BULLISH' | 'NEUTRAL' | 'BEARISH';
+  news_impact: string;
+  performance_audit: string;
+  technical_outlook: string;
+  coach_advice: string;
+}
+
+const AiConvictionModal = ({ 
+  stock, 
+  roi, 
+  holdingDays, 
+  onClose 
+}: { 
+  stock: any; 
+  roi: number; 
+  holdingDays: number; 
+  onClose: () => void 
+}) => {
+  const [data, setData] = useState<AiConvictionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+
+  useEffect(() => {
+    setIsAnimating(true);
+
+    const loadSentiment = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await apiRequest('/holdings/sentiment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol: stock.stock_symbol })
+        });
+        setData(response);
+      } catch (err: any) {
+        console.error('Failed to load AI sentiment:', err);
+        setError(err.message || 'Failed to analyze stock sentiment.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadSentiment();
+  }, [stock.stock_symbol]);
+
+  const handleClose = () => {
+    setIsAnimating(false);
+    setTimeout(onClose, 250);
+  };
+
+  const score = data?.score ?? 50;
+  const label = data?.label ?? 'NEUTRAL';
+  const newsImpact = data?.news_impact ?? '';
+  const performanceAudit = data?.performance_audit ?? '';
+  const technicalOutlook = data?.technical_outlook ?? '';
+  const coachAdvice = data?.coach_advice ?? '';
+
+  let color = '#f59e0b'; // Amber
+  let badgeClass = 'text-amber-500 bg-amber-500/10 border-amber-500/20';
+  let textGrad = 'from-amber-400 to-yellow-500';
+  
+  if (label === 'BEARISH') {
+    color = '#ef4444'; // Red
+    badgeClass = 'text-rose-500 bg-rose-500/10 border-rose-500/20';
+    textGrad = 'from-rose-400 to-red-500';
+  } else if (label === 'BULLISH') {
+    color = '#10b981'; // Green
+    badgeClass = 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20';
+    textGrad = 'from-emerald-400 to-teal-500';
+  }
+
+  const radius = 32;
+  const strokeWidth = 6;
+  const circumference = Math.PI * radius; // Half circle circumference
+  const strokeDashoffset = circumference - (score / 100) * circumference;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-depth-0/80 backdrop-blur-md transition-opacity duration-300">
+      <div 
+        className="absolute inset-0 bg-transparent" 
+        onClick={handleClose} 
+      />
+      <div className={`glass-panel w-full max-w-lg max-h-[85vh] rounded-3xl overflow-hidden shadow-2xl border border-dark-border flex flex-col transition-all duration-300 transform ${
+        isAnimating ? 'scale-100 opacity-100' : 'scale-95 opacity-0'
+      }`}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-dark-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-brand-500 animate-pulse" />
+            <div>
+              <h3 className="text-base font-extrabold text-white uppercase tracking-wider font-display">AI Conviction Audit</h3>
+              <p className="text-[10px] text-gray-500 font-semibold mt-0.5">Gemini GenAI & News Core Evaluator</p>
+            </div>
+          </div>
+          <button
+            onClick={handleClose}
+            className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-dark-depth-2 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto flex-1 space-y-6 scrollbar-hidden">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-12 space-y-4">
+              <div className="relative w-16 h-16">
+                <div className="absolute inset-0 border-4 border-brand-500/20 rounded-full" />
+                <div className="absolute inset-0 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+              <p className="text-xs text-gray-400 font-bold uppercase tracking-widest animate-pulse">Running Deep Conviction Audit...</p>
+            </div>
+          ) : error ? (
+            <div className="p-4 rounded-2xl bg-rose-500/5 border border-rose-500/20 flex gap-3 text-xs text-rose-500 items-start">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <div>
+                <span className="font-extrabold block uppercase tracking-wider">Analysis Failed</span>
+                <span className="font-medium mt-1 block">{error}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Score and Gauge Card */}
+              <div className="flex items-center justify-center gap-8 bg-dark-depth-2/40 p-5 rounded-2xl border border-dark-border/40">
+                {/* SVG Half Donut */}
+                <div className="relative w-28 h-14 overflow-hidden select-none shrink-0">
+                  <svg className="w-28 h-28 -rotate-180" viewBox="0 0 80 80">
+                    <path
+                      d="M 12 40 A 28 28 0 0 1 68 40"
+                      fill="none"
+                      stroke="rgba(255, 255, 255, 0.05)"
+                      strokeWidth={strokeWidth}
+                      strokeLinecap="round"
+                    />
+                    <path
+                      d="M 12 40 A 28 28 0 0 1 68 40"
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={strokeWidth}
+                      strokeLinecap="round"
+                      strokeDasharray={circumference}
+                      strokeDashoffset={strokeDashoffset}
+                      className="transition-all duration-1000 ease-out"
+                      style={{ filter: `drop-shadow(0 0 6px ${color}50)` }}
+                    />
+                  </svg>
+                  <div className="absolute bottom-0 inset-x-0 text-center font-black text-white text-lg">
+                    {score}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[14px] font-black text-white tracking-wide">{stock.stock_symbol}</span>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-md border ${badgeClass} uppercase tracking-wider`}>
+                      {label}
+                    </span>
+                  </div>
+                  <div className={`text-md font-extrabold bg-gradient-to-r ${textGrad} bg-clip-text text-transparent mt-1 font-display`}>
+                    {score >= 71 ? 'Accumulate / Long-Term Buy' : score >= 41 ? 'Hold / Neutral Range' : 'Trim / Caution Recommended'}
+                  </div>
+                  <div className="text-[10px] text-gray-500 font-semibold mt-1">
+                    Current P&L: <span className={roi >= 0 ? 'text-emerald-500 font-extrabold' : 'text-rose-500 font-extrabold'}>{roi >= 0 ? '+' : ''}{roi.toFixed(2)}%</span> • Held {holdingDays} days
+                  </div>
+                </div>
+              </div>
+
+              {/* Detailed convictions */}
+              <div className="space-y-4 text-xs">
+                {/* News impact */}
+                <div className="space-y-1.5 pl-0.5">
+                  <h4 className="font-extrabold text-white text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                    News & Corporate Action Impact
+                  </h4>
+                  <p className="text-[11px] text-gray-400 leading-relaxed pl-3 font-medium">
+                    {newsImpact}
+                  </p>
+                </div>
+
+                {/* Performance audit */}
+                <div className="space-y-1.5 pl-0.5">
+                  <h4 className="font-extrabold text-white text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                    Past Trade Performance & Current P&L Audit
+                  </h4>
+                  <p className="text-[11px] text-gray-400 leading-relaxed pl-3 font-medium">
+                    {performanceAudit}
+                  </p>
+                </div>
+
+                {/* Technical outlook */}
+                <div className="space-y-1.5 pl-0.5">
+                  <h4 className="font-extrabold text-white text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                    Technical & Fundamental Outlook
+                  </h4>
+                  <p className="text-[11px] text-gray-400 leading-relaxed pl-3 font-medium">
+                    {technicalOutlook}
+                  </p>
+                </div>
+              </div>
+
+              {/* Coach Advice alert block */}
+              <div className="p-4 rounded-2xl bg-dark-depth-2/40 border border-dark-border/40 relative overflow-hidden">
+                <div className="absolute top-0 bottom-0 left-0 w-1" style={{ backgroundColor: color }} />
+                <span className="text-[9px] text-gray-500 uppercase font-black tracking-widest block mb-1">AI Coach's Actionable Rule</span>
+                <p className="text-[11px] text-gray-300 leading-relaxed font-semibold pl-0.5">
+                  "{coachAdvice}"
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-dark-border/40 bg-dark-depth-2/30 flex justify-end shrink-0">
+          <button
+            onClick={handleClose}
+            className="px-4 py-2 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-xs font-extrabold uppercase tracking-wider text-gray-300 hover:text-white transition-colors cursor-pointer select-none"
+          >
+            Close Audit
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

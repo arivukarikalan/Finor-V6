@@ -1,0 +1,503 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', 'Outfit', -apple-system, sans-serif;
+  --font-display: 'Outfit', -apple-system, sans-serif;
+
+  /* Custom Premium Theme Palette */
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+
+  --color-emerald-50: #ecfdf5;
+  --color-emerald-500: #10b981;
+  --color-emerald-600: #059669;
+
+  --color-rose-50: #fff1f2;
+  --color-rose-500: #f43f5e;
+  --color-rose-600: #e11d48;
+
+  --color-dark-depth-0: #080b11;
+  --color-dark-depth-1: #0f141f;
+  --color-dark-depth-2: #161e2e;
+  --color-dark-depth-3: #1c2638;
+  --color-dark-border: #1e293b;
+}
+
+/* Base Styles */
+html, body {
+  background-color: var(--color-dark-depth-0);
+  color: #f8fafc;
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+/* Glassmorphism utility */
+.glass-panel {
+  background: rgba(15, 20, 31, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-hover {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-panel-hover:hover {
+  background: rgba(15, 20, 31, 0.85);
+  border-color: rgba(99, 102, 241, 0.3);
+  box-shadow: 0 10px 30px -10px rgba(99, 102, 241, 0.15);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-dark-depth-0);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-dark-border);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-brand-600);
+}
+
+/* Premium Select Option Styles */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1em;
+  padding-right: 2rem !important; /* make space for custom arrow */
+  cursor: pointer;
+}
+select option {
+  background-color: #0f141f !important;
+  color: #f8fafc !important;
+}
+
+/* Premium Webkit Date Picker Icon */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+
+/* Disable browser default focus outlines in Recharts */
+.recharts-wrapper :focus {
+  outline: none;
+}
+
+/* Custom Bar Chart Hover Dimming Effect (Pure CSS - Prevents React Re-renders that break Tooltip values) */
+.recharts-bar:hover .pnl-bar-cell {
+  opacity: 0.45;
+}
+.recharts-bar .pnl-bar-cell:hover {
+  opacity: 1 !important;
+}
+
+/* Markdown Body styling */
+.markdown-body {
+  line-height: 1.6;
+}
+.markdown-body p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.markdown-body strong {
+  font-weight: 800;
+}
+.markdown-body.text-slate-800 strong {
+  color: #0f172a;
+}
+.markdown-body:not(.text-slate-800) strong {
+  color: #ffffff;
+}
+
+.markdown-body h3 {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.375rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.markdown-body.text-slate-800 h3 {
+  border-bottom-color: #e2e8f0;
+}
+
+.markdown-body h4 {
+  font-size: 11px;
+  font-weight: 700;
+  margin-top: 1rem;
+  margin-bottom: 0.375rem;
+  color: var(--color-brand-500);
+}
+.markdown-body.text-slate-800 h4 {
+  color: var(--color-brand-600);
+}
+
+.markdown-body ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-top: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.markdown-body li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.markdown-body .table-responsive-wrapper table {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.markdown-body th {
+  background-color: rgba(255, 255, 255, 0.02);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.08);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 8px 10px; /* Reduced for mobile */
+  color: #94a3b8;
+}
+@media (min-width: 768px) {
+  .markdown-body th {
+    padding: 10px 16px;
+  }
+}
+.markdown-body.text-slate-800 th {
+  background-color: #f8fafc;
+  border-bottom-color: #e2e8f0;
+  color: #64748b;
+}
+
+.markdown-body td {
+  padding: 8px 10px; /* Reduced for mobile */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+@media (min-width: 768px) {
+  .markdown-body td {
+    padding: 12px 16px;
+  }
+}
+.markdown-body.text-slate-800 td {
+  border-bottom-color: #f1f5f9;
+}
+
+.markdown-body tr:hover {
+  background-color: rgba(255, 255, 255, 0.01);
+}
+.markdown-body.text-slate-800 tr:hover {
+  background-color: #f8fafc;
+}
+
+/* Conditional cell colors */
+.markdown-body td.val-positive {
+  color: #10b981 !important;
+  font-weight: 700;
+}
+.markdown-body td.val-negative {
+  color: #f43f5e !important;
+  font-weight: 700;
+}
+
+/* Code block styling based on active light/dark state */
+.markdown-body .code-block-wrapper {
+  background-color: #0d0d0d;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.markdown-body.text-slate-800 .code-block-wrapper {
+  background-color: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.markdown-body .code-block-header {
+  background-color: #171717;
+  border-color: rgba(255, 255, 255, 0.05);
+  color: #94a3b8;
+}
+.markdown-body.text-slate-800 .code-block-header {
+  background-color: #f1f5f9;
+  border-color: #e2e8f0;
+  color: #64748b;
+}
+
+.markdown-body .code-block-copy {
+  color: #94a3b8;
+  background-color: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.markdown-body .code-block-copy:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+.markdown-body.text-slate-800 .code-block-copy {
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+.markdown-body.text-slate-800 .code-block-copy:hover {
+  color: #0f172a;
+  background-color: #e2e8f0;
+}
+
+.markdown-body pre {
+  color: #e2e8f0;
+}
+.markdown-body.text-slate-800 pre {
+  color: #334155;
+}
+
+/* Custom scrollbar hiding helper */
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none !important;
+}
+.scrollbar-hidden {
+  -ms-overflow-style: none !important;  /* IE and Edge */
+  scrollbar-width: none !important;  /* Firefox */
+}
+
+/* ==========================================================================
+   Premium Light Theme System
+   ========================================================================== */
+html.light {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.light body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.light {
+  /* Override Tailwind CSS Theme Colors */
+  --color-dark-depth-0: #f8fafc; /* Page canvas background */
+  --color-dark-depth-1: #ffffff; /* Card / container / sidebar background */
+  --color-dark-depth-2: #f1f5f9; /* Table headers / hover fills */
+  --color-dark-depth-3: #e2e8f0; /* Dark depth 3 override */
+  --color-dark-border: #cbd5e1;  /* Slate-300 borders */
+
+  /* Text colors */
+  .text-white {
+    color: #0f172a !important; /* Slate-900 */
+  }
+  .text-gray-100, .text-gray-200, .text-gray-300 {
+    color: #1e293b !important; /* Slate-800 */
+  }
+  .text-gray-400 {
+    color: #475569 !important; /* Slate-600 */
+  }
+  .text-gray-500 {
+    color: #64748b !important; /* Slate-500 */
+  }
+  .text-slate-300 {
+    color: #334155 !important;
+  }
+  .text-slate-400 {
+    color: #475569 !important;
+  }
+  .text-brand-100 {
+    color: #4f46e5 !important; /* Darker Indigo */
+  }
+  .text-brand-400 {
+    color: #4f46e5 !important;
+  }
+
+  /* Markdown body overrides for light mode */
+  .markdown-body strong {
+    color: #0f172a !important; /* Slate-900 */
+  }
+  .markdown-body h3, .markdown-body h4 {
+    border-bottom-color: #cbd5e1 !important;
+    color: #0f172a !important;
+  }
+  .markdown-body th {
+    background-color: #f1f5f9 !important;
+    border-bottom-color: #cbd5e1 !important;
+    color: #475569 !important;
+  }
+  .markdown-body td {
+    border-bottom-color: #e2e8f0 !important;
+  }
+  .markdown-body tr:hover {
+    background-color: #f8fafc !important;
+  }
+
+  /* Restore white text for colored solid background elements (buttons, badges) */
+  .bg-brand-500, 
+  .bg-brand-600, 
+  .bg-brand-700, 
+  .bg-emerald-500, 
+  .bg-emerald-600, 
+  .bg-rose-500, 
+  .bg-rose-600,
+  .bg-gradient-to-r,
+  [class*="bg-brand-"]:not([class*="/10"]):not([class*="/5"]),
+  [class*="bg-emerald-"]:not([class*="/10"]):not([class*="/5"]),
+  [class*="bg-rose-"]:not([class*="/10"]):not([class*="/5"]) {
+    &.text-white, & .text-white {
+      color: #ffffff !important;
+    }
+  }
+
+  /* Borders override */
+  .border-dark-border {
+    border-color: #cbd5e1 !important;
+  }
+  .border-dark-border\/40 {
+    border-color: #e2e8f0 !important;
+  }
+
+  /* Glassmorphism panel for Light Mode */
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.75) !important;
+    border-color: rgba(0, 0, 0, 0.06) !important;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05) !important;
+    color: #0f172a !important;
+  }
+  .glass-panel-hover:hover {
+    background: rgba(255, 255, 255, 0.92) !important;
+    border-color: rgba(99, 102, 241, 0.3) !important;
+  }
+
+  /* Background overrides */
+  .bg-dark-depth-0 {
+    background-color: #f8fafc !important;
+  }
+  .bg-dark-depth-1 {
+    background-color: #ffffff !important;
+  }
+  .bg-dark-depth-2 {
+    background-color: #f1f5f9 !important;
+  }
+  .bg-dark-depth-3 {
+    background-color: #e2e8f0 !important;
+  }
+  .hover\:bg-dark-depth-3:hover {
+    background-color: #cbd5e1 !important;
+  }
+  .bg-dark-depth-3\/95 {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+  }
+  .bg-dark-depth-2\/40 {
+    background-color: #f8fafc !important;
+  }
+  .bg-dark-depth-2\/50 {
+    background-color: #f1f5f9 !important;
+  }
+  .bg-dark-depth-1\/80 {
+    background-color: rgba(255, 255, 255, 0.8) !important;
+  }
+  .bg-dark-depth-1\/95 {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+  }
+  .bg-dark-depth-1\/90 {
+    background-color: rgba(255, 255, 255, 0.9) !important;
+  }
+  .bg-dark-depth-2\/95 {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+  }
+
+  /* Glow filters opacity scaling down for light mode aesthetics */
+  .blur-\[120px\] {
+    opacity: 0.12 !important;
+  }
+
+  /* Scrollbars */
+  ::-webkit-scrollbar-track {
+    background: #f8fafc;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+  }
+
+  /* Select dropdown values */
+  select option {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  /* Native Date inputs */
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    filter: none !important;
+  }
+
+  /* General Inputs & Textareas */
+  input:not([type="checkbox"]):not([type="radio"]), textarea {
+    color: #0f172a !important;
+    &::placeholder {
+      color: #94a3b8 !important;
+    }
+  }
+
+  /* Tab menus & chips */
+  .hover\:text-white:hover {
+    color: #000000 !important;
+  }
+  .hover\:bg-dark-depth-2\/50:hover {
+    background-color: #f1f5f9 !important;
+  }
+
+  /* AI chat content overrides */
+  .bg-\[\#2f2f2f\] {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    border-color: #cbd5e1 !important;
+  }
+  .bg-neutral-900 {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+  .bg-\[\#171717\] {
+    background-color: #ffffff !important;
+    border-right: 1px solid #cbd5e1 !important;
+  }
+  .bg-\[\#212121\] {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+}
+
+/* AI Insights Animation Keyframes & Classes */
+@keyframes slideUpFade {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up-fade {
+  animation: slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  opacity: 0;
+}
+
+

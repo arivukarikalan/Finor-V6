@@ -1,0 +1,16 @@
+{
+  "watch": ["src/", ".env"],
+  "ext": "js,mjs,json",
+  "ignore": [
+    "node_modules/**",
+    "**/node_modules/**",
+    "tmp_nse_downloads/**",
+    "**/tmp_nse_downloads/**",
+    "downloads/**",
+    "**/downloads/**",
+    "*.log",
+    "**/*.log",
+    "*.test.js",
+    "scratch/**"
+  ]
+}
