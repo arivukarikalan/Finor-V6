@@ -1,6 +1,12 @@
 import { supabase } from './supabase';
 
-const BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api';
+const rawBaseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api';
+// Defensive check: Remove trailing slash if any, and append '/api' if not present
+let sanitizedBaseUrl = rawBaseUrl.trim().replace(/\/$/, '');
+if (!sanitizedBaseUrl.endsWith('/api')) {
+  sanitizedBaseUrl += '/api';
+}
+const BASE_URL = sanitizedBaseUrl;
 
 /**
  * Custom fetch wrapper that automatically appends the user's Supabase JWT access token.
