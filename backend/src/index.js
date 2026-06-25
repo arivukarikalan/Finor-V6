@@ -9,6 +9,7 @@ import ordersRouter from './routes/orders.js';
 import newsRouter from './routes/news.js';
 import adminRouter from './routes/admin.js';
 import assistantRouter from './routes/assistant.js';
+import gmailRouter from './routes/gmail.js';
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.use('/api/orders', ordersRouter);
 app.use('/api/news', newsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/assistant', assistantRouter);
+app.use('/api/gmail', gmailRouter);
 
 // API Health Check route
 app.get('/api/health', (req, res) => {

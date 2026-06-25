@@ -13,7 +13,10 @@ import {
   Brain,
   Sun,
   Moon,
-  RefreshCw
+  RefreshCw,
+  Mail,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 import { useAuthStore } from '../context/authStore';
 import { supabase } from '../services/supabase';
@@ -36,6 +39,8 @@ export const Navigation: React.FC<NavigationProps> = ({
   const [isOnline, setIsOnline] = React.useState(navigator.onLine);
   const [lastTradeDate, setLastTradeDate] = React.useState<string | null>(null);
   const [isSyncing, setIsSyncing] = React.useState(false);
+  const [gmailConnected, setGmailConnected] = React.useState<boolean | null>(null);
+  const [syncToast, setSyncToast] = React.useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   const fetchLastTrade = async () => {
     try {
@@ -59,6 +64,19 @@ export const Navigation: React.FC<NavigationProps> = ({
   React.useEffect(() => {
     fetchLastTrade();
 
+    // Check if Gmail is connected
+    apiRequest('/gmail/status').then((res: any) => {
+      setGmailConnected(res.connected);
+    }).catch(() => setGmailConnected(false));
+
+    // Handle ?gmail_connected=true redirect from OAuth callback
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('gmail_connected') === 'true') {
+      setGmailConnected(true);
+      setSyncToast({ type: 'success', message: '✅ Gmail connected! Click sync to pull your trades.' });
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+
     const handleSyncComplete = () => {
       fetchLastTrade();
     };
@@ -71,22 +89,29 @@ export const Navigation: React.FC<NavigationProps> = ({
 
   const handleSync = async () => {
     if (isSyncing) return;
-    setIsSyncing(true);
-    try {
-      const config = await apiRequest('/orders/config');
-      
-      let res;
-      if (config.status === 'CONNECTED') {
-        res = await apiRequest('/trades/sync-kite', { method: 'POST' });
-      } else {
-        res = await apiRequest('/orders/sync-mock', { method: 'POST' });
-      }
 
+    // If Gmail not connected, open the OAuth flow
+    if (!gmailConnected) {
+      const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+      const base = backendUrl.endsWith('/api') ? backendUrl.replace('/api', '') : backendUrl;
+      window.open(`${base}/api/gmail/auth`, '_self');
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncToast(null);
+    try {
+      const res: any = await apiRequest('/gmail/sync', { method: 'POST' });
       await fetchLastTrade();
       window.dispatchEvent(new Event('portfolio-sync-complete'));
-      console.log('Sync result:', res.message);
+      setSyncToast({
+        type: res.newTrades > 0 ? 'success' : 'info',
+        message: res.message || 'Sync complete'
+      });
+      setTimeout(() => setSyncToast(null), 5000);
     } catch (err: any) {
-      console.error('Synchronization failed:', err.message);
+      setSyncToast({ type: 'error', message: err.message || 'Sync failed' });
+      setTimeout(() => setSyncToast(null), 5000);
     } finally {
       setIsSyncing(false);
     }
@@ -329,20 +354,33 @@ export const Navigation: React.FC<NavigationProps> = ({
 
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2 bg-dark-depth-2/40 border border-dark-border/40 pl-2.5 pr-1.5 py-1 rounded-xl select-none">
+              <Mail className={`w-3 h-3 ${gmailConnected ? 'text-emerald-500' : 'text-gray-500'}`} />
               <span className="text-[10px] text-gray-400 font-extrabold uppercase">
                 {lastTradeDate ? `Trades Up-to-date: ${formatLastTradeDate(lastTradeDate)}` : 'No Trades Synced'}
               </span>
               <button
                 onClick={handleSync}
                 disabled={isSyncing}
-                className={`p-1 rounded-lg hover:bg-dark-depth-2 text-gray-400 hover:text-white transition-all cursor-pointer ${
-                  isSyncing ? 'animate-spin text-brand-400' : ''
+                className={`p-1 rounded-lg hover:bg-dark-depth-2 transition-all cursor-pointer ${
+                  isSyncing ? 'animate-spin text-brand-400' : gmailConnected ? 'text-emerald-400 hover:text-white' : 'text-amber-400 hover:text-white'
                 }`}
-                title="Sync Trades from Broker"
+                title={gmailConnected ? 'Sync trades from Gmail' : 'Connect Gmail to enable auto-sync'}
               >
                 <RefreshCw className="w-3 h-3" />
               </button>
             </div>
+
+            {/* Sync Toast Notification */}
+            {syncToast && (
+              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold border animate-in slide-in-from-top-2 duration-200 ${
+                syncToast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                syncToast.type === 'error'   ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' :
+                'bg-brand-500/10 border-brand-500/20 text-brand-400'
+              }`}>
+                {syncToast.type === 'success' ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+                {syncToast.message}
+              </div>
+            )}
 
             {/* Status Indicator */}
             {isOnline ? (
