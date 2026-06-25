@@ -12,7 +12,8 @@ import {
   X,
   FileSpreadsheet,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  PlusCircle
 } from 'lucide-react';
 
 interface Holding {
@@ -66,6 +67,16 @@ export const Holdings = () => {
   const [importResult, setImportResult] = useState<{ message: string; count: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Quick Add Trade Modal State
+  const [isAddTradeOpen, setIsAddTradeOpen] = useState(false);
+  const [addTradeSymbol, setAddTradeSymbol] = useState('');
+  const [addTradeType, setAddTradeType] = useState<'BUY' | 'SELL'>('BUY');
+  const [addTradeQty, setAddTradeQty] = useState('');
+  const [addTradePrice, setAddTradePrice] = useState('');
+  const [addTradeDate, setAddTradeDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [addTradeLoading, setAddTradeLoading] = useState(false);
+  const [addTradeResult, setAddTradeResult] = useState<{ success: boolean; message: string } | null>(null);
+
   const fetchCoreData = async () => {
     setLoading(true);
     setError(null);
@@ -106,6 +117,51 @@ export const Holdings = () => {
       window.removeEventListener('portfolio-sync-complete', handleSyncComplete);
     };
   }, []);
+
+  const handleAddTrade = async () => {
+    if (!addTradeSymbol.trim() || !addTradeQty || !addTradePrice) {
+      setAddTradeResult({ success: false, message: 'Please fill in all fields.' });
+      return;
+    }
+    setAddTradeLoading(true);
+    setAddTradeResult(null);
+    try {
+      // Build a mini CSV and upload it via the existing /trades/upload endpoint
+      const tradeDateFormatted = addTradeDate || new Date().toISOString().split('T')[0];
+      const [year, month, day] = tradeDateFormatted.split('-');
+      const csvContent = `symbol,trade_date,trade_type,quantity,price\n${addTradeSymbol.trim().toUpperCase()},${month}-${day}-${year},${addTradeType},${addTradeQty},${addTradePrice}`;
+
+      const { data: { session } } = await (await import('../services/supabase')).supabase.auth.getSession();
+      const token = session?.access_token;
+      const baseUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+      const url = baseUrl.endsWith('/api') ? `${baseUrl}/trades/upload` : `${baseUrl}/api/trades/upload`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/csv',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: csvContent
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to add trade');
+
+      setAddTradeResult({ success: true, message: `✅ ${result.message}` });
+      // Reset form
+      setAddTradeSymbol('');
+      setAddTradeQty('');
+      setAddTradePrice('');
+      setAddTradeDate(new Date().toISOString().split('T')[0]);
+      // Refresh holdings and broadcast sync event
+      await fetchCoreData();
+      window.dispatchEvent(new Event('portfolio-sync-complete'));
+    } catch (err: any) {
+      setAddTradeResult({ success: false, message: err.message });
+    } finally {
+      setAddTradeLoading(false);
+    }
+  };
 
   const handleSyncPrices = async () => {
     setSyncing(true);
@@ -285,6 +341,14 @@ export const Holdings = () => {
             Refresh Prices
           </button>
           
+          <button
+            onClick={() => { setIsAddTradeOpen(true); setAddTradeResult(null); }}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            Add Trade
+          </button>
+
           <button
             onClick={() => setIsImportOpen(true)}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white shadow-lg shadow-brand-700/10 transition-all cursor-pointer"
@@ -877,6 +941,79 @@ export const Holdings = () => {
         />
       )}
 
+      {/* ─── Quick Add Trade Modal ─── */}
+      {isAddTradeOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setIsAddTradeOpen(false); }}
+        >
+          <div
+            className="relative w-full max-w-md rounded-3xl border border-dark-border bg-dark-depth-1 shadow-2xl overflow-hidden"
+            style={{ animation: 'scaleIn 0.22s cubic-bezier(0.34,1.56,0.64,1) both' }}
+          >
+            <div className="flex items-center justify-between px-6 py-5 border-b border-dark-border">
+              <div>
+                <h2 className="text-base font-extrabold text-white tracking-tight">Add Trade</h2>
+                <p className="text-[11px] text-gray-400 mt-0.5">Log a single buy or sell transaction instantly</p>
+              </div>
+              <button onClick={() => setIsAddTradeOpen(false)} className="p-2 rounded-xl hover:bg-dark-depth-2 text-gray-400 hover:text-white transition-colors cursor-pointer">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-6 py-5 space-y-4">
+              <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-dark-depth-2/60 border border-dark-border">
+                {(['BUY', 'SELL'] as const).map(t => (
+                  <button
+                    key={t}
+                    onClick={() => setAddTradeType(t)}
+                    className={`py-2 rounded-lg text-xs font-extrabold uppercase tracking-wider transition-all cursor-pointer ${
+                      addTradeType === t
+                        ? t === 'BUY' ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/30' : 'bg-rose-600 text-white shadow-lg shadow-rose-900/30'
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >{t}</button>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Stock Symbol (NSE)</label>
+                <input type="text" value={addTradeSymbol} onChange={e => setAddTradeSymbol(e.target.value.toUpperCase())} placeholder="e.g. HAL, NATIONALUM, DABUR" className="w-full px-4 py-3 rounded-xl bg-dark-depth-2/60 border border-dark-border text-sm font-semibold text-white placeholder:text-gray-600 focus:outline-none focus:border-brand-500 transition-colors" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Quantity</label>
+                  <input type="number" min="1" value={addTradeQty} onChange={e => setAddTradeQty(e.target.value)} placeholder="e.g. 10" className="w-full px-4 py-3 rounded-xl bg-dark-depth-2/60 border border-dark-border text-sm font-semibold text-white placeholder:text-gray-600 focus:outline-none focus:border-brand-500 transition-colors" />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Price (₹)</label>
+                  <input type="number" min="0.01" step="0.01" value={addTradePrice} onChange={e => setAddTradePrice(e.target.value)} placeholder="e.g. 4250.50" className="w-full px-4 py-3 rounded-xl bg-dark-depth-2/60 border border-dark-border text-sm font-semibold text-white placeholder:text-gray-600 focus:outline-none focus:border-brand-500 transition-colors" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Trade Date</label>
+                <input type="date" value={addTradeDate} onChange={e => setAddTradeDate(e.target.value)} className="w-full px-4 py-3 rounded-xl bg-dark-depth-2/60 border border-dark-border text-sm font-semibold text-white focus:outline-none focus:border-brand-500 transition-colors" />
+              </div>
+              {addTradeSymbol && addTradeQty && addTradePrice && (
+                <div className={`p-3 rounded-xl text-xs font-semibold border ${addTradeType === 'BUY' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+                  {addTradeType === 'BUY' ? '📈 Buying' : '📉 Selling'} <strong>{addTradeQty}</strong> shares of <strong>{addTradeSymbol}</strong> at <strong>₹{Number(addTradePrice).toLocaleString('en-IN')}</strong> — Total: <strong>₹{(Number(addTradeQty) * Number(addTradePrice)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>
+                </div>
+              )}
+              {addTradeResult && (
+                <div className={`p-3 rounded-xl text-xs font-semibold border ${addTradeResult.success ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'}`}>
+                  {addTradeResult.message}
+                </div>
+              )}
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button onClick={() => setIsAddTradeOpen(false)} className="flex-1 py-3 rounded-xl border border-dark-border text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-white hover:bg-dark-depth-2 transition-all cursor-pointer">Cancel</button>
+              <button onClick={handleAddTrade} disabled={addTradeLoading || !addTradeSymbol || !addTradeQty || !addTradePrice} className={`flex-1 py-3 rounded-xl text-xs font-extrabold uppercase tracking-wider text-white transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${addTradeType === 'BUY' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-rose-600 hover:bg-rose-500'}`}>
+                {addTradeLoading ? 'Processing...' : `Confirm ${addTradeType}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
@@ -1117,3 +1254,4 @@ const AiConvictionModal = ({
     </div>
   );
 };
+
