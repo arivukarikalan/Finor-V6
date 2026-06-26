@@ -5,7 +5,7 @@ import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const require = createRequire(import.meta.url);
-const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+const pdfjsLib = require('pdfjs-dist/build/pdf.js');
 
 const router = express.Router();
 
