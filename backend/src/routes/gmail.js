@@ -1,8 +1,11 @@
 import express from 'express';
 import { google } from 'googleapis';
-import pdf from 'pdf-parse/lib/pdf-parse.js';
+import { createRequire } from 'module';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
+
+const require = createRequire(import.meta.url);
+const pdf = require('pdf-parse');
 
 const router = express.Router();
 
