@@ -5,9 +5,12 @@ import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const require = createRequire(import.meta.url);
-const pdf = require('pdf-parse');
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 
 const router = express.Router();
+
+// Zerodha PDF password = investor's PAN number (stored in env var)
+const PDF_PASSWORD = process.env.ZERODHA_PDF_PASSWORD || '';
 
 // ─── OAuth2 Client Setup ────────────────────────────────────────────────────
 const getOAuth2Client = () => {
@@ -20,20 +23,35 @@ const getOAuth2Client = () => {
 
 const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 
-// ─── Helpers: Store/Read Refresh Token in Supabase app_settings ─────────────
+// ─── Helpers: Store/Read Refresh Token ───────────────────────────────────────
 const saveRefreshToken = async (token) => {
-  await supabase.from('app_settings').upsert(
-    { key: 'gmail_refresh_token', value: token, updated_at: new Date().toISOString() },
-    { onConflict: 'key' }
-  );
+  const { data: existing } = await supabase
+    .from('app_settings')
+    .select('key')
+    .eq('key', 'gmail_refresh_token')
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await supabase
+      .from('app_settings')
+      .update({ value: token })
+      .eq('key', 'gmail_refresh_token');
+    if (error) console.error('Error updating refresh token:', error.message);
+  } else {
+    const { error } = await supabase
+      .from('app_settings')
+      .insert({ key: 'gmail_refresh_token', value: token });
+    if (error) console.error('Error inserting refresh token:', error.message);
+  }
 };
 
 const getRefreshToken = async () => {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('app_settings')
     .select('value')
     .eq('key', 'gmail_refresh_token')
-    .single();
+    .maybeSingle();
+  if (error) console.error('Error reading refresh token:', error.message);
   return data?.value || null;
 };
 
@@ -45,8 +63,31 @@ const getAuthorizedClient = async () => {
   return auth;
 };
 
+// ─── Extract Text from Password-Protected PDF (pdfjs-dist) ───────────────────
+const extractPdfText = async (pdfBuffer, password) => {
+  try {
+    const uint8Array = new Uint8Array(pdfBuffer);
+    const loadingTaskOptions = { data: uint8Array };
+    if (password) loadingTaskOptions.password = password;
+
+    const loadingTask = pdfjsLib.getDocument(loadingTaskOptions);
+    const pdfDoc = await loadingTask.promise;
+
+    let fullText = '';
+    for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const pageText = textContent.items.map(item => item.str).join(' ');
+      fullText += pageText + '\n';
+    }
+    return fullText;
+  } catch (err) {
+    console.error('PDF extraction error:', err.message);
+    return null;
+  }
+};
+
 // ─── GET /api/gmail/status ───────────────────────────────────────────────────
-// Check if Gmail is connected
 router.get('/status', requireAuth, async (req, res) => {
   try {
     const token = await getRefreshToken();
@@ -58,107 +99,97 @@ router.get('/status', requireAuth, async (req, res) => {
     await gmail.users.getProfile({ userId: 'me' });
 
     res.json({ connected: true, email: process.env.GMAIL_USER });
-  } catch {
+  } catch (err) {
+    console.error('Gmail status error:', err.message);
     res.json({ connected: false });
   }
 });
 
 // ─── GET /api/gmail/auth ─────────────────────────────────────────────────────
-// Start OAuth flow — redirect to Google
 router.get('/auth', (req, res) => {
   const auth = getOAuth2Client();
   const url = auth.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent',
+    prompt: 'consent',   // Always request refresh token
     scope: SCOPES
   });
   res.redirect(url);
 });
 
 // ─── GET /api/gmail/callback ─────────────────────────────────────────────────
-// Google redirects here after user grants permission
 router.get('/callback', async (req, res) => {
-  const { code } = req.query;
-  if (!code) return res.status(400).send('No auth code received');
+  const { code, error: oauthError } = req.query;
+  const frontendUrl = process.env.FRONTEND_URL || 'https://finor-v6.vercel.app';
+
+  if (oauthError) {
+    return res.redirect(`${frontendUrl}?gmail_error=${oauthError}`);
+  }
+  if (!code) {
+    return res.redirect(`${frontendUrl}?gmail_error=no_code`);
+  }
 
   try {
     const auth = getOAuth2Client();
     const { tokens } = await auth.getToken(code);
-    if (!tokens.refresh_token) {
-      return res.status(400).send('No refresh token received. Please revoke access and try again.');
+
+    if (tokens.refresh_token) {
+      // Got a new refresh token — save it
+      await saveRefreshToken(tokens.refresh_token);
+      console.log('Gmail refresh token saved successfully');
+    } else {
+      // No new refresh token — check if we already have one saved
+      const existingToken = await getRefreshToken();
+      if (!existingToken) {
+        // No token at all — user needs to revoke and re-authorize
+        console.error('No refresh token received and none stored');
+        return res.redirect(`${frontendUrl}?gmail_error=no_refresh_token`);
+      }
+      console.log('Using existing refresh token (no new one issued)');
     }
 
-    await saveRefreshToken(tokens.refresh_token);
-
-    // Redirect back to the frontend with success flag
-    const frontendUrl = process.env.FRONTEND_URL || 'https://finor-v6.vercel.app';
     res.redirect(`${frontendUrl}?gmail_connected=true`);
   } catch (err) {
-    console.error('Gmail OAuth callback error:', err);
-    res.status(500).send('Failed to complete Gmail authentication: ' + err.message);
+    console.error('Gmail OAuth callback error:', err.message);
+    res.redirect(`${frontendUrl}?gmail_error=${encodeURIComponent(err.message)}`);
   }
 });
 
 // ─── PDF Parser: Extract Trades from Zerodha Contract Note ───────────────────
 const parseZerodhaContractNote = (pdfText, tradeDateHint) => {
   const trades = [];
-  const lines = pdfText.split('\n').map(l => l.trim()).filter(Boolean);
-
-  // Zerodha contract note structure:
-  // Lines often contain: SYMBOL B/S QTY PRICE ...
-  // We look for recognizable patterns
-
-  // Pattern 1: Lines matching "NSE EQ SYMBOL" or just "SYMBOL" followed by B/S/Buy/Sell
-  // Pattern 2: Table rows with stock info
-
-  // Extract date from PDF text if not provided
   let tradeDate = tradeDateHint;
+
   if (!tradeDate) {
     const dateMatch = pdfText.match(/(\d{2}[\/\-]\d{2}[\/\-]\d{4})/);
     if (dateMatch) {
       const parts = dateMatch[1].split(/[\/\-]/);
-      if (parts[2].length === 4) {
+      if (parts[2]?.length === 4) {
         tradeDate = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
       }
     }
   }
 
-  // Look for trade rows — Zerodha contract note PDF text pattern:
-  // After text extraction, rows often appear as:
-  // "[Trade#] [Order#] [Time] [Symbol] [B/S] [Qty] [Price] ..."
-  // We use a broad regex to capture symbol + B/S + qty + price
-
-  // Regex: word(s) as symbol, B or S, number as qty, decimal as price
+  // Zerodha contract note trade row pattern
+  // Matches: SYMBOL  B/S  QTY  PRICE
+  const rawText = pdfText.replace(/\n/g, ' ');
   const tradeRowRegex = /([A-Z][A-Z0-9\s\-&]{1,30}?)\s+(B|S|BUY|SELL)\s+(\d+)\s+([\d,]+\.?\d*)/gi;
 
   let match;
-  const rawText = pdfText.replace(/\n/g, ' ');
-
   while ((match = tradeRowRegex.exec(rawText)) !== null) {
     const symbol = match[1].trim().toUpperCase()
-      .replace(/^NSE\s+EQ\s+/i, '')   // Remove "NSE EQ" prefix
-      .replace(/^BSE\s+EQ\s+/i, '')   // Remove "BSE EQ" prefix  
-      .replace(/\s+/g, '_')            // Replace spaces with underscore
-      .substring(0, 30);               // Max 30 chars
+      .replace(/^NSE\s+EQ\s+/i, '')
+      .replace(/^BSE\s+EQ\s+/i, '')
+      .replace(/\s+/g, '_')
+      .substring(0, 30);
 
     const tradeType = (match[2].toUpperCase() === 'B' || match[2].toUpperCase() === 'BUY') ? 'BUY' : 'SELL';
     const quantity = parseInt(match[3].replace(/,/g, ''));
     const price = parseFloat(match[4].replace(/,/g, ''));
 
-    // Filter out obvious non-trade rows (headers, totals, etc.)
-    if (
-      quantity > 0 &&
-      price > 0.5 &&
-      price < 1000000 &&
-      symbol.length >= 2 &&
-      !symbol.includes('TRADE') &&
-      !symbol.includes('ORDER') &&
-      !symbol.includes('GROSS') &&
-      !symbol.includes('NET') &&
-      !symbol.includes('TOTAL') &&
-      !symbol.includes('TAX') &&
-      !symbol.includes('BROKERAGE')
-    ) {
+    const excluded = ['TRADE','ORDER','GROSS','NET','TOTAL','TAX','BROKERAGE','AMOUNT','RATE','QUANTITY','PRICE','EQUITY','DEBIT','CREDIT'];
+    const isExcluded = excluded.some(ex => symbol.includes(ex));
+
+    if (quantity > 0 && price > 0.5 && price < 1000000 && symbol.length >= 2 && !isExcluded) {
       trades.push({
         stock_symbol: symbol,
         trade_type: tradeType,
@@ -169,7 +200,7 @@ const parseZerodhaContractNote = (pdfText, tradeDateHint) => {
     }
   }
 
-  // Deduplicate (same symbol + type + qty + price)
+  // Deduplicate
   const seen = new Set();
   return trades.filter(t => {
     const key = `${t.stock_symbol}-${t.trade_type}-${t.quantity}-${t.price}`;
@@ -181,34 +212,25 @@ const parseZerodhaContractNote = (pdfText, tradeDateHint) => {
 
 // ─── Extract trade date from email subject ────────────────────────────────────
 const extractDateFromSubject = (subject) => {
-  // "Contract Note for UPC038 – June 25, 2026"
-  // "Contract Note - 25-06-2026"
   const monthNames = {
     january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',
     july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'
   };
 
-  // Format: "June 25, 2026"
   const longMatch = subject.match(/(\w+)\s+(\d{1,2}),?\s+(\d{4})/i);
   if (longMatch) {
     const month = monthNames[longMatch[1].toLowerCase()];
-    if (month) {
-      return `${longMatch[3]}-${month}-${longMatch[2].padStart(2,'0')}`;
-    }
+    if (month) return `${longMatch[3]}-${month}-${longMatch[2].padStart(2,'0')}`;
   }
 
-  // Format: "25-06-2026" or "25/06/2026"
   const shortMatch = subject.match(/(\d{2})[\/\-](\d{2})[\/\-](\d{4})/);
-  if (shortMatch) {
-    return `${shortMatch[3]}-${shortMatch[2]}-${shortMatch[1]}`;
-  }
+  if (shortMatch) return `${shortMatch[3]}-${shortMatch[2]}-${shortMatch[1]}`;
 
   return null;
 };
 
-// ─── Insert trades via the same recalculation logic as CSV upload ─────────────
+// ─── Recalculate Holdings ─────────────────────────────────────────────────────
 const recalculateHoldingsForUser = async (userId) => {
-  // Fetch all trades sorted by date
   const { data: allTrades } = await supabase
     .from('trades')
     .select('*')
@@ -217,7 +239,6 @@ const recalculateHoldingsForUser = async (userId) => {
 
   if (!allTrades || allTrades.length === 0) return;
 
-  // Group by symbol
   const symbolMap = {};
   for (const trade of allTrades) {
     const sym = trade.stock_symbol;
@@ -225,14 +246,11 @@ const recalculateHoldingsForUser = async (userId) => {
     symbolMap[sym].push(trade);
   }
 
-  // Delete existing holdings for user
   await supabase.from('holdings').delete().eq('user_id', userId);
 
   const holdingsToInsert = [];
   for (const [symbol, trades] of Object.entries(symbolMap)) {
-    let qty = 0;
-    let totalCost = 0;
-
+    let qty = 0, totalCost = 0;
     for (const t of trades) {
       if (t.trade_type === 'BUY') {
         totalCost += t.quantity * t.price;
@@ -243,7 +261,6 @@ const recalculateHoldingsForUser = async (userId) => {
         qty = Math.max(0, qty - t.quantity);
       }
     }
-
     if (qty > 0) {
       holdingsToInsert.push({
         user_id: userId,
@@ -262,7 +279,6 @@ const recalculateHoldingsForUser = async (userId) => {
 };
 
 // ─── POST /api/gmail/sync ─────────────────────────────────────────────────────
-// Fetch unread Zerodha contract notes, parse, insert trades
 router.post('/sync', requireAuth, async (req, res) => {
   try {
     const auth = await getAuthorizedClient();
@@ -276,29 +292,32 @@ router.post('/sync', requireAuth, async (req, res) => {
     const gmail = google.gmail({ version: 'v1', auth });
     const userId = req.user.id;
 
-    // Search broadly — catches both direct Zerodha emails AND forwarded contract notes
+    // Broad search — catches both direct Zerodha emails AND forwarded ones
     const ninetyDaysAgo = Math.floor((Date.now() - 90 * 24 * 60 * 60 * 1000) / 1000);
-    const searchQuery = `subject:"contract note" after:${ninetyDaysAgo}`;
+    let messages = [];
 
-    const listRes = await gmail.users.messages.list({
-      userId: 'me',
-      q: searchQuery,
-      maxResults: 50
-    });
+    const searches = [
+      `subject:"contract note" after:${ninetyDaysAgo}`,
+      `subject:"equity contract" after:${ninetyDaysAgo}`,
+      `subject:UPC after:${ninetyDaysAgo}`,
+    ];
 
-    const messages = listRes.data.messages || [];
-    if (messages.length === 0) {
-      // Try even broader search as fallback
-      const fallbackRes = await gmail.users.messages.list({
-        userId: 'me',
-        q: `subject:contract after:${ninetyDaysAgo}`,
-        maxResults: 50
-      });
-      const fallbackMsgs = fallbackRes.data.messages || [];
-      if (fallbackMsgs.length === 0) {
-        return res.json({ message: 'No contract note emails found in the last 90 days. Make sure emails are forwarded to finorvtrades@gmail.com.', newTrades: 0, emailsFound: 0 });
+    for (const q of searches) {
+      const listRes = await gmail.users.messages.list({ userId: 'me', q, maxResults: 30 });
+      const msgs = listRes.data.messages || [];
+      for (const m of msgs) {
+        if (!messages.find(existing => existing.id === m.id)) {
+          messages.push(m);
+        }
       }
-      messages.push(...fallbackMsgs);
+    }
+
+    if (messages.length === 0) {
+      return res.json({
+        message: 'No contract note emails found in the last 90 days. Check if emails are forwarded to finorvtrades@gmail.com.',
+        newTrades: 0,
+        emailsFound: 0
+      });
     }
 
     let totalNewTrades = 0;
@@ -306,94 +325,81 @@ router.post('/sync', requireAuth, async (req, res) => {
 
     for (const msg of messages) {
       try {
-        const fullMsg = await gmail.users.messages.get({
-          userId: 'me',
-          id: msg.id,
-          format: 'full'
-        });
-
+        const fullMsg = await gmail.users.messages.get({ userId: 'me', id: msg.id, format: 'full' });
         const headers = fullMsg.data.payload.headers || [];
         const subject = headers.find(h => h.name === 'Subject')?.value || '';
         const dateHeader = headers.find(h => h.name === 'Date')?.value || '';
 
-        // Skip if not a contract note
-        if (!subject.toLowerCase().includes('contract note')) continue;
+        // Skip non-contract-note emails
+        const subjectLower = subject.toLowerCase();
+        if (!subjectLower.includes('contract note') && !subjectLower.includes('upc0')) continue;
 
-        // Check if we've already processed this email
+        // Skip already processed
         const { data: existingLog } = await supabase
-          .from('app_settings')
-          .select('value')
-          .eq('key', `gmail_processed_${msg.id}`)
-          .single();
+          .from('app_settings').select('value').eq('key', `gmail_processed_${msg.id}`).maybeSingle();
+        if (existingLog) continue;
 
-        if (existingLog) continue; // Already processed
+        const tradeDate = extractDateFromSubject(subject) || new Date(dateHeader).toISOString().split('T')[0];
 
-        // Extract trade date from subject
-        const tradeDate = extractDateFromSubject(subject) ||
-          new Date(dateHeader).toISOString().split('T')[0];
-
-        // Find PDF attachment
-        const parts = fullMsg.data.payload.parts || [];
-        let parsedTrades = [];
-
-        // Process all parts recursively to find PDF
+        // Find PDF attachments recursively
         const findAttachments = (parts) => {
           const attachments = [];
-          for (const part of parts) {
+          for (const part of (parts || [])) {
             if (part.parts) attachments.push(...findAttachments(part.parts));
-            if (part.filename && (
-              part.mimeType === 'application/pdf' ||
-              part.filename.toLowerCase().endsWith('.pdf')
-            )) {
+            if (part.filename && (part.mimeType === 'application/pdf' || part.filename.toLowerCase().endsWith('.pdf'))) {
               attachments.push(part);
             }
           }
           return attachments;
         };
 
-        const pdfParts = findAttachments(parts);
+        const pdfParts = findAttachments(fullMsg.data.payload.parts || []);
+        let parsedTrades = [];
 
         for (const pdfPart of pdfParts) {
           try {
             let pdfData;
-
             if (pdfPart.body?.attachmentId) {
               const attachment = await gmail.users.messages.attachments.get({
-                userId: 'me',
-                messageId: msg.id,
-                id: pdfPart.body.attachmentId
+                userId: 'me', messageId: msg.id, id: pdfPart.body.attachmentId
               });
-              const base64Data = attachment.data.data.replace(/-/g, '+').replace(/_/g, '/');
-              pdfData = Buffer.from(base64Data, 'base64');
+              const b64 = attachment.data.data.replace(/-/g, '+').replace(/_/g, '/');
+              pdfData = Buffer.from(b64, 'base64');
             } else if (pdfPart.body?.data) {
-              const base64Data = pdfPart.body.data.replace(/-/g, '+').replace(/_/g, '/');
-              pdfData = Buffer.from(base64Data, 'base64');
+              const b64 = pdfPart.body.data.replace(/-/g, '+').replace(/_/g, '/');
+              pdfData = Buffer.from(b64, 'base64');
             }
 
             if (pdfData) {
-              const pdfResult = await pdf(pdfData);
-              const trades = parseZerodhaContractNote(pdfResult.text, tradeDate);
-              parsedTrades.push(...trades);
+              // Try with password first (Zerodha uses PAN as password)
+              let pdfText = await extractPdfText(pdfData, PDF_PASSWORD);
+              // If failed or empty, try without password
+              if (!pdfText || pdfText.trim().length < 50) {
+                pdfText = await extractPdfText(pdfData, '');
+              }
+              if (pdfText) {
+                const trades = parseZerodhaContractNote(pdfText, tradeDate);
+                parsedTrades.push(...trades);
+                console.log(`Parsed ${trades.length} trades from PDF (${pdfPart.filename}), date: ${tradeDate}`);
+              }
             }
           } catch (pdfErr) {
-            console.error('PDF parse error for part:', pdfErr.message);
+            console.error('PDF processing error:', pdfErr.message);
           }
         }
 
-        // Insert new trades into database
+        // Insert new trades
         let emailNewTrades = 0;
         for (const trade of parsedTrades) {
-          // Check if this trade already exists (same symbol + type + qty + price + date)
           const { data: existing } = await supabase
-            .from('trades')
-            .select('id')
+            .from('trades').select('id')
             .eq('user_id', userId)
             .eq('stock_symbol', trade.stock_symbol)
             .eq('trade_type', trade.trade_type)
             .eq('quantity', trade.quantity)
             .eq('price', trade.price)
             .eq('trade_date', trade.trade_date)
-            .single();
+            .maybeSingle();
 
           if (!existing) {
             await supabase.from('trades').insert({
@@ -411,9 +417,9 @@ router.post('/sync', requireAuth, async (req, res) => {
           }
         }
 
-        // Mark this email as processed
+        // Mark email as processed
         await supabase.from('app_settings').upsert(
-          { key: `gmail_processed_${msg.id}`, value: tradeDate, updated_at: new Date().toISOString() },
+          { key: `gmail_processed_${msg.id}`, value: tradeDate },
           { onConflict: 'key' }
         );
 
@@ -425,13 +431,11 @@ router.post('/sync', requireAuth, async (req, res) => {
       }
     }
 
-    // Recalculate holdings if any new trades were added
+    // Recalculate holdings if trades were added
     if (totalNewTrades > 0) {
       await recalculateHoldingsForUser(userId);
-
-      // Update last sync timestamp
       await supabase.from('app_settings').upsert(
-        { key: 'gmail_last_sync', value: new Date().toISOString(), updated_at: new Date().toISOString() },
+        { key: 'gmail_last_sync', value: new Date().toISOString() },
         { onConflict: 'key' }
       );
     }
@@ -439,7 +443,7 @@ router.post('/sync', requireAuth, async (req, res) => {
     res.json({
       message: totalNewTrades > 0
         ? `✅ Synced ${totalNewTrades} new trade(s) from ${processedEmails.length} email(s)`
-        : `📭 All ${processedEmails.length} email(s) already synced — no new trades found.`,
+        : `📭 ${processedEmails.length} email(s) found — all already synced or no trades parsed.`,
       newTrades: totalNewTrades,
       emailsFound: messages.length,
       emailsProcessed: processedEmails.length,
@@ -454,11 +458,7 @@ router.post('/sync', requireAuth, async (req, res) => {
 
 // ─── GET /api/gmail/last-sync ─────────────────────────────────────────────────
 router.get('/last-sync', requireAuth, async (req, res) => {
-  const { data } = await supabase
-    .from('app_settings')
-    .select('value')
-    .eq('key', 'gmail_last_sync')
-    .single();
+  const { data } = await supabase.from('app_settings').select('value').eq('key', 'gmail_last_sync').maybeSingle();
   res.json({ lastSync: data?.value || null });
 });
 
