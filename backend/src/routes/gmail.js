@@ -27,21 +27,21 @@ const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 const saveRefreshToken = async (token) => {
   try {
     const { data: existing } = await supabaseAdmin
-      .from('app_settings')
+      .from('system_settings')
       .select('key')
       .eq('key', 'gmail_refresh_token')
       .maybeSingle();
 
     if (existing) {
       const { error } = await supabaseAdmin
-        .from('app_settings')
+        .from('system_settings')
         .update({ value: token })
         .eq('key', 'gmail_refresh_token');
       if (error) console.error('Error updating refresh token:', error.message);
       else console.log('Refresh token UPDATED in DB');
     } else {
       const { error } = await supabaseAdmin
-        .from('app_settings')
+        .from('system_settings')
         .insert({ key: 'gmail_refresh_token', value: token });
       if (error) console.error('Error inserting refresh token:', error.message);
       else console.log('Refresh token INSERTED in DB');
@@ -53,7 +53,7 @@ const saveRefreshToken = async (token) => {
 
 const getRefreshToken = async () => {
   const { data, error } = await supabaseAdmin
-    .from('app_settings')
+    .from('system_settings')
     .select('value')
     .eq('key', 'gmail_refresh_token')
     .maybeSingle();
@@ -342,7 +342,7 @@ router.post('/sync', requireAuth, async (req, res) => {
 
         // Skip already processed
         const { data: existingLog } = await supabase
-          .from('app_settings').select('value').eq('key', `gmail_processed_${msg.id}`).maybeSingle();
+          .from('system_settings').select('value').eq('key', `gmail_processed_${msg.id}`).maybeSingle();
         if (existingLog) continue;
 
         const tradeDate = extractDateFromSubject(subject) || new Date(dateHeader).toISOString().split('T')[0];
@@ -424,7 +424,7 @@ router.post('/sync', requireAuth, async (req, res) => {
         }
 
         // Mark email as processed
-        await supabaseAdmin.from('app_settings').upsert(
+        await supabaseAdmin.from('system_settings').upsert(
           { key: `gmail_processed_${msg.id}`, value: tradeDate },
           { onConflict: 'key' }
         );
@@ -440,7 +440,7 @@ router.post('/sync', requireAuth, async (req, res) => {
     // Recalculate holdings if trades were added
     if (totalNewTrades > 0) {
       await recalculateHoldingsForUser(userId);
-      await supabaseAdmin.from('app_settings').upsert(
+      await supabaseAdmin.from('system_settings').upsert(
         { key: 'gmail_last_sync', value: new Date().toISOString() },
         { onConflict: 'key' }
       );
@@ -464,8 +464,9 @@ router.post('/sync', requireAuth, async (req, res) => {
 
 // ─── GET /api/gmail/last-sync ─────────────────────────────────────────────────
 router.get('/last-sync', requireAuth, async (req, res) => {
-  const { data } = await supabaseAdmin.from('app_settings').select('value').eq('key', 'gmail_last_sync').maybeSingle();
+  const { data } = await supabaseAdmin.from('system_settings').select('value').eq('key', 'gmail_last_sync').maybeSingle();
   res.json({ lastSync: data?.value || null });
 });
 
 export default router;
+
