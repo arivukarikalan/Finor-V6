@@ -276,9 +276,9 @@ router.post('/sync', requireAuth, async (req, res) => {
     const gmail = google.gmail({ version: 'v1', auth });
     const userId = req.user.id;
 
-    // Search for Zerodha contract note emails (last 90 days)
+    // Search broadly — catches both direct Zerodha emails AND forwarded contract notes
     const ninetyDaysAgo = Math.floor((Date.now() - 90 * 24 * 60 * 60 * 1000) / 1000);
-    const searchQuery = `from:(no-reply@zerodha.com OR reports@kite.zerodha.com OR no-reply@contract-notes.zerodha.com OR zerodha) subject:(contract note) after:${ninetyDaysAgo}`;
+    const searchQuery = `subject:"contract note" after:${ninetyDaysAgo}`;
 
     const listRes = await gmail.users.messages.list({
       userId: 'me',
@@ -288,7 +288,17 @@ router.post('/sync', requireAuth, async (req, res) => {
 
     const messages = listRes.data.messages || [];
     if (messages.length === 0) {
-      return res.json({ message: 'No new contract note emails found.', newTrades: 0 });
+      // Try even broader search as fallback
+      const fallbackRes = await gmail.users.messages.list({
+        userId: 'me',
+        q: `subject:contract after:${ninetyDaysAgo}`,
+        maxResults: 50
+      });
+      const fallbackMsgs = fallbackRes.data.messages || [];
+      if (fallbackMsgs.length === 0) {
+        return res.json({ message: 'No contract note emails found in the last 90 days. Make sure emails are forwarded to finorvtrades@gmail.com.', newTrades: 0, emailsFound: 0 });
+      }
+      messages.push(...fallbackMsgs);
     }
 
     let totalNewTrades = 0;
@@ -429,8 +439,9 @@ router.post('/sync', requireAuth, async (req, res) => {
     res.json({
       message: totalNewTrades > 0
         ? `✅ Synced ${totalNewTrades} new trade(s) from ${processedEmails.length} email(s)`
-        : 'All contract notes already up to date.',
+        : `📭 All ${processedEmails.length} email(s) already synced — no new trades found.`,
       newTrades: totalNewTrades,
+      emailsFound: messages.length,
       emailsProcessed: processedEmails.length,
       details: processedEmails
     });
