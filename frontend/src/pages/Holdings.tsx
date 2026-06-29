@@ -649,8 +649,62 @@ export const Holdings = () => {
                   </div>
                 </div>
 
+                {/* Target Progress Bar & GTT Trigger Suggestions */}
+                {(() => {
+                  const targetPct = isCoreHold ? 20 : 10;
+                  const progress = Math.max(0, Math.min(100, roi > 0 ? (roi / targetPct) * 100 : 0));
+                  const isNearTarget = roi > 0 && (targetPct - roi) <= 1.5;
+                  const targetValue = h.average_buy_price * (1 + targetPct / 100);
+
+                  return (
+                    <div className="mt-4 pt-3.5 border-t border-dark-border/40 space-y-2 select-none">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-gray-500 font-bold uppercase tracking-wider">Profit Target Progress</span>
+                        <span className={`font-black ${isNearTarget ? 'text-indigo-400 animate-pulse' : 'text-gray-300'}`}>
+                          {roi > 0 ? roi.toFixed(1) : '0.0'}% / {targetPct}%
+                        </span>
+                      </div>
+                      
+                      {/* Bar indicator */}
+                      <div className="w-full bg-dark-depth-3/60 rounded-full h-1.5 border border-dark-border/40 overflow-hidden relative">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            isNearTarget 
+                              ? 'bg-indigo-500 shadow-md shadow-indigo-500/20' 
+                              : roi >= targetPct 
+                              ? 'bg-emerald-500 shadow-md shadow-emerald-500/20' 
+                              : 'bg-brand-500'
+                          }`}
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+
+                      {/* GTT Sell Suggestion Trigger */}
+                      {isNearTarget && (
+                        <button
+                          onClick={() => {
+                            window.dispatchEvent(new CustomEvent('finor-switch-tab', {
+                              detail: {
+                                tab: 'orders',
+                                symbol: h.stock_symbol,
+                                action: 'SELL',
+                                quantity: h.quantity,
+                                price: targetValue.toFixed(2)
+                              }
+                            }));
+                          }}
+                          className="w-full py-1.5 px-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 text-[9px] font-extrabold text-indigo-400 hover:text-indigo-300 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3 text-indigo-400 animate-pulse" />
+                          Target Near! Click to Prefill Sell GTT at ₹{targetValue.toFixed(2)}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Bottom Section: Total Current Value and absolute PNL */}
-                <div className="border-t border-dark-border/40 pt-3 mt-4 flex items-center justify-between">
+                <div className="pt-2.5 flex items-center justify-between">
                   <div>
                     <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Current Value</span>
                     <span className="text-base font-extrabold text-white block mt-0.5">

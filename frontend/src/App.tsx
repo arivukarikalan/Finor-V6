@@ -21,6 +21,27 @@ function App() {
     initialize();
     SystemLogger.checkDailyClear();
     SystemLogger.info('Finor Web Application started');
+
+    const handleSwitchTab = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.tab) {
+        setActiveTab(customEvent.detail.tab);
+        if (customEvent.detail.symbol) {
+          localStorage.setItem('finor_prefill_orders', JSON.stringify({
+            symbol: customEvent.detail.symbol,
+            action: customEvent.detail.action || 'BUY',
+            quantity: customEvent.detail.quantity || 10,
+            price: customEvent.detail.price || ''
+          }));
+          window.dispatchEvent(new Event('finor-prefill-triggered'));
+        }
+      }
+    };
+
+    window.addEventListener('finor-switch-tab', handleSwitchTab);
+    return () => {
+      window.removeEventListener('finor-switch-tab', handleSwitchTab);
+    };
   }, [initialize]);
 
   if (loading) {
