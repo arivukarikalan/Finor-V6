@@ -274,8 +274,17 @@ export const Insights = () => {
     booking: true,
     planning: true,
     patterns: true,
-    analytics: true
+    analytics: true,
+    journal: true
   });
+
+  const [journalText, setJournalText] = useState('');
+  const [journalSaveStatus, setJournalSaveStatus] = useState<'idle' | 'saved'>('idle');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('finor_daily_journal');
+    if (saved) setJournalText(saved);
+  }, []);
 
   const toggleCollapsed = (key: string) => {
     setCollapsed(prev => ({
@@ -1251,6 +1260,90 @@ export const Insights = () => {
 
             </div>
           )}
+        </div>
+
+        {/* Card 7: AI Trade Journaling & Reflection Coach */}
+        <div className="glass-panel rounded-2xl border border-dark-border overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
+          <div 
+            onClick={() => toggleCollapsed('journal')}
+            className="p-5 flex items-center justify-between cursor-pointer hover:bg-dark-depth-2/20 transition-all select-none"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-brand-500/10 text-brand-400 rounded-xl border border-brand-500/20 flex-shrink-0">
+                <Brain className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-white uppercase tracking-wider">7. AI Trade Journaling & Reflection</h4>
+                <p className="text-[10px] text-gray-400 mt-0.5">Reflect on wins, analyze losses, and keep a systematic trading diary.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[9px] font-extrabold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20 uppercase">
+                Reflections
+              </span>
+              {collapsed.journal ? <ChevronDown className="w-4 h-4 text-gray-500" /> : <ChevronUp className="w-4 h-4 text-gray-500" />}
+            </div>
+          </div>
+
+          {!collapsed.journal && (() => {
+            // Generate reflective prompts based on insights data
+            const prompts = [];
+            if (data.bestTrade) {
+              prompts.push(`Reflect on your best trade in ${data.bestTrade.symbol} (+${data.bestTrade.return.toFixed(1)}%). Did you follow your target rules, or did you hold out of greed?`);
+            }
+            if (data.worstTrade) {
+              prompts.push(`Analyze your worst trade in ${data.worstTrade.symbol} (${data.worstTrade.return.toFixed(1)}%). Was it a premature stop-loss breach, a panic sell, or did you enter late?`);
+            }
+            if (data.violationsCount > 0) {
+              prompts.push(`You have recorded ${data.violationsCount} averaging down violations. What emotional trigger led you to average down on these losing setups?`);
+            }
+            if (prompts.length === 0) {
+              prompts.push("You have a clean sheet! Reflect on your market watchlist. What criteria are you using to filter your next swing setup?");
+            }
+
+            const handleSaveJournal = () => {
+              localStorage.setItem('finor_daily_journal', journalText);
+              setJournalSaveStatus('saved');
+              setTimeout(() => setJournalSaveStatus('idle'), 3000);
+            };
+
+            return (
+              <div className="p-5 border-t border-dark-border/40 bg-dark-depth-2/10 space-y-4">
+                <div className="space-y-2">
+                  <span className="text-[9px] text-gray-500 uppercase font-extrabold tracking-wider block">Suggested Reflection Prompts</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {prompts.map((prompt, idx) => (
+                      <div key={idx} className="p-3 bg-dark-depth-2 border border-dark-border/40 rounded-xl text-[10px] text-gray-300 font-bold leading-relaxed flex items-start gap-2.5">
+                        <Lightbulb className="w-4 h-4 text-indigo-400 flex-shrink-0 mt-0.5" />
+                        <span>{prompt}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] text-gray-500 uppercase font-extrabold tracking-wider">Reflective Journal Entry</span>
+                    {journalSaveStatus === 'saved' && (
+                      <span className="text-[9px] text-emerald-400 font-extrabold uppercase animate-pulse">✓ Saved to Local Storage</span>
+                    )}
+                  </div>
+                  <textarea
+                    value={journalText}
+                    onChange={(e) => setJournalText(e.target.value)}
+                    placeholder="Write your trade diagnostics, psychological state, and setup reviews here..."
+                    className="w-full h-32 bg-dark-depth-2/70 border border-dark-border/60 hover:border-dark-border rounded-2xl p-4 text-xs font-semibold text-white focus:outline-none focus:border-brand-500 transition-all placeholder:text-gray-600 resize-none font-mono"
+                  />
+                  <button
+                    onClick={handleSaveJournal}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-[10px] font-extrabold uppercase rounded-xl text-white transition-all cursor-pointer shadow-md shadow-indigo-600/10"
+                  >
+                    Save Reflection
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
       </div>
