@@ -408,7 +408,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 
         {/* Main Content Container */}
         <main className={`flex-grow overflow-y-auto ${
-          activeTab === 'ai-chat' ? 'px-0 pt-0 pb-0 md:p-6' : 'px-4 pt-4 pb-4 md:p-6'
+          activeTab === 'ai-chat' ? 'px-0 pt-0 pb-0 md:p-6' : 'px-4 pt-4 pb-16 md:px-8 md:pt-6 md:pb-16'
         } min-h-0`}>
           <div className="max-w-7xl mx-auto h-full flex flex-col">
             {!isOnline && (
