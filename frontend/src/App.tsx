@@ -11,12 +11,16 @@ import { Insights } from './pages/Insights';
 import { More } from './pages/More';
 import { Loader2 } from 'lucide-react';
 
+import { SystemLogger } from './utils/logger';
+
 function App() {
   const { user, loading, initialize } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabId>('holdings');
 
   useEffect(() => {
     initialize();
+    SystemLogger.checkDailyClear();
+    SystemLogger.info('Finor Web Application started');
   }, [initialize]);
 
   if (loading) {

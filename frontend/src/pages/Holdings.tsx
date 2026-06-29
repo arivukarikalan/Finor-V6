@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiRequest } from '../services/api';
+import { LtpPriceText } from '../components/LtpPriceText';
+import { CustomAlertModal } from '../components/CustomAlertModal';
 import { 
   TrendingUp, 
   TrendingDown, 
@@ -76,6 +78,19 @@ export const Holdings = () => {
   const [addTradeDate, setAddTradeDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [addTradeLoading, setAddTradeLoading] = useState(false);
   const [addTradeResult, setAddTradeResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Custom Alert Popups State
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'info'>('success');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+
+  const triggerAlert = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setAlertType(type);
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertOpen(true);
+  };
 
   const fetchCoreData = async () => {
     setLoading(true);
@@ -612,7 +627,9 @@ export const Holdings = () => {
                   </div>
                   <div>
                     <span className="text-[10px] text-gray-500 block">Current LTP</span>
-                    <span className="text-sm font-bold text-white">₹{currentLTP.toFixed(2)}</span>
+                    <span className="text-sm font-bold text-white">
+                      <LtpPriceText value={currentLTP} />
+                    </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-gray-500 block">Stop-Loss Price</span>
@@ -915,7 +932,7 @@ export const Holdings = () => {
                     setEditingStock(null);
                   } catch (err: any) {
                     console.error("Save settings failed:", err);
-                    alert("Failed to save settings: " + err.message);
+                    triggerAlert('error', 'Update Failed', err.message || 'Failed to save settings.');
                   } finally {
                     setSavingSettings(false);
                   }
@@ -1013,6 +1030,15 @@ export const Holdings = () => {
           </div>
         </div>
       )}
+
+      {/* Custom Alert Dialog Popup */}
+      <CustomAlertModal
+        isOpen={alertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        onClose={() => setAlertOpen(false)}
+      />
 
     </div>
   );

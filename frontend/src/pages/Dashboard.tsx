@@ -23,7 +23,9 @@ import {
   TrendingUp,
   TrendingDown,
   ArrowUpDown,
-  Layers
+  Layers,
+  Info,
+  X
 } from 'lucide-react';
 
 interface HistoryPoint {
@@ -94,6 +96,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedEventDetails, setSelectedEventDetails] = useState<any | null>(null);
 
   const fetchHoldingsData = async () => {
     try {
@@ -466,7 +469,18 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
                           {event.type}
                         </span>
                       </td>
-                      <td className="py-2.5 text-gray-300 font-medium">{event.details || '-'}</td>
+                      <td className="py-2.5 text-gray-300 font-medium">
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate max-w-[120px] block">{event.details || 'View details'}</span>
+                          <button
+                            onClick={() => setSelectedEventDetails(event)}
+                            className="p-1 rounded-lg text-brand-400 hover:text-white hover:bg-brand-500/10 transition-all cursor-pointer flex-shrink-0"
+                            title="View Event Details"
+                          >
+                            <Info className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </td>
                       <td className="py-2.5 text-right text-gray-400 font-semibold">
                         {event.date ? new Date(event.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                       </td>
@@ -632,6 +646,85 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
         </button>
 
       </div>
+
+      {/* ─── Corporate Action Event Details Modal ─── */}
+      {selectedEventDetails && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setSelectedEventDetails(null)}
+        >
+          <div
+            className="relative w-full max-w-sm rounded-3xl border border-dark-border bg-dark-depth-1 p-6 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top design accent */}
+            <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-4 mb-4 select-none">
+              <div>
+                <h3 className="text-sm font-extrabold text-white tracking-tight flex items-center gap-2">
+                  {selectedEventDetails.stock_symbol}
+                  <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${
+                    selectedEventDetails.type === 'DIVIDEND' 
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                      : selectedEventDetails.type === 'RESULTS' 
+                        ? 'bg-blue-500/10 border-blue-500/20 text-blue-400' 
+                        : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                  }`}>
+                    {selectedEventDetails.type}
+                  </span>
+                </h3>
+                <span className="text-[10px] text-gray-500 mt-1 block font-semibold uppercase tracking-wider">
+                  Corporate Action Details
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedEventDetails(null)}
+                className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Details Content */}
+            <div className="space-y-4">
+              <div className="bg-[#0e1117]/80 border border-dark-border/40 p-4 rounded-2xl">
+                <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Description</span>
+                <p className="text-xs text-gray-300 leading-relaxed font-semibold">
+                  {selectedEventDetails.details || 'No additional details are currently available for this event.'}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-0.5">Record Date</span>
+                  <span className="font-bold text-white">
+                    {selectedEventDetails.date ? new Date(selectedEventDetails.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }) : 'Not Set'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-0.5">Status</span>
+                  <span className="font-bold text-emerald-400 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    Upcoming
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action button */}
+            <div className="mt-6 flex gap-3">
+              <button
+                onClick={() => setSelectedEventDetails(null)}
+                className="w-full py-2.5 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-xs font-bold text-gray-300 hover:text-white transition-colors cursor-pointer select-none"
+              >
+                Close Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

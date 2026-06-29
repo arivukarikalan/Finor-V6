@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '../services/api';
 import { marked } from 'marked';
+import { CustomAlertModal } from '../components/CustomAlertModal';
 import { 
   BarChart, 
   Bar, 
@@ -75,6 +76,8 @@ interface TimeMachineViewProps {
   setSelectedSnapshot: (snapshot: any) => void;
   handleSaveSnapshot: () => void;
   saving: boolean;
+  handleInitializeHistory: () => void;
+  initializingHistory: boolean;
 }
 
 const TimeMachineView: React.FC<TimeMachineViewProps> = ({
@@ -83,7 +86,9 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
   selectedSnapshot,
   setSelectedSnapshot,
   handleSaveSnapshot,
-  saving
+  saving,
+  handleInitializeHistory,
+  initializingHistory
 }) => {
   if (loading) {
     return (
@@ -104,24 +109,36 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
     <div className="space-y-6 animate-in fade-in zoom-in-98 duration-200">
       
       {/* Description & Action */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-dark-depth-1 border border-dark-border/40 p-5 rounded-2xl">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 bg-dark-depth-1 border border-dark-border/40 p-5 rounded-2xl">
         <div className="space-y-1">
           <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
             <Clock className="w-4 h-4 text-brand-400" />
             Snapshot Ledger
           </h3>
           <p className="text-[10px] text-gray-400 max-w-lg leading-relaxed">
-            Snapshots capture your entire portfolio holding metrics. Save a snapshot every week to build a historical timeline and load your portfolio state at any past point.
+            Snapshots capture your entire portfolio holding metrics. Save a snapshot every week to build a historical timeline, or reconstruct your timeline from your past trades history.
           </p>
         </div>
-        <button
-          onClick={handleSaveSnapshot}
-          disabled={saving}
-          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-black uppercase text-white transition-colors cursor-pointer select-none disabled:opacity-50 shrink-0 flex items-center justify-center gap-1.5 shadow-lg shadow-brand-700/10"
-        >
-          <Clock className="w-3.5 h-3.5" />
-          {saving ? 'Saving Snapshot...' : 'Capture Snapshot'}
-        </button>
+        
+        <div className="flex flex-wrap gap-2.5">
+          <button
+            onClick={handleInitializeHistory}
+            disabled={initializingHistory}
+            className="px-4 py-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/25 hover:border-indigo-500/35 text-xs font-black uppercase text-indigo-400 transition-colors cursor-pointer select-none disabled:opacity-50 shrink-0 flex items-center justify-center gap-1.5"
+          >
+            <Activity className="w-3.5 h-3.5" />
+            {initializingHistory ? 'Syncing History...' : 'Sync History Timeline'}
+          </button>
+          
+          <button
+            onClick={handleSaveSnapshot}
+            disabled={saving}
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-black uppercase text-white transition-colors cursor-pointer select-none disabled:opacity-50 shrink-0 flex items-center justify-center gap-1.5 shadow-lg shadow-brand-700/10"
+          >
+            <Clock className="w-3.5 h-3.5" />
+            {saving ? 'Saving Snapshot...' : 'Capture Snapshot'}
+          </button>
+        </div>
       </div>
 
       {snapshots.length === 0 ? (
@@ -273,6 +290,38 @@ export const PnL = () => {
   const [loadingSnapshots, setLoadingSnapshots] = useState(false);
   const [selectedSnapshot, setSelectedSnapshot] = useState<any>(null);
   const [savingSnapshot, setSavingSnapshot] = useState(false);
+  const [initializingHistory, setInitializingHistory] = useState(false);
+
+  // Custom Alert Popups State
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertType, setAlertType] = useState<'success' | 'error' | 'info'>('success');
+  const [alertTitle, setAlertTitle] = useState('');
+  const [alertMessage, setAlertMessage] = useState('');
+
+  const triggerAlert = (type: 'success' | 'error' | 'info', title: string, message: string) => {
+    setAlertType(type);
+    setAlertTitle(title);
+    setAlertMessage(message);
+    setAlertOpen(true);
+  };
+
+  const handleInitializeHistory = async () => {
+    if (initializingHistory) return;
+    setInitializingHistory(true);
+    try {
+      const res = await apiRequest('/snapshots/initialize-history', { method: 'POST' });
+      await fetchSnapshots();
+      triggerAlert(
+        'success',
+        'Timeline Synchronized',
+        `Reconstructed ${res.created} historical snapshots successfully. ${res.updated} snapshots updated.`
+      );
+    } catch (err: any) {
+      triggerAlert('error', 'Sync Failed', err.message || 'Failed to initialize historical snapshots.');
+    } finally {
+      setInitializingHistory(false);
+    }
+  };
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -330,9 +379,13 @@ export const PnL = () => {
     try {
       const res = await apiRequest('/snapshots', { method: 'POST' });
       await fetchSnapshots();
-      alert(`✅ Weekly snapshot captured successfully for: ${res.snapshot?.snapshot_date}`);
+      triggerAlert(
+        'success',
+        'Snapshot Captured',
+        `Weekly snapshot captured successfully for date: ${res.snapshot?.snapshot_date}`
+      );
     } catch (err: any) {
-      alert('Failed to save snapshot: ' + err.message);
+      triggerAlert('error', 'Snapshot Failed', err.message || 'Failed to capture weekly snapshot.');
     } finally {
       setSavingSnapshot(false);
     }
@@ -1048,8 +1101,19 @@ export const PnL = () => {
           setSelectedSnapshot={setSelectedSnapshot}
           handleSaveSnapshot={handleSaveSnapshot}
           saving={savingSnapshot}
+          handleInitializeHistory={handleInitializeHistory}
+          initializingHistory={initializingHistory}
         />
       )}
+
+      {/* Custom Alert Dialog Popup */}
+      <CustomAlertModal
+        isOpen={alertOpen}
+        type={alertType}
+        title={alertTitle}
+        message={alertMessage}
+        onClose={() => setAlertOpen(false)}
+      />
 
       {/* AI Insights Side-Drawer Panel */}
       {isInsightsMounted && (

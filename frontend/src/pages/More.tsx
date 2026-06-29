@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { apiRequest } from '../services/api';
 import { useAuthStore } from '../context/authStore';
 import { News } from './News';
+import { SystemLogger } from '../utils/logger';
+import type { LogEntry } from '../utils/logger';
 import { 
   Settings, 
   Newspaper, 
@@ -31,7 +33,7 @@ import {
 } from 'lucide-react';
 import { marked } from 'marked';
 
-type SubTabId = 'news' | 'settings' | 'ai-chat';
+type SubTabId = 'news' | 'settings' | 'ai-chat' | 'logs';
 
 // Configure marked options and custom renderer once
 marked.use({
@@ -388,10 +390,29 @@ export const More = ({
 }) => {
   const { signOut } = useAuthStore();
   const [activeSubTab, setActiveSubTab] = useState<SubTabId>(defaultSubTab);
-  
+  const [logsList, setLogsList] = useState<LogEntry[]>([]);
+
   useEffect(() => {
     setActiveSubTab(defaultSubTab);
   }, [defaultSubTab]);
+
+  useEffect(() => {
+    if (activeSubTab === 'logs') {
+      setLogsList(SystemLogger.getLogs());
+    }
+  }, [activeSubTab]);
+
+  useEffect(() => {
+    const handleNewLog = () => {
+      setLogsList(SystemLogger.getLogs());
+    };
+    window.addEventListener('finor-new-log', handleNewLog);
+    window.addEventListener('finor-logs-cleared', handleNewLog);
+    return () => {
+      window.removeEventListener('finor-new-log', handleNewLog);
+      window.removeEventListener('finor-logs-cleared', handleNewLog);
+    };
+  }, []);
   
   // Theme state (synced with global finor_theme)
   const [isLightMode, setIsLightMode] = useState<boolean>(() => {
@@ -1012,7 +1033,7 @@ export const More = ({
       
       {/* Tab selectors */}
       {(!isMobile || activeSubTab !== 'ai-chat') && (
-        <div className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-3'} gap-2 sm:gap-4 p-1.5 bg-dark-depth-2 rounded-2xl border border-dark-border select-none flex-shrink-0`}>
+        <div className={`grid ${isMobile ? 'grid-cols-3' : 'grid-cols-4'} gap-2 sm:gap-4 p-1.5 bg-dark-depth-2 rounded-2xl border border-dark-border select-none flex-shrink-0`}>
           <button
             onClick={() => { 
               setActiveSubTab('news'); 
@@ -1047,7 +1068,7 @@ export const More = ({
             <span>Settings</span>
           </button>
 
-          {!isMobile && (
+          {!isMobile ? (
             <button
               onClick={() => { 
                 setActiveSubTab('ai-chat'); 
@@ -1064,7 +1085,24 @@ export const More = ({
               <MessageSquareCode className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5" />
               <span>AI Assistant</span>
             </button>
-          )}
+          ) : null}
+
+          <button
+            onClick={() => { 
+              setActiveSubTab('logs'); 
+              setSuccess(null); 
+              setError(null); 
+              if (setActiveTab) setActiveTab('more');
+            }}
+            className={`py-2 sm:py-3.5 rounded-xl text-[11px] sm:text-xs font-bold transition-all duration-300 cursor-pointer flex flex-row items-center justify-center gap-1 sm:gap-1.5 ${
+              activeSubTab === 'logs'
+                ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/10'
+                : 'text-gray-400 hover:text-white'
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5 sm:w-4.5 sm:h-4.5" />
+            <span>System Logs</span>
+          </button>
         </div>
       )}
 
@@ -1212,6 +1250,71 @@ export const More = ({
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {/* 4. System Logs subtab */}
+        {activeSubTab === 'logs' && (
+          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4 max-w-xl mx-auto flex flex-col h-[500px]">
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3 flex-shrink-0">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-indigo-400" />
+                Execution Trails
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const logs = SystemLogger.getLogs();
+                    const text = logs.map(l => `[${l.timestamp}] [${l.type.toUpperCase()}] ${l.message}`).join('\n');
+                    navigator.clipboard.writeText(text);
+                    setSuccess('Logs copied to clipboard!');
+                    setTimeout(() => setSuccess(null), 3000);
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-dark-border hover:bg-dark-depth-3/50 text-[10px] font-bold text-gray-400 hover:text-white transition-all cursor-pointer"
+                >
+                  Copy Trails
+                </button>
+                <button
+                  onClick={() => {
+                    SystemLogger.clear();
+                    setLogsList([]);
+                    setSuccess('Logs cleared!');
+                    setTimeout(() => setSuccess(null), 3000);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 hover:border-rose-500/30 text-[10px] font-bold text-rose-400 hover:text-rose-300 transition-all cursor-pointer"
+                >
+                  Clear Trails
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 font-mono text-[9px] scrollbar-hidden">
+              {logsList.length === 0 ? (
+                <div className="text-center py-20 text-gray-500 italic">
+                  No execution logs recorded today.
+                </div>
+              ) : (
+                logsList.map((log, idx) => {
+                  const time = new Date(log.timestamp).toLocaleTimeString('en-IN', { hour12: false });
+                  let colorClass = 'text-gray-400 border-gray-500/10 bg-gray-500/5';
+                  if (log.type === 'success') colorClass = 'text-emerald-400 border-emerald-500/10 bg-emerald-500/5';
+                  if (log.type === 'error') colorClass = 'text-rose-400 border-rose-500/10 bg-rose-500/5';
+                  if (log.type === 'warn') colorClass = 'text-amber-400 border-amber-500/10 bg-amber-500/5';
+
+                  return (
+                    <div key={idx} className={`p-2 rounded-lg border flex items-start gap-3.5 leading-relaxed ${colorClass}`}>
+                      <span className="opacity-60 flex-shrink-0 select-none">{time}</span>
+                      <span className="font-semibold break-all select-text">{log.message}</span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-dark-border/40 text-[9px] text-gray-500 font-semibold uppercase tracking-wider flex items-center justify-between select-none flex-shrink-0">
+              <span>Cleared automatically once daily</span>
+              <span>Total Logs: {logsList.length}</span>
+            </div>
           </div>
         )}
 
