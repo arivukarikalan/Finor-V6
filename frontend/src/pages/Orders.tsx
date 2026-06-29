@@ -12,7 +12,8 @@ import {
   CheckCircle,
   HelpCircle,
   Clock,
-  Trash2
+  Trash2,
+  Activity
 } from 'lucide-react';
 
 interface OrderConfig {
@@ -79,6 +80,7 @@ export const Orders = () => {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [orders, setOrders] = useState<BrokerOrder[]>([]);
   const [gtts, setGtts] = useState<GttTrigger[]>([]);
+  const [trades, setTrades] = useState<any[]>([]);
   const [loadingLists, setLoadingLists] = useState(true);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [showConfirmClearHistory, setShowConfirmClearHistory] = useState(false);
@@ -116,8 +118,12 @@ export const Orders = () => {
       // Fetch GTT triggers
       const gttResult = await apiRequest('/orders/gtt/live');
       setGtts(gttResult.gtts || []);
+
+      // Fetch trades history
+      const tradesData = await apiRequest('/trades');
+      setTrades(tradesData || []);
     } catch (err: any) {
-      console.error('Failed to load orders/gtts lists:', err);
+      console.error('Failed to load orders/gtts/trades lists:', err);
     } finally {
       setLoadingLists(false);
     }
@@ -729,6 +735,105 @@ export const Orders = () => {
                   </div>
                 </div>
               )}
+
+              {/* Pre-Trade Risk Audit Card */}
+              {symbol && isFormValid() && (() => {
+                const symbolUpper = symbol.toUpperCase().trim();
+                const totalPortfolioVal = holdings.reduce((sum, h) => sum + (h.quantity * (h.ltp || h.average_buy_price)), 0);
+                
+                // Estimate price of the trade
+                const activePrice = parseFloat(triggerPrice1) || parseFloat(price) || ltp || 0;
+                const orderValue = (quantity || 0) * activePrice;
+                const allocationPct = totalPortfolioVal > 0 ? (orderValue / totalPortfolioVal) * 100 : 0;
+                
+                // Past performance stats for this ticker
+                const stockTrades = trades.filter(t => t.stock_symbol.toUpperCase() === symbolUpper);
+                let stockStats = null;
+                if (stockTrades.length > 0) {
+                  let buyQty = 0;
+                  let buyCost = 0;
+                  let realizedPnL = 0;
+                  let completedCount = 0;
+                  let winCount = 0;
+                  
+                  const sorted = [...stockTrades].sort((a, b) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+                  sorted.forEach(t => {
+                    const type = t.trade_type.toUpperCase();
+                    const qty = Number(t.quantity);
+                    const prc = Number(t.price);
+                    if (type === 'BUY' || type === 'B') {
+                      buyQty += qty;
+                      buyCost += qty * prc;
+                    } else if (type === 'SELL' || type === 'S') {
+                      if (buyQty > 0) {
+                        const avgBuy = buyCost / buyQty;
+                        const sellQty = Math.min(qty, buyQty);
+                        const pnl = sellQty * (prc - avgBuy);
+                        realizedPnL += pnl;
+                        completedCount++;
+                        if (pnl > 0) winCount++;
+                        buyQty -= sellQty;
+                        buyCost = buyQty * avgBuy;
+                      }
+                    }
+                  });
+                  const winRate = completedCount > 0 ? (winCount / completedCount) * 100 : 0;
+                  stockStats = { realizedPnL, completedCount, winRate };
+                }
+
+                // Exposure Warnings
+                const isOverAllocation = allocationPct > 8;
+                const matchingHolding = holdings.find(h => h.stock_symbol === symbolUpper);
+
+                return (
+                  <div className="p-4 rounded-2xl bg-dark-depth-2/40 border border-dark-border/40 text-[10px] font-bold space-y-3 animate-in fade-in slide-in-from-top-2 duration-300 select-none">
+                    <div className="flex items-center justify-between border-b border-dark-border/20 pb-1.5">
+                      <span className="text-gray-400 font-extrabold uppercase tracking-wide flex items-center gap-1">
+                        <Activity className="w-3.5 h-3.5 text-indigo-400" />
+                        Finor Pre-Trade Risk Audit
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="p-2 rounded-xl bg-dark-depth-2/60 border border-dark-border/40">
+                        <span className="text-gray-500 block uppercase text-[8px] tracking-wide mb-0.5">Capital Weight</span>
+                        <span className={`text-xs font-black ${isOverAllocation ? 'text-rose-500 dark:text-rose-400' : 'text-emerald-500 dark:text-emerald-400'}`}>
+                          {allocationPct.toFixed(1)}% of Portfolio
+                        </span>
+                      </div>
+                      <div className="p-2 rounded-xl bg-dark-depth-2/60 border border-dark-border/40">
+                        <span className="text-gray-500 block uppercase text-[8px] tracking-wide mb-0.5">Exposure Status</span>
+                        <span className={`text-xs font-black ${isOverAllocation ? 'text-rose-500 dark:text-rose-400' : 'text-emerald-500 dark:text-emerald-400'}`}>
+                          {isOverAllocation ? '⚠️ Over-Allocated (>8%)' : '🟢 Safe Size (≤8%)'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {matchingHolding && (
+                      <div className="p-2.5 bg-amber-500/5 border border-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl leading-relaxed">
+                        ⚠️ You already own **{matchingHolding.quantity} shares** of {symbolUpper} at avg. cost **₹{matchingHolding.average_buy_price.toFixed(2)}**. 
+                        {action === 'BUY' ? ' Buying more will average your entry price.' : ' Selling will decrease your position size.'}
+                      </div>
+                    )}
+
+                    {stockStats && stockStats.completedCount > 0 && (
+                      <div className="p-2.5 bg-indigo-500/5 border border-indigo-500/10 rounded-xl leading-relaxed text-indigo-400 space-y-1">
+                        <span className="text-[8px] text-indigo-300 font-black uppercase tracking-wider block">Past Performance Capsule</span>
+                        <div className="flex justify-between">
+                          <span>Realized P&L on {symbolUpper}:</span>
+                          <span className={`font-black ${stockStats.realizedPnL >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
+                            ₹{stockStats.realizedPnL.toFixed(2)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Win Rate ({stockStats.completedCount} trades):</span>
+                          <span className="font-black text-white">{stockStats.winRate.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Submit Trigger */}
               <button
