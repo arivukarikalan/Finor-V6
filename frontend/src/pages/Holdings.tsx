@@ -15,7 +15,8 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   Sparkles,
-  PlusCircle
+  PlusCircle,
+  Activity
 } from 'lucide-react';
 
 interface Holding {
@@ -444,6 +445,137 @@ export const Holdings = () => {
         </div>
 
       </div>
+
+      {/* Sector Concentration & Portfolio Diversification Diagnostic Panel */}
+      {holdings.length > 0 && (() => {
+        // Calculate sector values
+        const SECTOR_MAP: Record<string, string> = {
+          RELIANCE: 'Energy',
+          TCS: 'Technology',
+          INFY: 'Technology',
+          HDFCBANK: 'Financials',
+          ICICIBANK: 'Financials',
+          SBIN: 'Financials',
+          TATASTEEL: 'Materials',
+          ITC: 'Consumer Goods',
+          BHARTIARTL: 'Telecommunications',
+          LT: 'Industrials',
+          HINDUNILVR: 'Consumer Goods',
+          AXISBANK: 'Financials',
+          KOTAKBANK: 'Financials',
+          WIPRO: 'Technology',
+          HCLTECH: 'Technology',
+          TATAMOTORS: 'Automotive',
+          SUNPHARMA: 'Healthcare',
+          NTPC: 'Utilities',
+          POWERGRID: 'Utilities',
+          ONGC: 'Energy',
+          COALINDIA: 'Energy',
+          JSWSTEEL: 'Materials'
+        };
+
+        const sectorValues: Record<string, number> = {};
+        holdings.forEach(h => {
+          const sector = SECTOR_MAP[h.stock_symbol.toUpperCase()] || 'Other';
+          const val = h.quantity * (h.ltp || h.average_buy_price);
+          sectorValues[sector] = (sectorValues[sector] || 0) + val;
+        });
+
+        const totalHoldingVal = Object.values(sectorValues).reduce((sum, v) => sum + v, 0);
+        
+        // Convert to sorted list of sectors
+        const sectorsList = Object.keys(sectorValues).map(sec => {
+          const val = sectorValues[sec];
+          const pct = totalHoldingVal > 0 ? (val / totalHoldingVal) * 100 : 0;
+          return { sector: sec, value: val, percentage: pct };
+        }).sort((a, b) => b.percentage - a.percentage);
+
+        // Find high concentration warning
+        const highestSector = sectorsList[0];
+        const hasConcentrationWarning = highestSector && highestSector.percentage > 30;
+
+        return (
+          <div className="glass-panel rounded-3xl p-6 border border-dark-border grid grid-cols-1 lg:grid-cols-2 gap-6 select-none animate-in fade-in slide-in-from-top-4 duration-300">
+            {/* Sector Weights */}
+            <div className="space-y-4">
+              <div className="border-b border-dark-border/40 pb-3 flex items-center justify-between">
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-brand-400" />
+                  Sector Diversification Audit
+                </h3>
+                <span className="text-[9px] font-black text-gray-400">
+                  {sectorsList.length} Sectors represented
+                </span>
+              </div>
+
+              <div className="space-y-3">
+                {sectorsList.map((item, idx) => (
+                  <div key={idx} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] font-bold">
+                      <span className="text-gray-300">{item.sector}</span>
+                      <span className="text-gray-400">₹{item.value.toLocaleString('en-IN', { maximumFractionDigits: 0 })} ({item.percentage.toFixed(1)}%)</span>
+                    </div>
+                    {/* Progress Bar indicator */}
+                    <div className="w-full bg-dark-depth-3 rounded-full h-1.5 overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          item.percentage > 30 
+                            ? 'bg-rose-500 shadow-md shadow-rose-500/20' 
+                            : item.percentage > 15 
+                            ? 'bg-indigo-500' 
+                            : 'bg-brand-500'
+                        }`}
+                        style={{ width: `${item.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Health Report & Advice */}
+            <div className="space-y-4 flex flex-col justify-between">
+              <div className="border-b border-dark-border/40 pb-3">
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+                  Portfolio Health Score Card
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 flex-1 my-3">
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl flex flex-col justify-center">
+                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider mb-0.5">Diversification Rating</span>
+                  <span className={`text-sm font-black ${hasConcentrationWarning ? 'text-amber-500' : 'text-emerald-400'}`}>
+                    {hasConcentrationWarning ? '⚠️ Moderate Exposure' : '🟢 Healthy Spread'}
+                  </span>
+                </div>
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl flex flex-col justify-center">
+                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider mb-0.5">Top Sector Risk</span>
+                  <span className="text-sm font-black text-white">
+                    {highestSector ? `${highestSector.sector} (${highestSector.percentage.toFixed(0)}%)` : 'None'}
+                  </span>
+                </div>
+              </div>
+
+              <div className={`p-4 rounded-2xl border text-[10px] font-bold leading-relaxed ${
+                hasConcentrationWarning 
+                  ? 'bg-rose-500/5 border-rose-500/10 text-rose-500 dark:text-rose-400' 
+                  : 'bg-emerald-500/5 border-emerald-500/10 text-emerald-500 dark:text-emerald-400'
+              }`}>
+                {hasConcentrationWarning ? (
+                  <span>
+                    ⚠️ **High Concentration Risk Warning**: Your holdings in **{highestSector.sector}** exceed the safe limit of 30%, representing **{highestSector.percentage.toFixed(1)}%** of your capital. Try distributing future swing trades across technology, healthcare, or energy to hedge sectoral corrections.
+                  </span>
+                ) : (
+                  <span>
+                    🟢 **Optimal Diversification Verified**: No single industry comprises more than 30% of your capital. This is a very healthy asset spread that shields your portfolio from localized sector shocks. Well done!
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Filters and Sorting Panel */}
       <div className="glass-panel rounded-2xl p-4 border border-dark-border flex flex-col md:flex-row md:items-center justify-between gap-4">
