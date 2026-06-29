@@ -185,27 +185,31 @@ const parseZerodhaContractNote = (pdfText, tradeDateHint) => {
     }
   }
 
-  // Zerodha contract note trade row pattern
-  // Matches: SYMBOL  B/S  QTY  PRICE
   const rawText = pdfText.replace(/\n/g, ' ');
-  const tradeRowRegex = /([A-Z][A-Z0-9\s\-&]{1,30}?)\s+(B|S|BUY|SELL)\s+(\d+)\s+([\d,]+\.?\d*)/gi;
+
+  // Regex 1: Annexure style (highly specific and matches the exact executions table)
+  // Matches: SYMBOL-EQ/ISIN or SYMBOL/ISIN followed by B/S, Exchange (NSE/BSE), Qty, Brokerage, Net Price
+  // Example: HAL-EQ/INE066F01020   S   NSE   3   0.0000   4490.40
+  const annexureRegex = /([A-Z0-9\-&]+)(?:-EQ|-BE)?\/[A-Z0-9]+\s+(B|S|BUY|SELL)\s+(NSE|BSE)\s+(\d+)\s+[\d\.]+\s+([\d\.,]+)/gi;
+  
+  // Regex 2: Fallback broad table matching
+  const fallbackRegex = /([A-Z0-9\-&]+)\s+(B|S|BUY|SELL)\s+(NSE|BSE)\s+(\d+)\s+[\d\.]+\s+([\d\.,]+)/gi;
+
+  // Regex 3: Legacy match rules
+  const legacyRegex = /([A-Z][A-Z0-9\s\-&]{1,30}?)\s+(B|S|BUY|SELL)\s+(\d+)\s+([\d,]+\.?\d*)/gi;
 
   let match;
-  while ((match = tradeRowRegex.exec(rawText)) !== null) {
-    const symbol = match[1].trim().toUpperCase()
-      .replace(/^NSE\s+EQ\s+/i, '')
-      .replace(/^BSE\s+EQ\s+/i, '')
-      .replace(/\s+/g, '_')
-      .substring(0, 30);
+  
+  // Try Regex 1 (Annexure)
+  while ((match = annexureRegex.exec(rawText)) !== null) {
+    const rawSymbol = match[1].trim().toUpperCase();
+    const symbol = rawSymbol.split('-')[0]; // Extract "HAL" from "HAL-EQ"
+    const typeChar = match[2].toUpperCase();
+    const tradeType = (typeChar === 'B' || typeChar === 'BUY') ? 'BUY' : 'SELL';
+    const quantity = parseInt(match[4].replace(/,/g, ''));
+    const price = parseFloat(match[5].replace(/,/g, ''));
 
-    const tradeType = (match[2].toUpperCase() === 'B' || match[2].toUpperCase() === 'BUY') ? 'BUY' : 'SELL';
-    const quantity = parseInt(match[3].replace(/,/g, ''));
-    const price = parseFloat(match[4].replace(/,/g, ''));
-
-    const excluded = ['TRADE','ORDER','GROSS','NET','TOTAL','TAX','BROKERAGE','AMOUNT','RATE','QUANTITY','PRICE','EQUITY','DEBIT','CREDIT'];
-    const isExcluded = excluded.some(ex => symbol.includes(ex));
-
-    if (quantity > 0 && price > 0.5 && price < 1000000 && symbol.length >= 2 && !isExcluded) {
+    if (quantity > 0 && price > 0.5) {
       trades.push({
         stock_symbol: symbol,
         trade_type: tradeType,
@@ -213,6 +217,56 @@ const parseZerodhaContractNote = (pdfText, tradeDateHint) => {
         price,
         trade_date: tradeDate || new Date().toISOString().split('T')[0]
       });
+    }
+  }
+
+  // Try Regex 2 (Fallback)
+  if (trades.length === 0) {
+    while ((match = fallbackRegex.exec(rawText)) !== null) {
+      const symbol = match[1].trim().toUpperCase().split('-')[0];
+      const typeChar = match[2].toUpperCase();
+      const tradeType = (typeChar === 'B' || typeChar === 'BUY') ? 'BUY' : 'SELL';
+      const quantity = parseInt(match[4].replace(/,/g, ''));
+      const price = parseFloat(match[5].replace(/,/g, ''));
+
+      if (quantity > 0 && price > 0.5) {
+        trades.push({
+          stock_symbol: symbol,
+          trade_type: tradeType,
+          quantity,
+          price,
+          trade_date: tradeDate || new Date().toISOString().split('T')[0]
+        });
+      }
+    }
+  }
+
+  // Try Regex 3 (Legacy)
+  if (trades.length === 0) {
+    const excluded = ['TRADE','ORDER','GROSS','NET','TOTAL','TAX','BROKERAGE','AMOUNT','RATE','QUANTITY','PRICE','EQUITY','DEBIT','CREDIT'];
+    while ((match = legacyRegex.exec(rawText)) !== null) {
+      const symbol = match[1].trim().toUpperCase()
+        .replace(/^NSE\s+EQ\s+/i, '')
+        .replace(/^BSE\s+EQ\s+/i, '')
+        .replace(/\s+/g, '_')
+        .substring(0, 30);
+
+      const typeChar = match[2].toUpperCase();
+      const tradeType = (typeChar === 'B' || typeChar === 'BUY') ? 'BUY' : 'SELL';
+      const quantity = parseInt(match[3].replace(/,/g, ''));
+      const price = parseFloat(match[4].replace(/,/g, ''));
+
+      const isExcluded = excluded.some(ex => symbol.includes(ex));
+
+      if (quantity > 0 && price > 0.5 && price < 1000000 && symbol.length >= 2 && !isExcluded) {
+        trades.push({
+          stock_symbol: symbol,
+          trade_type: tradeType,
+          quantity,
+          price,
+          trade_date: tradeDate || new Date().toISOString().split('T')[0]
+        });
+      }
     }
   }
 
@@ -350,12 +404,26 @@ router.post('/sync', requireAuth, async (req, res) => {
         const subjectLower = subject.toLowerCase();
         if (!subjectLower.includes('contract note') && !subjectLower.includes('upc0')) continue;
 
-        // Skip already processed
+        // Check if we've already processed this email
         const { data: existingLog } = await supabase
-          .from('system_settings').select('value').eq('key', `gmail_processed_${msg.id}`).maybeSingle();
-        if (existingLog) continue;
+          .from('system_settings')
+          .select('value')
+          .eq('key', `gmail_processed_${msg.id}`)
+          .maybeSingle();
 
         const tradeDate = extractDateFromSubject(subject) || new Date(dateHeader).toISOString().split('T')[0];
+
+        if (existingLog) {
+          processedEmails.push({
+            subject,
+            tradeDate,
+            status: 'Already Synced',
+            tradesFound: 0,
+            tradesAdded: 0,
+            trades: []
+          });
+          continue;
+        }
 
         // Find PDF attachments recursively
         const findAttachments = (parts) => {
@@ -387,9 +455,7 @@ router.post('/sync', requireAuth, async (req, res) => {
             }
 
             if (pdfData) {
-              // Try with password first (Zerodha uses PAN as password)
               let pdfText = await extractPdfText(pdfData, PDF_PASSWORD);
-              // If failed or empty, try without password
               if (!pdfText || pdfText.trim().length < 50) {
                 pdfText = await extractPdfText(pdfData, '');
               }
@@ -406,6 +472,8 @@ router.post('/sync', requireAuth, async (req, res) => {
 
         // Insert new trades
         let emailNewTrades = 0;
+        const tradeLogs = [];
+
         for (const trade of parsedTrades) {
           const { data: existing } = await supabase
             .from('trades').select('id')
@@ -430,6 +498,9 @@ router.post('/sync', requireAuth, async (req, res) => {
               created_at: new Date().toISOString()
             });
             emailNewTrades++;
+            tradeLogs.push({ ...trade, status: 'Synced' });
+          } else {
+            tradeLogs.push({ ...trade, status: 'Duplicate' });
           }
         }
 
@@ -440,7 +511,14 @@ router.post('/sync', requireAuth, async (req, res) => {
         );
 
         totalNewTrades += emailNewTrades;
-        processedEmails.push({ subject, tradeDate, tradesFound: parsedTrades.length, tradesAdded: emailNewTrades });
+        processedEmails.push({
+          subject,
+          tradeDate,
+          status: 'Processed',
+          tradesFound: parsedTrades.length,
+          tradesAdded: emailNewTrades,
+          trades: tradeLogs
+        });
 
       } catch (msgErr) {
         console.error('Error processing message:', msg.id, msgErr.message);
@@ -458,8 +536,8 @@ router.post('/sync', requireAuth, async (req, res) => {
 
     res.json({
       message: totalNewTrades > 0
-        ? `✅ Synced ${totalNewTrades} new trade(s) from ${processedEmails.length} email(s)`
-        : `📭 ${processedEmails.length} email(s) found — all already synced or no trades parsed.`,
+        ? `✅ Synced ${totalNewTrades} new trade(s) from ${processedEmails.filter(e => e.status === 'Processed').length} email(s)`
+        : `📭 Checked ${processedEmails.length} email(s) — all already synced or no trades parsed.`,
       newTrades: totalNewTrades,
       emailsFound: messages.length,
       emailsProcessed: processedEmails.length,
