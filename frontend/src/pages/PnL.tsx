@@ -647,6 +647,36 @@ export const PnL = () => {
     }
   };
 
+  // ─── Behavioral Bias & Tax Diagnostics calculations ───
+  const totalClosed = closedTrades.length;
+  const wins = closedTrades.filter(t => t.realized_pnl > 0);
+  const losses = closedTrades.filter(t => t.realized_pnl < 0);
+  const winRate = totalClosed > 0 ? (wins.length / totalClosed) * 100 : 0;
+  
+  const avgWinnerHold = wins.length > 0 ? Math.round(wins.reduce((sum, t) => sum + t.holding_days, 0) / wins.length) : 0;
+  const avgLoserHold = losses.length > 0 ? Math.round(losses.reduce((sum, t) => sum + t.holding_days, 0) / losses.length) : 0;
+  
+  const stcgTax = Math.max(0, summary.stcg * 0.15);
+  const ltcgTax = Math.max(0, summary.ltcg * 0.10);
+  const totalTaxEstimate = stcgTax + ltcgTax;
+
+  let dispositionFeedback = "Good balance between holding winning and losing trades. Maintain discipline.";
+  let dispositionType: 'success' | 'warn' | 'error' = 'success';
+  
+  if (avgWinnerHold > 0 && avgLoserHold > 0) {
+    const ratio = avgLoserHold / avgWinnerHold;
+    if (ratio >= 2) {
+      dispositionFeedback = "Critical: You hold losing trades more than double the time of winning trades. You are letting losses run while cutting profits short.";
+      dispositionType = 'error';
+    } else if (ratio >= 1.3) {
+      dispositionFeedback = "Warning: You tend to hold losers longer than winners. Try to enforce your stop-losses early to prevent drag.";
+      dispositionType = 'warn';
+    } else if (ratio <= 0.8) {
+      dispositionFeedback = "Excellent: You are letting winners run and cutting losses quickly. This is disciplined execution.";
+      dispositionType = 'success';
+    }
+  }
+
   return (
     <div className="space-y-6">
       
@@ -817,6 +847,80 @@ export const PnL = () => {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Behavioral Bias & Tax Diagnostics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none animate-in fade-in slide-in-from-top-4 duration-300">
+            {/* Disposition Effect Bias Audit */}
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border space-y-4">
+              <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <Activity className="w-4 h-4 text-indigo-400" />
+                  Disposition Bias Audit
+                </h3>
+                <span className={`text-[9px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
+                  dispositionType === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500 dark:text-emerald-400' :
+                  dispositionType === 'warn' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
+                  'bg-rose-500/10 border-rose-500/20 text-rose-500 dark:text-rose-400'
+                }`}>
+                  {dispositionType === 'success' ? 'Disciplined' : dispositionType === 'warn' ? 'Biased' : 'High Risk'}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
+                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Avg Hold Days (Winners)</span>
+                  <span className="text-lg font-black text-emerald-500 dark:text-emerald-400">{avgWinnerHold} days</span>
+                </div>
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
+                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Avg Hold Days (Losers)</span>
+                  <span className="text-lg font-black text-rose-500 dark:text-rose-400">{avgLoserHold} days</span>
+                </div>
+              </div>
+
+              <div className={`p-3 rounded-2xl border text-[10px] font-bold leading-relaxed ${
+                dispositionType === 'success' ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-500 dark:text-emerald-400' :
+                dispositionType === 'warn' ? 'bg-amber-500/5 border-amber-500/10 text-amber-500' :
+                'bg-rose-500/5 border-rose-500/10 text-rose-500 dark:text-rose-400'
+              }`}>
+                {dispositionFeedback}
+              </div>
+            </div>
+
+            {/* Trading Performance & Tax Preview */}
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border space-y-4">
+              <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  Performance & Tax Preview
+                </h3>
+                <span className="text-[9px] font-extrabold text-indigo-500 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
+                  Win Rate: {winRate.toFixed(1)}%
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
+                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Est. Gains Tax Liability</span>
+                  <span className="text-lg font-black text-white">₹{totalTaxEstimate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
+                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Trades Count (W/L)</span>
+                  <span className="text-lg font-black text-gray-300">{wins.length}W / {losses.length}L</span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-dark-depth-2/40 border border-dark-border/40 rounded-2xl text-[9px] text-gray-400 font-bold leading-relaxed space-y-1">
+                <div className="flex justify-between">
+                  <span>STCG Tax Est. (15% of ₹{summary.stcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}):</span>
+                  <span className="text-white">₹{stcgTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>LTCG Tax Est. (10% of ₹{summary.ltcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}):</span>
+                  <span className="text-white">₹{ltcgTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+              </div>
             </div>
           </div>
 
