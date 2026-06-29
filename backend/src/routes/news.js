@@ -433,7 +433,7 @@ router.get('/corporate-actions', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // 1. Fetch user's holdings
+    // 1. Fetch user's holdings and historical trades to include past stocks
     const { data: holdings, error: holdError } = await supabase
       .from('holdings')
       .select('stock_symbol')
@@ -441,11 +441,22 @@ router.get('/corporate-actions', requireAuth, async (req, res) => {
 
     if (holdError) throw holdError;
 
-    if (!holdings || holdings.length === 0) {
+    const { data: trades, error: tradesError } = await supabase
+      .from('trades')
+      .select('stock_symbol')
+      .eq('user_id', userId);
+
+    if (tradesError) throw tradesError;
+
+    const allSymbols = [
+      ...(holdings || []).map(h => h.stock_symbol),
+      ...(trades || []).map(t => t.stock_symbol)
+    ];
+    const uniqueSymbols = [...new Set(allSymbols.map(s => s ? s.toUpperCase() : ''))].filter(Boolean);
+
+    if (uniqueSymbols.length === 0) {
       return res.json({ upcoming: [], past: [] });
     }
-
-    const uniqueSymbols = [...new Set(holdings.map(h => h.stock_symbol ? h.stock_symbol.toUpperCase() : ''))].filter(Boolean);
     const corporateActions = [];
     const now = new Date();
     const actionsCacheTTL = 6 * 60 * 60 * 1000; // 6 hours cache limit
@@ -802,7 +813,7 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // 1. Fetch user's active holdings
+    // 1. Fetch user's active holdings and historical trades to include past stocks
     const { data: holdings, error: holdError } = await supabase
       .from('holdings')
       .select('stock_symbol')
@@ -810,11 +821,22 @@ router.get('/', requireAuth, async (req, res) => {
 
     if (holdError) throw holdError;
 
-    if (!holdings || holdings.length === 0) {
+    const { data: trades, error: tradesError } = await supabase
+      .from('trades')
+      .select('stock_symbol')
+      .eq('user_id', userId);
+
+    if (tradesError) throw tradesError;
+
+    const allSymbols = [
+      ...(holdings || []).map(h => h.stock_symbol),
+      ...(trades || []).map(t => t.stock_symbol)
+    ];
+    const uniqueSymbols = [...new Set(allSymbols.map(s => s ? s.toUpperCase() : ''))].filter(Boolean);
+
+    if (uniqueSymbols.length === 0) {
       return res.json([]);
     }
-
-    const uniqueSymbols = [...new Set(holdings.map(h => h.stock_symbol ? h.stock_symbol.toUpperCase() : ''))].filter(Boolean);
     const apiKey = process.env.NEWS_API_KEY;
     const isMockAPI = !apiKey || apiKey === 'your_news_api_key_here';
     const now = new Date();

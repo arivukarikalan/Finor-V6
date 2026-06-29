@@ -8,8 +8,6 @@ import {
   Grid,
   LogOut,
   User,
-  Wifi,
-  WifiOff,
   Brain,
   Sun,
   Moon,
@@ -287,46 +285,36 @@ export const Navigation: React.FC<NavigationProps> = ({
 
       {/* 2. Mobile Top Header (sm and down) */}
       <header className="md:hidden h-14 bg-dark-depth-1/80 backdrop-blur-md border-b border-dark-border flex items-center justify-between px-4 flex-shrink-0 z-40 w-full relative min-h-[56px]">
-        {/* Left Stats */}
-        <div className="flex items-center gap-1.5 absolute left-4 top-1/2 -translate-y-1/2 z-10 select-none">
-          <span className="text-[8px] text-gray-500 font-extrabold uppercase">
-            {lastTradeDate ? `Upto: ${formatLastTradeDate(lastTradeDate)}` : 'No Trades'}
+        
+        {/* Left Branding with Status Ping */}
+        <div className="flex items-center gap-2 select-none">
+          <img src="/favicon.png" alt="Finor Logo" className="w-5 h-5 rounded-md object-contain" />
+          <span className="font-extrabold font-display tracking-tight text-sm bg-gradient-to-r from-brand-100 to-brand-500 bg-clip-text text-transparent">
+            FINOR
           </span>
-          <button
-            onClick={handleSync}
-            disabled={isSyncing}
-            className={`p-1 rounded-lg text-gray-500 hover:text-white transition-all cursor-pointer ${
-              isSyncing ? 'animate-spin text-brand-400' : ''
-            }`}
-            title="Sync Trades"
-          >
-            <RefreshCw className="w-2.5 h-2.5" />
-          </button>
+          <span className="relative flex h-1.5 w-1.5 ml-0.5">
+            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isOnline ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
+            <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${isOnline ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+          </span>
         </div>
 
-        {/* Center Logo */}
-        <div className="flex items-center justify-center w-full absolute left-0 right-0 top-1/2 -translate-y-1/2 pointer-events-none">
-          <div className="flex items-center gap-2 pointer-events-auto">
-            <img src="/favicon.png" alt="Finor Logo" className="w-5 h-5 rounded-md object-contain" />
-            <span className="font-extrabold font-display tracking-tight text-sm bg-gradient-to-r from-brand-100 to-brand-500 bg-clip-text text-transparent">
-              FINOR
-            </span>
+        {/* Right Actions */}
+        <div className="flex items-center gap-2">
+          
+          {/* Mobile Gmail Sync Badge & Trigger */}
+          <div className="flex items-center gap-1 bg-dark-depth-2/60 border border-dark-border/40 pl-2 pr-1 py-0.5 rounded-lg select-none">
+            <Mail className={`w-3 h-3 ${gmailConnected ? 'text-emerald-500' : 'text-gray-500'}`} />
+            <button
+              onClick={handleSync}
+              disabled={isSyncing}
+              className={`p-0.5 rounded transition-all cursor-pointer ${
+                isSyncing ? 'animate-spin text-brand-400' : gmailConnected ? 'text-emerald-400 hover:text-white' : 'text-amber-400 hover:text-white'
+              }`}
+              title={gmailConnected ? 'Sync trades from Gmail' : 'Connect Gmail to enable auto-sync'}
+            >
+              <RefreshCw className="w-3 h-3" />
+            </button>
           </div>
-        </div>
-
-        {/* Right Status / Theme / Signout */}
-        <div className="flex items-center gap-1.5 absolute right-4 top-1/2 -translate-y-1/2 z-10">
-          {isOnline ? (
-            <div className="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2 py-0.5 text-[9px] text-emerald-500 font-bold select-none">
-              <Wifi className="w-2.5 h-2.5" />
-              <span>Live</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1 bg-rose-500/10 border border-rose-500/20 rounded-full px-2 py-0.5 text-[9px] text-rose-500 font-bold animate-pulse select-none">
-              <WifiOff className="w-2.5 h-2.5" />
-              <span>Offline</span>
-            </div>
-          )}
 
           {/* Mobile Theme Toggle */}
           <button
@@ -337,12 +325,6 @@ export const Navigation: React.FC<NavigationProps> = ({
             {isThemeLight ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
           </button>
 
-          <button
-            onClick={signOut}
-            className="p-1.5 rounded-lg border border-dark-border text-gray-400 hover:text-rose-500 transition-colors cursor-pointer"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-          </button>
         </div>
       </header>
 
