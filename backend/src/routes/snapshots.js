@@ -173,8 +173,8 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
 
       // Filter to keep only active holdings
       const holdingsState = Object.values(positions)
-        .filter((h: any) => h.quantity > 0)
-        .map((h: any) => ({
+        .filter((h) => h.quantity > 0)
+        .map((h) => ({
           stock_symbol: h.stock_symbol,
           stock_name: h.stock_name,
           quantity: h.quantity,
@@ -183,7 +183,7 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
         }));
 
       // Calculate totals
-      const totalInvested = holdingsState.reduce((sum, h: any) => sum + (h.average_buy_price * h.quantity), 0);
+      const totalInvested = holdingsState.reduce((sum, h) => sum + (h.average_buy_price * h.quantity), 0);
       const totalValue = totalInvested; // default historical value to cost basis
       const weeklyPL = 0;
 
