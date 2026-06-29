@@ -1,7 +1,7 @@
 import express from 'express';
 import { google } from 'googleapis';
 import { createRequire } from 'module';
-import { supabase, supabaseAdmin } from '../config/supabase.js';
+import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const require = createRequire(import.meta.url);
@@ -25,39 +25,49 @@ const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 
 // ─── Helpers: Store/Read Refresh Token ───────────────────────────────────────
 const saveRefreshToken = async (token) => {
-  try {
-    const { data: existing } = await supabaseAdmin
-      .from('system_settings')
-      .select('key')
-      .eq('key', 'gmail_refresh_token')
-      .maybeSingle();
+  const { data: existing, error: selectError } = await supabase
+    .from('system_settings')
+    .select('key')
+    .eq('key', 'gmail_refresh_token')
+    .maybeSingle();
 
-    if (existing) {
-      const { error } = await supabaseAdmin
-        .from('system_settings')
-        .update({ value: token })
-        .eq('key', 'gmail_refresh_token');
-      if (error) console.error('Error updating refresh token:', error.message);
-      else console.log('Refresh token UPDATED in DB');
-    } else {
-      const { error } = await supabaseAdmin
-        .from('system_settings')
-        .insert({ key: 'gmail_refresh_token', value: token });
-      if (error) console.error('Error inserting refresh token:', error.message);
-      else console.log('Refresh token INSERTED in DB');
+  if (selectError) {
+    console.error('Error checking existing refresh token:', selectError.message);
+    throw selectError;
+  }
+
+  if (existing) {
+    const { error: updateError } = await supabase
+      .from('system_settings')
+      .update({ value: token })
+      .eq('key', 'gmail_refresh_token');
+    if (updateError) {
+      console.error('Error updating refresh token:', updateError.message);
+      throw updateError;
     }
-  } catch (err) {
-    console.error('saveRefreshToken exception:', err.message);
+    console.log('Refresh token UPDATED in DB');
+  } else {
+    const { error: insertError } = await supabase
+      .from('system_settings')
+      .insert({ key: 'gmail_refresh_token', value: token });
+    if (insertError) {
+      console.error('Error inserting refresh token:', insertError.message);
+      throw insertError;
+    }
+    console.log('Refresh token INSERTED in DB');
   }
 };
 
 const getRefreshToken = async () => {
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await supabase
     .from('system_settings')
     .select('value')
     .eq('key', 'gmail_refresh_token')
     .maybeSingle();
-  if (error) console.error('Error reading refresh token:', error.message);
+  if (error) {
+    console.error('Error reading refresh token:', error.message);
+    throw error;
+  }
   return data?.value || null;
 };
 
@@ -424,7 +434,7 @@ router.post('/sync', requireAuth, async (req, res) => {
         }
 
         // Mark email as processed
-        await supabaseAdmin.from('system_settings').upsert(
+        await supabase.from('system_settings').upsert(
           { key: `gmail_processed_${msg.id}`, value: tradeDate },
           { onConflict: 'key' }
         );
@@ -440,7 +450,7 @@ router.post('/sync', requireAuth, async (req, res) => {
     // Recalculate holdings if trades were added
     if (totalNewTrades > 0) {
       await recalculateHoldingsForUser(userId);
-      await supabaseAdmin.from('system_settings').upsert(
+      await supabase.from('system_settings').upsert(
         { key: 'gmail_last_sync', value: new Date().toISOString() },
         { onConflict: 'key' }
       );
@@ -464,7 +474,7 @@ router.post('/sync', requireAuth, async (req, res) => {
 
 // ─── GET /api/gmail/last-sync ─────────────────────────────────────────────────
 router.get('/last-sync', requireAuth, async (req, res) => {
-  const { data } = await supabaseAdmin.from('system_settings').select('value').eq('key', 'gmail_last_sync').maybeSingle();
+  const { data } = await supabase.from('system_settings').select('value').eq('key', 'gmail_last_sync').maybeSingle();
   res.json({ lastSync: data?.value || null });
 });
 
