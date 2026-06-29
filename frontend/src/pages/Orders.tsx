@@ -162,19 +162,15 @@ export const Orders = () => {
       setFetchingLtp(true);
       try {
         const symbolUpper = symbol.toUpperCase().trim();
-        await apiRequest(`/analytics/portfolio-history?period=1W`); // triggers price update internally
-        // Look up price from user holdings or pull a fresh quote using holdings price sync endpoint
-        const syncResult = await apiRequest(`/holdings/sync-prices`, { method: 'POST' });
-        const matching = syncResult.holdings?.find((h: any) => h.stock_symbol === symbolUpper);
-        if (matching?.ltp) {
-          setLtp(matching.ltp);
+        const res = await apiRequest(`/holdings/ltp/${symbolUpper}`);
+        if (res && res.ltp) {
+          setLtp(res.ltp);
         } else {
-          // If not in holdings, let's fetch an LTP. Our backend router also supports direct LTP fetching via portfolio sync.
-          // Fall back to a default value if missing, or use custom LTP fetcher
           setLtp(null);
         }
       } catch (err) {
         console.error('LTP fetch failed:', err);
+        setLtp(null);
       } finally {
         setFetchingLtp(false);
       }

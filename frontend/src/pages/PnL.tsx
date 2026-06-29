@@ -177,7 +177,7 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
                     onClick={() => setSelectedSnapshot(snap)}
                     className={`flex-shrink-0 flex flex-col items-center justify-between p-3.5 rounded-2xl border min-w-[100px] transition-all cursor-pointer ${
                       isActive 
-                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 shadow-lg shadow-amber-500/5' 
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400 shadow-lg shadow-amber-500/5' 
                         : 'bg-dark-depth-2/50 border-dark-border/60 text-gray-400 hover:bg-dark-depth-2 hover:border-dark-border hover:text-white'
                     }`}
                   >
@@ -203,7 +203,7 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                   </span>
-                  <span className="text-[10px] font-black uppercase text-amber-500 tracking-wider">TIME MACHINE ACTIVE</span>
+                  <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider">TIME MACHINE ACTIVE</span>
                 </div>
                 <span className="text-xs font-bold text-gray-400">
                   Snapshot Date: {new Date(selectedSnapshot.snapshot_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -212,24 +212,24 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
 
               {/* KPI metrics */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="bg-[#0e1117] border border-dark-border/40 p-4 rounded-2xl">
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
                   <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Portfolio Value</span>
                   <span className="text-lg font-black text-white">{formatCurrency(Number(selectedSnapshot.total_value))}</span>
                 </div>
-                <div className="bg-[#0e1117] border border-dark-border/40 p-4 rounded-2xl">
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
                   <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Invested Capital</span>
                   <span className="text-lg font-black text-gray-300">{formatCurrency(Number(selectedSnapshot.total_invested))}</span>
                 </div>
-                <div className="bg-[#0e1117] border border-dark-border/40 p-4 rounded-2xl">
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
                   <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Snapshot Returns</span>
-                  <span className={`text-lg font-black ${selectedSnapshot.weekly_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  <span className={`text-lg font-black ${selectedSnapshot.weekly_pnl >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
                     {selectedSnapshot.weekly_pnl >= 0 ? '+' : ''}{formatCurrency(Number(selectedSnapshot.weekly_pnl))}
                   </span>
                 </div>
               </div>
 
               {/* Holdings State Table */}
-              <div className="bg-[#0e1117]/60 border border-dark-border/40 rounded-2xl p-5">
+              <div className="bg-dark-depth-2/40 border border-dark-border/40 rounded-2xl p-5">
                 <h4 className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-3.5">Holdings Ledger at Snapshot</h4>
                 
                 {(!selectedSnapshot.holdings_state || selectedSnapshot.holdings_state.length === 0) ? (
@@ -238,7 +238,7 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-[11px]">
                       <thead>
-                        <tr className="text-gray-500 uppercase tracking-wider border-b border-dark-border/30 pb-2">
+                        <tr className="text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-dark-border/30 pb-2">
                           <th className="pb-2 font-bold">Company</th>
                           <th className="pb-2 font-bold">Quantity</th>
                           <th className="pb-2 font-bold">Avg Price</th>
@@ -250,7 +250,7 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
                         {selectedSnapshot.holdings_state.map((h: any, idx: number) => {
                           const value = h.quantity * h.ltp;
                           return (
-                            <tr key={idx} className="hover:bg-white/5 transition-colors">
+                            <tr key={idx} className="hover:bg-dark-depth-2/30 transition-colors">
                               <td className="py-2.5">
                                 <span className="font-extrabold text-white block">{h.stock_symbol}</span>
                                 <span className="text-[9px] text-gray-500 block mt-0.5">{h.stock_name}</span>

@@ -87,6 +87,22 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/holdings/ltp/:symbol
+ * Fetch a single stock quote LTP from Yahoo Finance
+ */
+router.get('/ltp/:symbol', requireAuth, async (req, res) => {
+  try {
+    const symbol = req.params.symbol.toUpperCase().trim();
+    const ltpData = await fetchMultipleLTPs([symbol]);
+    const price = ltpData[symbol]?.ltp || null;
+    res.json({ symbol, ltp: price });
+  } catch (err) {
+    console.error(`[HoldingsRoute] Single LTP fetch failed for ${req.params.symbol}:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/holdings/settings
  * Fetch all stock settings (tags and stop-losses) for user
  */

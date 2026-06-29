@@ -102,10 +102,6 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
     try {
       const holdingsData = await apiRequest('/holdings');
       setHoldings(holdingsData || []);
-
-      const syncResult = await apiRequest('/holdings/sync-prices', { method: 'POST' });
-      const updatedHoldings = syncResult.holdings || holdingsData || [];
-      setHoldings(updatedHoldings);
     } catch (err: any) {
       console.error('Failed to load holdings:', err);
     }
@@ -154,6 +150,33 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
     fetchHoldingsData();
     fetchEventsData();
     fetchTradesData();
+  }, []);
+
+  // Background price synchronization if stale (cooldown 5 mins)
+  useEffect(() => {
+    const triggerBackgroundSync = async () => {
+      try {
+        const lastSyncStr = localStorage.getItem('finor_last_price_sync');
+        const lastSync = lastSyncStr ? parseInt(lastSyncStr, 10) : 0;
+        
+        if (Date.now() - lastSync > 5 * 60 * 1000) {
+          localStorage.setItem('finor_last_price_sync', Date.now().toString());
+          console.log('[Dashboard] Stale prices detected. Running background price sync...');
+          const syncResult = await apiRequest('/holdings/sync-prices', { method: 'POST' });
+          if (syncResult && syncResult.holdings) {
+            setHoldings(syncResult.holdings);
+            // Broadcast sync complete to other pages/tabs
+            window.dispatchEvent(new Event('portfolio-sync-complete'));
+          }
+        }
+      } catch (err) {
+        console.error('[Dashboard] Background price sync failed:', err);
+      }
+    };
+
+    // Delay background sync slightly to prioritize initial mount rendering speed
+    const timer = setTimeout(triggerBackgroundSync, 1000);
+    return () => clearTimeout(timer);
   }, []);
 
   // Fetch history when period changes
@@ -437,7 +460,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
               <p className="text-[10px] text-gray-400">Fetching corporate actions...</p>
             </div>
           ) : upcomingEvents.length === 0 ? (
-            <div className="flex-grow flex items-center justify-center py-8 text-center bg-[#121722]/30 rounded-2xl border border-dashed border-dark-border/40">
+            <div className="flex-grow flex items-center justify-center py-8 text-center bg-dark-depth-2/30 rounded-2xl border border-dashed border-dark-border/40">
               <div>
                 <Calendar className="w-8 h-8 text-gray-600 mx-auto mb-2" />
                 <p className="text-[10px] text-gray-400">No upcoming events scheduled for your holdings.</p>
@@ -510,7 +533,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
             
             {/* Suggestions list */}
             {exitCandidates.length === 0 ? (
-              <div className="flex-grow flex items-center justify-center py-8 text-center bg-[#121722]/30 rounded-2xl border border-dashed border-dark-border/40">
+              <div className="flex-grow flex items-center justify-center py-8 text-center bg-dark-depth-2/30 rounded-2xl border border-dashed border-dark-border/40">
                 <div>
                   <TrendingUp className="w-8 h-8 text-gray-600 mx-auto mb-2" />
                   <p className="text-[10px] text-gray-400 flex flex-col gap-1 items-center">
@@ -527,7 +550,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
                   const bestClosed = closedCandidates[idx] || closedCandidates[0];
                   
                   return (
-                    <div key={idx} className="bg-[#121722]/50 border border-dark-border/40 p-4 rounded-2xl space-y-3">
+                    <div key={idx} className="bg-dark-depth-2/40 border border-dark-border/40 p-4 rounded-2xl space-y-3">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wide">Opportunity #{idx + 1}</span>
                         <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full font-extrabold">BOOK PROFIT SIGNAL</span>
@@ -681,7 +704,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
               </div>
               <button
                 onClick={() => setSelectedEventDetails(null)}
-                className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-dark-depth-2/60 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -689,7 +712,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
 
             {/* Details Content */}
             <div className="space-y-4">
-              <div className="bg-[#0e1117]/80 border border-dark-border/40 p-4 rounded-2xl">
+              <div className="bg-dark-depth-2/40 border border-dark-border/40 p-4 rounded-2xl">
                 <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Description</span>
                 <p className="text-xs text-gray-300 leading-relaxed font-semibold">
                   {selectedEventDetails.details || 'No additional details are currently available for this event.'}

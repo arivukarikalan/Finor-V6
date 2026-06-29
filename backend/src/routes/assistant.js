@@ -665,16 +665,31 @@ Acknowledge that you have full access to these pre-calculated metrics. If the us
       }));
       console.log("[AI Assistant] Mapped history before sanitization:", JSON.stringify(mappedHistory, null, 2));
 
-      // Ensure the history starts with a 'user' message to satisfy Gemini API requirements
-      while (mappedHistory.length > 0 && mappedHistory[0].role !== 'user') {
-        mappedHistory.shift();
+      // Build alternating list to ensure strict alternating pattern without loss of user queries
+      let alternateHistory = [];
+      mappedHistory.forEach(msg => {
+        if (alternateHistory.length === 0) {
+          if (msg.role === 'user') {
+            alternateHistory.push(msg);
+          }
+        } else {
+          const lastMsg = alternateHistory[alternateHistory.length - 1];
+          if (lastMsg.role === msg.role) {
+            // Merge consecutive messages of the same role
+            lastMsg.parts[0].text += '\n' + msg.parts[0].text;
+          } else {
+            alternateHistory.push(msg);
+          }
+        }
+      });
+
+      // Ensure the history ends with 'model' (assistant) so the next user message alternates
+      if (alternateHistory.length > 0 && alternateHistory[alternateHistory.length - 1].role !== 'model') {
+        alternateHistory.pop();
       }
 
-      // Ensure the history ends with a 'model' message to prevent consecutive user messages
-      while (mappedHistory.length > 0 && mappedHistory[mappedHistory.length - 1].role !== 'model') {
-        mappedHistory.pop();
-      }
-      console.log("[AI Assistant] Mapped history after sanitization:", JSON.stringify(mappedHistory, null, 2));
+      mappedHistory = alternateHistory;
+      console.log("[AI Assistant] Mapped history after alternating sanitization:", JSON.stringify(mappedHistory, null, 2));
 
       let finalModel = targetModel;
 

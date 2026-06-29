@@ -29,7 +29,8 @@ import {
   ThumbsUp,
   ThumbsDown,
   Copy,
-  Check
+  Check,
+  Search
 } from 'lucide-react';
 import { marked } from 'marked';
 
@@ -391,6 +392,8 @@ export const More = ({
   const { signOut } = useAuthStore();
   const [activeSubTab, setActiveSubTab] = useState<SubTabId>(defaultSubTab);
   const [logsList, setLogsList] = useState<LogEntry[]>([]);
+  const [logSearch, setLogSearch] = useState('');
+  const [logTypeFilter, setLogTypeFilter] = useState<'all' | 'info' | 'success' | 'warn' | 'error'>('all');
 
   useEffect(() => {
     setActiveSubTab(defaultSubTab);
@@ -763,7 +766,7 @@ export const More = ({
       // Load current messages for context window
       const active = currentChats.find(c => c.id === currentChatId);
       const activeMsgs = active ? active.messages : [userMsg];
-      const historyToSend = activeMsgs.slice(-7).map(m => ({
+      const historyToSend = activeMsgs.slice(-21).map(m => ({
         role: m.role,
         content: m.content
       }));
@@ -1254,69 +1257,159 @@ export const More = ({
         )}
 
         {/* 4. System Logs subtab */}
-        {activeSubTab === 'logs' && (
-          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4 max-w-xl mx-auto flex flex-col h-[500px]">
-            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3 flex-shrink-0">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-indigo-400" />
-                Execution Trails
-              </h3>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const logs = SystemLogger.getLogs();
-                    const text = logs.map(l => `[${l.timestamp}] [${l.type.toUpperCase()}] ${l.message}`).join('\n');
-                    navigator.clipboard.writeText(text);
-                    setSuccess('Logs copied to clipboard!');
-                    setTimeout(() => setSuccess(null), 3000);
-                  }}
-                  className="px-3 py-1.5 rounded-lg border border-dark-border hover:bg-dark-depth-3/50 text-[10px] font-bold text-gray-400 hover:text-white transition-all cursor-pointer"
-                >
-                  Copy Trails
-                </button>
-                <button
-                  onClick={() => {
-                    SystemLogger.clear();
-                    setLogsList([]);
-                    setSuccess('Logs cleared!');
-                    setTimeout(() => setSuccess(null), 3000);
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 hover:border-rose-500/30 text-[10px] font-bold text-rose-400 hover:text-rose-300 transition-all cursor-pointer"
-                >
-                  Clear Trails
-                </button>
+        {activeSubTab === 'logs' && (() => {
+          const infoCount = logsList.filter(l => l.type === 'info' || !l.type).length;
+          const successCount = logsList.filter(l => l.type === 'success').length;
+          const warnCount = logsList.filter(l => l.type === 'warn').length;
+          const errorCount = logsList.filter(l => l.type === 'error').length;
+
+          const filteredLogs = logsList.filter(log => {
+            const matchesSearch = log.message.toLowerCase().includes(logSearch.toLowerCase());
+            const matchesType = logTypeFilter === 'all' || 
+              (logTypeFilter === 'info' && (!log.type || log.type === 'info')) ||
+              log.type === logTypeFilter;
+            return matchesSearch && matchesType;
+          });
+
+          return (
+            <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4 max-w-4xl mx-auto flex flex-col h-[550px] w-full">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-dark-border/40 pb-4 flex-shrink-0">
+                <div className="space-y-0.5 border-0">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-indigo-400" />
+                    System Execution Trails
+                  </h3>
+                  <p className="text-[10px] text-gray-400">Track real-time background cycles, database operations, and API events.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const logs = SystemLogger.getLogs();
+                      const text = logs.map(l => `[${l.timestamp}] [${l.type ? l.type.toUpperCase() : 'INFO'}] ${l.message}`).join('\n');
+                      navigator.clipboard.writeText(text);
+                      setSuccess('Logs copied to clipboard!');
+                      setTimeout(() => setSuccess(null), 3000);
+                    }}
+                    className="px-3 py-2 rounded-xl border border-dark-border hover:bg-dark-depth-3/50 text-[10px] font-bold text-gray-400 hover:text-white transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    Copy Trails
+                  </button>
+                  <button
+                    onClick={() => {
+                      SystemLogger.clear();
+                      setLogsList([]);
+                      setSuccess('Logs cleared!');
+                      setTimeout(() => setSuccess(null), 3000);
+                    }}
+                    className="px-3 py-2 rounded-xl bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 hover:border-rose-500/30 text-[10px] font-bold text-rose-400 hover:text-rose-300 transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Clear Trails
+                  </button>
+                </div>
+              </div>
+
+              {/* Search & Filters Stats Bar */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 flex-shrink-0 bg-dark-depth-2/45 p-3 rounded-2xl border border-dark-border/60">
+                {/* Search box */}
+                <div className="relative flex-grow max-w-sm">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                  <input
+                    type="text"
+                    placeholder="Search logs..."
+                    value={logSearch}
+                    onChange={(e) => setLogSearch(e.target.value)}
+                    className="w-full bg-dark-depth-2/70 border border-dark-border/60 hover:border-dark-border rounded-xl py-1.5 pl-9 pr-4 text-xs font-semibold text-white focus:outline-none focus:border-brand-500 transition-all"
+                  />
+                </div>
+
+                {/* Filter pills */}
+                <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-bold uppercase tracking-wider">
+                  <button
+                    onClick={() => setLogTypeFilter('all')}
+                    className={`px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      logTypeFilter === 'all'
+                        ? 'bg-indigo-500/10 border-indigo-500/30 text-indigo-400'
+                        : 'border-dark-border/60 text-gray-400 hover:text-white hover:bg-dark-depth-3/50'
+                    }`}
+                  >
+                    All <span className="px-1 py-0.5 rounded-md bg-dark-depth-1 border border-dark-border/40 text-[8px]">{logsList.length}</span>
+                  </button>
+                  <button
+                    onClick={() => setLogTypeFilter('info')}
+                    className={`px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      logTypeFilter === 'info'
+                        ? 'bg-blue-500/15 border-blue-500/35 text-blue-400'
+                        : 'border-dark-border/60 text-gray-400 hover:text-white hover:bg-dark-depth-3/50'
+                    }`}
+                  >
+                    Info <span className="px-1 py-0.5 rounded-md bg-dark-depth-1 border border-dark-border/40 text-[8px]">{infoCount}</span>
+                  </button>
+                  <button
+                    onClick={() => setLogTypeFilter('success')}
+                    className={`px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      logTypeFilter === 'success'
+                        ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-400'
+                        : 'border-dark-border/60 text-gray-400 hover:text-white hover:bg-dark-depth-3/50'
+                    }`}
+                  >
+                    Success <span className="px-1 py-0.5 rounded-md bg-dark-depth-1 border border-dark-border/40 text-[8px]">{successCount}</span>
+                  </button>
+                  <button
+                    onClick={() => setLogTypeFilter('warn')}
+                    className={`px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      logTypeFilter === 'warn'
+                        ? 'bg-amber-500/15 border-amber-500/35 text-amber-500 dark:text-amber-400'
+                        : 'border-dark-border/60 text-gray-400 hover:text-white hover:bg-dark-depth-3/50'
+                    }`}
+                  >
+                    Warn <span className="px-1 py-0.5 rounded-md bg-dark-depth-1 border border-dark-border/40 text-[8px]">{warnCount}</span>
+                  </button>
+                  <button
+                    onClick={() => setLogTypeFilter('error')}
+                    className={`px-2.5 py-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+                      logTypeFilter === 'error'
+                        ? 'bg-rose-500/15 border-rose-500/35 text-rose-500 dark:text-rose-400'
+                        : 'border-dark-border/60 text-gray-400 hover:text-white hover:bg-dark-depth-3/50'
+                    }`}
+                  >
+                    Error <span className="px-1 py-0.5 rounded-md bg-dark-depth-1 border border-dark-border/40 text-[8px]">{errorCount}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Console logs view */}
+              <div className="flex-1 overflow-y-auto space-y-2 pr-1 font-mono text-[10px] scrollbar-hidden">
+                {filteredLogs.length === 0 ? (
+                  <div className="text-center py-20 text-gray-500 italic text-xs">
+                    No matching logs found in console buffer.
+                  </div>
+                ) : (
+                  filteredLogs.map((log, idx) => {
+                    const time = new Date(log.timestamp).toLocaleTimeString('en-IN', { hour12: false });
+                    let borderClass = 'border-l-4 border-l-blue-500 bg-blue-500/[0.03] border-dark-border/40 text-blue-400';
+                    if (log.type === 'success') borderClass = 'border-l-4 border-l-emerald-500 bg-emerald-500/[0.03] border-dark-border/40 text-emerald-500 dark:text-emerald-400';
+                    if (log.type === 'error') borderClass = 'border-l-4 border-l-rose-500 bg-rose-500/[0.03] border-dark-border/40 text-rose-500 dark:text-rose-400';
+                    if (log.type === 'warn') borderClass = 'border-l-4 border-l-amber-500 bg-amber-500/[0.03] border-dark-border/40 text-amber-600 dark:text-amber-400';
+
+                    return (
+                      <div key={idx} className={`p-2.5 rounded-r-lg border-y border-r flex items-start gap-3.5 leading-relaxed transition-all hover:bg-dark-depth-2/30 ${borderClass}`}>
+                        <span className="opacity-60 flex-shrink-0 select-none font-bold text-gray-400">{time}</span>
+                        <span className="font-semibold break-all select-text text-gray-300 dark:text-gray-200">{log.message}</span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-dark-border/40 text-[9px] text-gray-500 font-semibold uppercase tracking-wider flex items-center justify-between select-none flex-shrink-0">
+                <span>Cleared automatically once daily</span>
+                <span>Total Logs: {logsList.length}</span>
               </div>
             </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 font-mono text-[9px] scrollbar-hidden">
-              {logsList.length === 0 ? (
-                <div className="text-center py-20 text-gray-500 italic">
-                  No execution logs recorded today.
-                </div>
-              ) : (
-                logsList.map((log, idx) => {
-                  const time = new Date(log.timestamp).toLocaleTimeString('en-IN', { hour12: false });
-                  let colorClass = 'text-gray-400 border-gray-500/10 bg-gray-500/5';
-                  if (log.type === 'success') colorClass = 'text-emerald-400 border-emerald-500/10 bg-emerald-500/5';
-                  if (log.type === 'error') colorClass = 'text-rose-400 border-rose-500/10 bg-rose-500/5';
-                  if (log.type === 'warn') colorClass = 'text-amber-400 border-amber-500/10 bg-amber-500/5';
-
-                  return (
-                    <div key={idx} className={`p-2 rounded-lg border flex items-start gap-3.5 leading-relaxed ${colorClass}`}>
-                      <span className="opacity-60 flex-shrink-0 select-none">{time}</span>
-                      <span className="font-semibold break-all select-text">{log.message}</span>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            <div className="pt-2 border-t border-dark-border/40 text-[9px] text-gray-500 font-semibold uppercase tracking-wider flex items-center justify-between select-none flex-shrink-0">
-              <span>Cleared automatically once daily</span>
-              <span>Total Logs: {logsList.length}</span>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 3. AI Chat subtab */}
         {activeSubTab === 'ai-chat' && (

@@ -1,6 +1,7 @@
 import express from 'express';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
+import { getStockDailyPrices } from '../services/yahooFinance.js';
 
 const router = express.Router();
 
@@ -121,7 +122,41 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
       return res.json({ message: 'No trades found to reconstruct history.', count: 0 });
     }
 
-    // 2. Determine start date and loop week-by-week
+    // 2. Fetch daily prices for all unique symbols in trades
+    const uniqueSymbols = [...new Set(trades.map(t => t.stock_symbol.toUpperCase()))];
+    const dailyPricesMap = {};
+    await Promise.all(
+      uniqueSymbols.map(async (symbol) => {
+        try {
+          const prices = await getStockDailyPrices(symbol);
+          dailyPricesMap[symbol] = prices || {};
+        } catch (err) {
+          console.error(`[SnapshotsHistory] Failed to pre-fetch daily prices for ${symbol}:`, err.message);
+          dailyPricesMap[symbol] = {};
+        }
+      })
+    );
+
+    // Helper to get closest available historical closing price
+    const getPriceForDate = (symbol, dateStr) => {
+      const symbolPrices = dailyPricesMap[symbol];
+      if (!symbolPrices) return null;
+      if (symbolPrices[dateStr] !== undefined) return symbolPrices[dateStr];
+      
+      // Look back up to 10 days (for weekends or holidays)
+      const date = new Date(dateStr);
+      for (let i = 1; i <= 10; i++) {
+        const prevDate = new Date(date);
+        prevDate.setDate(prevDate.getDate() - i);
+        const prevDateStr = prevDate.toISOString().split('T')[0];
+        if (symbolPrices[prevDateStr] !== undefined) {
+          return symbolPrices[prevDateStr];
+        }
+      }
+      return null;
+    };
+
+    // 3. Determine start date and loop week-by-week
     const firstTradeDate = new Date(trades[0].trade_date);
     const today = new Date();
     let currentDate = new Date(firstTradeDate);
@@ -174,18 +209,21 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
       // Filter to keep only active holdings
       const holdingsState = Object.values(positions)
         .filter((h) => h.quantity > 0)
-        .map((h) => ({
-          stock_symbol: h.stock_symbol,
-          stock_name: h.stock_name,
-          quantity: h.quantity,
-          average_buy_price: h.average_buy_price,
-          ltp: h.average_buy_price // fallback historical price to purchase cost
-        }));
+        .map((h) => {
+          const historicalLtp = getPriceForDate(h.stock_symbol, snapDateStr);
+          return {
+            stock_symbol: h.stock_symbol,
+            stock_name: h.stock_name,
+            quantity: h.quantity,
+            average_buy_price: h.average_buy_price,
+            ltp: historicalLtp !== null ? historicalLtp : h.average_buy_price
+          };
+        });
 
       // Calculate totals
       const totalInvested = holdingsState.reduce((sum, h) => sum + (h.average_buy_price * h.quantity), 0);
-      const totalValue = totalInvested; // default historical value to cost basis
-      const weeklyPL = 0;
+      const totalValue = holdingsState.reduce((sum, h) => sum + (h.ltp * h.quantity), 0);
+      const weeklyPL = totalValue - totalInvested;
 
       // Duplicate Check: Check if snapshot already exists for this date
       const { data: existing, error: checkError } = await supabase
