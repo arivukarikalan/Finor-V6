@@ -500,4 +500,25 @@ html.light {
   opacity: 0;
 }
 
+/* Price Flash Animations */
+@keyframes pulsePriceUp {
+  0% { color: #10b981; transform: scale(1.08); text-shadow: 0 0 8px rgba(16, 185, 129, 0.3); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pulsePriceDown {
+  0% { color: #ef4444; transform: scale(1.08); text-shadow: 0 0 8px rgba(239, 68, 68, 0.3); }
+  100% { transform: scale(1); }
+}
+
+.animate-price-up {
+  animation: pulsePriceUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  display: inline-block;
+}
+
+.animate-price-down {
+  animation: pulsePriceDown 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  display: inline-block;
+}
+
 

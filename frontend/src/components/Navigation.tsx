@@ -15,7 +15,8 @@ import {
   Mail,
   CheckCircle2,
   AlertCircle,
-  X
+  X,
+  Menu
 } from 'lucide-react';
 import { useAuthStore } from '../context/authStore';
 import { supabase } from '../services/supabase';
@@ -42,6 +43,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   const [syncToast, setSyncToast] = React.useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [syncDetails, setSyncDetails] = React.useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = React.useState<boolean>(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState<boolean>(false);
 
   const fetchLastTrade = async () => {
     try {
@@ -288,6 +290,14 @@ export const Navigation: React.FC<NavigationProps> = ({
         
         {/* Left Branding with Status Ping */}
         <div className="flex items-center gap-2 select-none">
+          {/* Hamburger Menu Toggle Button */}
+          <button
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="p-1 -ml-1 rounded-lg border border-transparent hover:border-dark-border hover:bg-dark-depth-2/40 text-gray-400 hover:text-white transition-all cursor-pointer mr-1"
+            title="Open Menu"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
           <img src="/favicon.png" alt="Finor Logo" className="w-5 h-5 rounded-md object-contain" />
           <span className="font-extrabold font-display tracking-tight text-sm bg-gradient-to-r from-brand-100 to-brand-500 bg-clip-text text-transparent">
             FINOR
@@ -594,6 +604,95 @@ export const Navigation: React.FC<NavigationProps> = ({
           </div>
         </div>
       )}
+
+      {/* 6. Sliding Mobile Menu Drawer Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] transition-opacity duration-300 md:hidden animate-in fade-in"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* 7. Sliding Mobile Menu Drawer Panel */}
+      <aside 
+        className={`fixed inset-y-0 left-0 w-72 bg-dark-depth-1 border-r border-dark-border z-[120] flex flex-col md:hidden transition-transform duration-300 ease-in-out ${
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        {/* Drawer Header */}
+        <div className="h-16 flex items-center justify-between px-6 border-b border-dark-border">
+          <div className="flex items-baseline gap-2">
+            <span className="font-extrabold font-display text-lg tracking-tight bg-gradient-to-r from-brand-100 to-brand-500 bg-clip-text text-transparent">
+              FINOR
+            </span>
+            <span className="text-[9px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded-full border border-emerald-500/20">
+              V6.0
+            </span>
+          </div>
+          <button
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="p-1.5 rounded-lg hover:bg-dark-depth-2 border border-transparent hover:border-dark-border text-gray-400 hover:text-white transition-all cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* User profile card */}
+        <div className="px-4 py-4 border-b border-dark-border">
+          <div className="flex items-center gap-3 p-2 rounded-xl bg-dark-depth-2/40 border border-dark-border/40">
+            <div className="w-8 h-8 rounded-full bg-brand-600/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
+              <User className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-white truncate">
+                {user?.email?.split('@')[0]}
+              </p>
+              <p className="text-[10px] text-gray-400 truncate">
+                Owner Account
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Drawer Nav Links */}
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
+          {navigationItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all cursor-pointer ${
+                  isActive 
+                    ? 'bg-gradient-to-r from-brand-600/20 to-brand-700/5 text-brand-400 border-l-4 border-brand-500' 
+                    : 'text-gray-400 hover:text-white hover:bg-dark-depth-2/50 border-l-4 border-transparent'
+                }`}
+              >
+                <Icon className={`w-5 h-5 ${isActive ? 'text-brand-400' : 'text-gray-400'}`} />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Logout at bottom */}
+        <div className="p-4 border-t border-dark-border">
+          <button
+            onClick={() => {
+              setIsMobileMenuOpen(false);
+              signOut();
+            }}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dark-border text-xs font-bold text-gray-400 hover:text-rose-500 hover:bg-rose-500/10 hover:border-rose-500/30 transition-all cursor-pointer"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Sign Out
+          </button>
+        </div>
+      </aside>
 
     </div>
   );

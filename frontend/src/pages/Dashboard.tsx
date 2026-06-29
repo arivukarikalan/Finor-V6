@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '../services/api';
+import { LtpPriceText } from '../components/LtpPriceText';
 import { 
   AreaChart, 
   Area, 
@@ -244,7 +245,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
           <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-xl pointer-events-none" />
           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Portfolio Value</span>
           <h3 className="text-2xl font-extrabold text-white mt-1.5">
-            ₹{totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <LtpPriceText value={totalValue} />
           </h3>
           <div className="flex items-center gap-2 mt-2">
             <span className="text-xs text-gray-500 font-medium">Invested:</span>
@@ -278,7 +279,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
           <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none" />
           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Day's Gain / Loss</span>
           <h3 className="text-2xl font-extrabold text-emerald-500 mt-1.5 flex items-center gap-1.5">
-            +₹{daysGain.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            +<LtpPriceText value={daysGain} />
           </h3>
           <div className="flex items-center gap-1.5 mt-2">
             <span className="text-xs text-emerald-500 font-semibold bg-emerald-500/10 border border-emerald-500/10 px-2 py-0.5 rounded-full">
@@ -453,7 +454,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
                 <tbody className="divide-y divide-dark-border/20">
                   {upcomingEvents.slice(0, 5).map((event: any, idx: number) => (
                     <tr key={idx} className="hover:bg-white/5 transition-colors">
-                      <td className="py-2.5 font-extrabold text-white">{event.symbol}</td>
+                      <td className="py-2.5 font-extrabold text-white">{event.stock_symbol}</td>
                       <td className="py-2.5">
                         <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${
                           event.type === 'DIVIDEND' 

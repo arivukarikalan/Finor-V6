@@ -26,7 +26,8 @@ import {
   Flame,
   Percent,
   PieChart,
-  CircleDollarSign
+  CircleDollarSign,
+  Activity
 } from 'lucide-react';
 
 interface ClosedTrade {
@@ -66,11 +67,212 @@ const CustomPnLTooltip = ({ active, payload }: any) => {
   return null;
 };
 
+// ─── Portfolio Time Machine Viewer Component ─────────────────────────────
+interface TimeMachineViewProps {
+  snapshots: any[];
+  loading: boolean;
+  selectedSnapshot: any;
+  setSelectedSnapshot: (snapshot: any) => void;
+  handleSaveSnapshot: () => void;
+  saving: boolean;
+}
+
+const TimeMachineView: React.FC<TimeMachineViewProps> = ({
+  snapshots,
+  loading,
+  selectedSnapshot,
+  setSelectedSnapshot,
+  handleSaveSnapshot,
+  saving
+}) => {
+  if (loading) {
+    return (
+      <div className="glass-panel rounded-3xl p-16 text-center border border-dark-border">
+        <Activity className="w-8 h-8 animate-spin text-indigo-400 mx-auto mb-3" />
+        <p className="text-xs text-gray-400 font-bold uppercase tracking-wider animate-pulse">
+          Opening Time Portals...
+        </p>
+      </div>
+    );
+  }
+
+  const formatCurrency = (val: number) => {
+    return val.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 });
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in zoom-in-98 duration-200">
+      
+      {/* Description & Action */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-dark-depth-1 border border-dark-border/40 p-5 rounded-2xl">
+        <div className="space-y-1">
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+            <Clock className="w-4 h-4 text-brand-400" />
+            Snapshot Ledger
+          </h3>
+          <p className="text-[10px] text-gray-400 max-w-lg leading-relaxed">
+            Snapshots capture your entire portfolio holding metrics. Save a snapshot every week to build a historical timeline and load your portfolio state at any past point.
+          </p>
+        </div>
+        <button
+          onClick={handleSaveSnapshot}
+          disabled={saving}
+          className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-black uppercase text-white transition-colors cursor-pointer select-none disabled:opacity-50 shrink-0 flex items-center justify-center gap-1.5 shadow-lg shadow-brand-700/10"
+        >
+          <Clock className="w-3.5 h-3.5" />
+          {saving ? 'Saving Snapshot...' : 'Capture Snapshot'}
+        </button>
+      </div>
+
+      {snapshots.length === 0 ? (
+        <div className="glass-panel rounded-3xl p-16 text-center border border-dark-border">
+          <Clock className="w-12 h-12 text-gray-600 mx-auto mb-4 animate-pulse" />
+          <h3 className="text-lg font-bold text-white mb-2">No Snapshots Found</h3>
+          <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed mb-6">
+            You haven't saved any portfolio snapshots yet. Click the button below to capture your first weekly snapshot point!
+          </p>
+          <button
+            onClick={handleSaveSnapshot}
+            disabled={saving}
+            className="px-6 py-3 rounded-2xl bg-brand-500 hover:bg-brand-600 text-xs text-white font-extrabold transition-all cursor-pointer shadow-lg shadow-brand-700/15"
+          >
+            Capture First Snapshot
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          
+          {/* Horizontal Timeline Slider Dial */}
+          <div className="glass-panel rounded-2xl p-5 border border-dark-border space-y-4">
+            <h4 className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Select Snapshot Date</h4>
+            
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hidden">
+              {snapshots.map((snap) => {
+                const isActive = selectedSnapshot?.id === snap.id;
+                const snapDate = new Date(snap.snapshot_date);
+                const dayLabel = snapDate.getDate();
+                const monthLabel = snapDate.toLocaleDateString('en-IN', { month: 'short' });
+                const yearLabel = snapDate.getFullYear();
+                
+                return (
+                  <button
+                    key={snap.id}
+                    onClick={() => setSelectedSnapshot(snap)}
+                    className={`flex-shrink-0 flex flex-col items-center justify-between p-3.5 rounded-2xl border min-w-[100px] transition-all cursor-pointer ${
+                      isActive 
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 shadow-lg shadow-amber-500/5' 
+                        : 'bg-dark-depth-2/50 border-dark-border/60 text-gray-400 hover:bg-dark-depth-2 hover:border-dark-border hover:text-white'
+                    }`}
+                  >
+                    <span className="text-[9px] font-extrabold uppercase opacity-80 mb-1">{monthLabel} {yearLabel}</span>
+                    <span className="text-xl font-black block my-1">{dayLabel}</span>
+                    <span className="text-[9px] font-bold">₹{(snap.total_value / 100000).toFixed(2)}L</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Selected Snapshot Viewer */}
+          {selectedSnapshot && (
+            <div className="border border-amber-500/20 bg-amber-500/[0.02] rounded-3xl p-6 relative overflow-hidden space-y-6">
+              {/* Gold light effect */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
+              
+              {/* Badge Header */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                  </span>
+                  <span className="text-[10px] font-black uppercase text-amber-500 tracking-wider">TIME MACHINE ACTIVE</span>
+                </div>
+                <span className="text-xs font-bold text-gray-400">
+                  Snapshot Date: {new Date(selectedSnapshot.snapshot_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+                </span>
+              </div>
+
+              {/* KPI metrics */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-[#0e1117] border border-dark-border/40 p-4 rounded-2xl">
+                  <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Portfolio Value</span>
+                  <span className="text-lg font-black text-white">{formatCurrency(Number(selectedSnapshot.total_value))}</span>
+                </div>
+                <div className="bg-[#0e1117] border border-dark-border/40 p-4 rounded-2xl">
+                  <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Invested Capital</span>
+                  <span className="text-lg font-black text-gray-300">{formatCurrency(Number(selectedSnapshot.total_invested))}</span>
+                </div>
+                <div className="bg-[#0e1117] border border-dark-border/40 p-4 rounded-2xl">
+                  <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Snapshot Returns</span>
+                  <span className={`text-lg font-black ${selectedSnapshot.weekly_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {selectedSnapshot.weekly_pnl >= 0 ? '+' : ''}{formatCurrency(Number(selectedSnapshot.weekly_pnl))}
+                  </span>
+                </div>
+              </div>
+
+              {/* Holdings State Table */}
+              <div className="bg-[#0e1117]/60 border border-dark-border/40 rounded-2xl p-5">
+                <h4 className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider mb-3.5">Holdings Ledger at Snapshot</h4>
+                
+                {(!selectedSnapshot.holdings_state || selectedSnapshot.holdings_state.length === 0) ? (
+                  <p className="text-xs text-gray-400 italic">No holdings were active at this snapshot point.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-[11px]">
+                      <thead>
+                        <tr className="text-gray-500 uppercase tracking-wider border-b border-dark-border/30 pb-2">
+                          <th className="pb-2 font-bold">Company</th>
+                          <th className="pb-2 font-bold">Quantity</th>
+                          <th className="pb-2 font-bold">Avg Price</th>
+                          <th className="pb-2 font-bold">Snapshot LTP</th>
+                          <th className="pb-2 font-bold text-right">Current Value</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-dark-border/20">
+                        {selectedSnapshot.holdings_state.map((h: any, idx: number) => {
+                          const value = h.quantity * h.ltp;
+                          return (
+                            <tr key={idx} className="hover:bg-white/5 transition-colors">
+                              <td className="py-2.5">
+                                <span className="font-extrabold text-white block">{h.stock_symbol}</span>
+                                <span className="text-[9px] text-gray-500 block mt-0.5">{h.stock_name}</span>
+                              </td>
+                              <td className="py-2.5 text-white font-semibold">{h.quantity}</td>
+                              <td className="py-2.5 text-gray-300">₹{h.average_buy_price.toFixed(2)}</td>
+                              <td className="py-2.5 text-gray-300">₹{h.ltp.toFixed(2)}</td>
+                              <td className="py-2.5 text-right font-bold text-white">₹{value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          )}
+
+        </div>
+      )}
+
+    </div>
+  );
+};
+
 export const PnL = () => {
   const [summary, setSummary] = useState<PnLSummary>({ total_realized_pnl: 0, stcg: 0, ltcg: 0 });
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Time Machine States
+  const [pnlSubTab, setPnlSubTab] = useState<'ledger' | 'time-machine'>('ledger');
+  const [snapshots, setSnapshots] = useState<any[]>([]);
+  const [loadingSnapshots, setLoadingSnapshots] = useState(false);
+  const [selectedSnapshot, setSelectedSnapshot] = useState<any>(null);
+  const [savingSnapshot, setSavingSnapshot] = useState(false);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -107,6 +309,35 @@ export const PnL = () => {
     setEndDateFilter('');
   };
 
+  const fetchSnapshots = async () => {
+    setLoadingSnapshots(true);
+    try {
+      const res = await apiRequest('/snapshots');
+      setSnapshots(res || []);
+      if (res && res.length > 0) {
+        setSelectedSnapshot(res[res.length - 1]); // default to latest snapshot
+      }
+    } catch (err) {
+      console.error('Failed to load snapshots:', err);
+    } finally {
+      setLoadingSnapshots(false);
+    }
+  };
+
+  const handleSaveSnapshot = async () => {
+    if (savingSnapshot) return;
+    setSavingSnapshot(true);
+    try {
+      const res = await apiRequest('/snapshots', { method: 'POST' });
+      await fetchSnapshots();
+      alert(`✅ Weekly snapshot captured successfully for: ${res.snapshot?.snapshot_date}`);
+    } catch (err: any) {
+      alert('Failed to save snapshot: ' + err.message);
+    } finally {
+      setSavingSnapshot(false);
+    }
+  };
+
   const fetchPnLData = async () => {
     setLoading(true);
     setError(null);
@@ -123,9 +354,11 @@ export const PnL = () => {
 
   useEffect(() => {
     fetchPnLData();
+    fetchSnapshots();
 
     const handleSyncComplete = () => {
       fetchPnLData();
+      fetchSnapshots();
     };
 
     window.addEventListener('portfolio-sync-complete', handleSyncComplete);
@@ -393,6 +626,31 @@ export const PnL = () => {
         )}
       </div>
 
+      {/* Sub Tab Switcher */}
+      <div className="flex items-center gap-1.5 bg-dark-depth-2/45 p-1 rounded-xl border border-dark-border/60 w-fit select-none">
+        <button
+          onClick={() => setPnlSubTab('ledger')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all duration-200 cursor-pointer ${
+            pnlSubTab === 'ledger'
+              ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
+              : 'text-gray-400 hover:text-white hover:bg-dark-depth-3/50'
+          }`}
+        >
+          Realized Ledger
+        </button>
+        <button
+          onClick={() => setPnlSubTab('time-machine')}
+          className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+            pnlSubTab === 'time-machine'
+              ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
+              : 'text-gray-400 hover:text-white hover:bg-dark-depth-3/50'
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5" />
+          Time Machine
+        </button>
+      </div>
+
       {/* Error Alert */}
       {error && (
         <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm font-medium flex items-start gap-2.5">
@@ -401,7 +659,9 @@ export const PnL = () => {
         </div>
       )}
 
-      {/* Headline KPI Cards */}
+      {pnlSubTab === 'ledger' ? (
+        <>
+          {/* Headline KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         
         {/* Total Realized PnL */}
@@ -777,8 +1037,18 @@ export const PnL = () => {
             )}
 
           </div>
-
         </div>
+      )}
+      </>
+    ) : (
+        <TimeMachineView 
+          snapshots={snapshots}
+          loading={loadingSnapshots}
+          selectedSnapshot={selectedSnapshot}
+          setSelectedSnapshot={setSelectedSnapshot}
+          handleSaveSnapshot={handleSaveSnapshot}
+          saving={savingSnapshot}
+        />
       )}
 
       {/* AI Insights Side-Drawer Panel */}
