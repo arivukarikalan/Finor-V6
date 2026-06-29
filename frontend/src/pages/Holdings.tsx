@@ -68,6 +68,7 @@ export const Holdings = () => {
   const [csvPreview, setCsvPreview] = useState<string>('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ message: string; count: number } | null>(null);
+  const [whatIfPercent, setWhatIfPercent] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Quick Add Trade Modal State
@@ -569,6 +570,120 @@ export const Holdings = () => {
                 ) : (
                   <span>
                     🟢 **Optimal Diversification Verified**: No single industry comprises more than 30% of your capital. This is a very healthy asset spread that shields your portfolio from localized sector shocks. Well done!
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Portfolio "What-If" Stress Tester */}
+      {holdings.length > 0 && (() => {
+        const totalValue = holdings.reduce((sum, h) => sum + ((h.ltp || h.average_buy_price) * h.quantity), 0);
+        
+        // Filter holdings with stoploss
+        const holdingsWithStoploss = holdings.filter(h => {
+          const settings = stockSettings[h.stock_symbol] || {};
+          return settings.stoploss_price !== null;
+        });
+
+        // Stops breached simulation
+        const breachedStops = holdingsWithStoploss.filter(h => {
+          const ltpVal = h.ltp || h.average_buy_price;
+          const simulatedPrice = ltpVal * (1 + whatIfPercent / 100);
+          const settings = stockSettings[h.stock_symbol] || {};
+          return settings.stoploss_price !== null && simulatedPrice <= settings.stoploss_price;
+        });
+
+        // Target hits simulation
+        const breachedTargets = holdings.filter(h => {
+          const ltpVal = h.ltp || h.average_buy_price;
+          const simulatedPrice = ltpVal * (1 + whatIfPercent / 100);
+          const targetPct = (stockSettings[h.stock_symbol]?.position_tag === 'CORE_HOLD') ? 20 : 10;
+          const targetPrice = h.average_buy_price * (1 + targetPct / 100);
+          return simulatedPrice >= targetPrice;
+        });
+
+        const simulatedVal = totalValue * (1 + whatIfPercent / 100);
+        const pnlDiff = simulatedVal - totalValue;
+
+        return (
+          <div className="glass-panel rounded-3xl p-6 border border-dark-border space-y-5 select-none animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="border-b border-dark-border/40 pb-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="space-y-0.5">
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
+                  Portfolio "What If" Stress-Tester
+                </h3>
+                <p className="text-[9px] text-gray-500 font-semibold">Simulate general market swings to assess capital risks and trigger targets.</p>
+              </div>
+              <div className="flex items-center gap-1.5 bg-dark-depth-2 px-3 py-1.5 border border-dark-border/60 rounded-xl">
+                <span className="text-[9px] text-gray-500 font-bold uppercase">Simulated Swing:</span>
+                <span className={`text-[10px] font-black ${whatIfPercent > 0 ? 'text-emerald-400' : whatIfPercent < 0 ? 'text-rose-400' : 'text-white'}`}>
+                  {whatIfPercent > 0 ? '+' : ''}{whatIfPercent}%
+                </span>
+              </div>
+            </div>
+
+            {/* Slider control */}
+            <div className="space-y-1.5 bg-dark-depth-2/45 p-4 rounded-2xl border border-dark-border/60">
+              <div className="flex justify-between text-[9px] text-gray-500 font-extrabold uppercase tracking-wider">
+                <span>Market Drop (-20%)</span>
+                <span>Neutral (0%)</span>
+                <span>Market Rise (+20%)</span>
+              </div>
+              <input
+                type="range"
+                min="-20"
+                max="20"
+                step="1"
+                value={whatIfPercent}
+                onChange={(e) => setWhatIfPercent(parseInt(e.target.value))}
+                className="w-full h-1 bg-dark-depth-3 rounded-lg appearance-none cursor-ew-resize accent-indigo-500 focus:outline-none transition-all"
+              />
+            </div>
+
+            {/* Simulation Results Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Simulated portfolio value */}
+              <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
+                <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-0.5">Simulated Value</span>
+                <span className="text-sm font-black text-white">
+                  ₹{simulatedVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              {/* simulated Pnl Change */}
+              <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
+                <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-0.5">Projected P&L Shift</span>
+                <span className={`text-sm font-black ${pnlDiff > 0 ? 'text-emerald-400' : pnlDiff < 0 ? 'text-rose-400' : 'text-white'}`}>
+                  {pnlDiff > 0 ? '+' : ''}₹{pnlDiff.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                </span>
+              </div>
+
+              {/* stoploss breached count */}
+              <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
+                <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-0.5">Projected Stoplosses Hit</span>
+                <span className={`text-sm font-black ${breachedStops.length > 0 ? 'text-rose-500 dark:text-rose-400' : 'text-gray-400'}`}>
+                  {breachedStops.length} position{breachedStops.length !== 1 ? 's' : ''}
+                </span>
+                {breachedStops.length > 0 && (
+                  <span className="block text-[8px] text-rose-500 dark:text-rose-400 font-bold mt-1 select-text">
+                    Triggered: {breachedStops.map(h => h.stock_symbol).join(', ')}
+                  </span>
+                )}
+              </div>
+
+              {/* target hits count */}
+              <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
+                <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-0.5">Projected Targets Met</span>
+                <span className={`text-sm font-black ${breachedTargets.length > 0 ? 'text-emerald-400' : 'text-gray-400'}`}>
+                  {breachedTargets.length} position{breachedTargets.length !== 1 ? 's' : ''}
+                </span>
+                {breachedTargets.length > 0 && (
+                  <span className="block text-[8px] text-emerald-500 dark:text-emerald-400 font-bold mt-1 select-text">
+                    Targeted: {breachedTargets.map(h => h.stock_symbol).join(', ')}
                   </span>
                 )}
               </div>
