@@ -160,33 +160,43 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
         <div className="space-y-6">
           
           {/* Horizontal Timeline Slider Dial */}
-          <div className="glass-panel rounded-2xl p-5 border border-dark-border space-y-4">
-            <h4 className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Select Snapshot Date</h4>
+          <div className="glass-panel rounded-2xl p-5 border border-dark-border space-y-4 relative overflow-hidden">
+            <div className="flex items-center justify-between">
+              <h4 className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Select Snapshot Date</h4>
+              <span className="text-[9px] font-black text-amber-500 uppercase tracking-wider bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                Time Machine Active
+              </span>
+            </div>
             
-            <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-hidden">
-              {snapshots.map((snap) => {
-                const isActive = selectedSnapshot?.id === snap.id;
-                const snapDate = new Date(snap.snapshot_date);
-                const dayLabel = snapDate.getDate();
-                const monthLabel = snapDate.toLocaleDateString('en-IN', { month: 'short' });
-                const yearLabel = snapDate.getFullYear();
-                
-                return (
-                  <button
-                    key={snap.id}
-                    onClick={() => setSelectedSnapshot(snap)}
-                    className={`flex-shrink-0 flex flex-col items-center justify-between p-3.5 rounded-2xl border min-w-[100px] transition-all cursor-pointer ${
-                      isActive 
-                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-600 dark:text-amber-400 shadow-lg shadow-amber-500/5' 
-                        : 'bg-dark-depth-2/50 border-dark-border/60 text-gray-400 hover:bg-dark-depth-2 hover:border-dark-border hover:text-white'
-                    }`}
-                  >
-                    <span className="text-[9px] font-extrabold uppercase opacity-80 mb-1">{monthLabel} {yearLabel}</span>
-                    <span className="text-xl font-black block my-1">{dayLabel}</span>
-                    <span className="text-[9px] font-bold">₹{(snap.total_value / 100000).toFixed(2)}L</span>
-                  </button>
-                );
-              })}
+            <div className="relative pt-2 pb-1">
+              {/* Horizontal Connecting Timeline Line */}
+              <div className="absolute left-4 right-4 top-[55%] h-[1px] bg-dark-border/40 dark:bg-white/5 pointer-events-none" />
+              
+              <div className="flex items-center gap-4 overflow-x-auto pb-3 thin-scrollbar relative z-10">
+                {snapshots.map((snap) => {
+                  const isActive = selectedSnapshot?.id === snap.id;
+                  const snapDate = new Date(snap.snapshot_date);
+                  const dayLabel = snapDate.getDate();
+                  const monthLabel = snapDate.toLocaleDateString('en-IN', { month: 'short' });
+                  const yearLabel = snapDate.getFullYear();
+                  
+                  return (
+                    <button
+                      key={snap.id}
+                      onClick={() => setSelectedSnapshot(snap)}
+                      className={`flex-shrink-0 flex flex-col items-center justify-between p-3.5 rounded-2xl border min-w-[105px] transition-all duration-300 cursor-pointer ${
+                        isActive 
+                          ? 'bg-gradient-to-b from-amber-500/15 to-amber-600/5 border-amber-500/65 text-amber-500 dark:text-amber-400 shadow-lg shadow-amber-500/5 scale-102 ring-1 ring-amber-500/25' 
+                          : 'bg-dark-depth-2 border-dark-border/60 text-gray-400 hover:bg-dark-depth-3 hover:border-dark-border hover:text-white'
+                      }`}
+                    >
+                      <span className="text-[8px] font-extrabold uppercase opacity-85 tracking-wider mb-1">{monthLabel} {yearLabel}</span>
+                      <span className="text-xl font-black block my-0.5 leading-none">{dayLabel}</span>
+                      <span className="text-[8px] font-bold mt-1 opacity-90">₹{(snap.total_value / 100000).toFixed(2)}L</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -342,7 +352,7 @@ export const PnL = () => {
   };
   const [taxFilter, setTaxFilter] = useState<'all' | 'stcg' | 'ltcg'>('all');
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | 'profit' | 'loss'>('all');
-  const [viewMode, setViewMode] = useState<'expand' | 'collapse_cycle' | 'all_time'>('expand');
+  const [viewMode, setViewMode] = useState<'expand' | 'collapse_cycle' | 'all_time'>('all_time');
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
   

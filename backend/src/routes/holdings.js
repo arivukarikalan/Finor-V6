@@ -5,6 +5,9 @@ import { fetchMultipleLTPs } from '../services/yahooFinance.js';
 
 const router = express.Router();
 
+// A global cache to hold previous close values in memory so we don't hit Yahoo Finance on every GET
+export const previousCloseCache = new Map();
+
 /**
  * GET /api/holdings
  * Fetch cached holdings from db
@@ -20,7 +23,30 @@ router.get('/', requireAuth, async (req, res) => {
       .order('stock_symbol', { ascending: true });
 
     if (error) throw error;
-    res.json(data);
+
+    // Check if cache needs seeding
+    const missingSymbols = data
+      .map(h => h.stock_symbol.toUpperCase())
+      .filter(symbol => !previousCloseCache.has(symbol));
+
+    if (missingSymbols.length > 0) {
+      fetchMultipleLTPs(missingSymbols)
+        .then(ltpData => {
+          Object.entries(ltpData).forEach(([symbol, item]) => {
+            if (item.previousClose !== undefined && item.previousClose !== null) {
+              previousCloseCache.set(symbol.toUpperCase(), item.previousClose);
+            }
+          });
+        })
+        .catch(err => console.error('[HoldingsRoute] Background previousClose seeding failed:', err.message));
+    }
+
+    const enriched = data.map(h => ({
+      ...h,
+      previousClose: previousCloseCache.get(h.stock_symbol.toUpperCase()) || h.ltp
+    }));
+
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -54,6 +80,9 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
     // Update prices in db
     const updatePromises = Object.entries(ltpData).map(async ([symbol, data]) => {
       if (data.ltp !== null) {
+        if (data.previousClose !== undefined && data.previousClose !== null) {
+          previousCloseCache.set(symbol.toUpperCase(), data.previousClose);
+        }
         await supabase
           .from('holdings')
           .update({
@@ -76,9 +105,14 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
 
     if (getError) throw getError;
 
+    const enriched = updatedHoldings.map(h => ({
+      ...h,
+      previousClose: previousCloseCache.get(h.stock_symbol.toUpperCase()) || h.ltp
+    }));
+
     res.json({
       message: 'Prices synced successfully.',
-      holdings: updatedHoldings
+      holdings: enriched
     });
   } catch (err) {
     console.error('[HoldingsRoute] Sync failed:', err.message);

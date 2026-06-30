@@ -42,6 +42,7 @@ interface Holding {
   quantity: number;
   average_buy_price: number;
   ltp: number | null;
+  previousClose?: number | null;
 }
 
 interface DashboardProps {
@@ -206,16 +207,20 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
   const totalROI = totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
 
   // Day's Gain/Loss (LTP vs Previous Close)
-  // Let's fetch previous close data for day's gain. Since we already fetch prices,
-  // we can mock a small 0.8% change if previous close is missing, or calculate it if previousClose is fetched.
-  // For a neat UI, let's assume a dummy 0.54% positive change if previousClose is null, 
-  // or calculate it accurately if we have it.
   const daysGain = holdings.reduce((sum, h) => {
-    // Standard market fluctuation fallback if previousClose is missing
-    const change = h.ltp ? (h.ltp * 0.006) : 0; // mock 0.6% gain
+    const currentPrice = h.ltp || h.average_buy_price;
+    const prevClose = h.previousClose !== undefined && h.previousClose !== null ? h.previousClose : currentPrice;
+    const change = currentPrice - prevClose;
     return sum + (change * h.quantity);
   }, 0);
-  const daysGainPercent = totalValue > 0 ? (daysGain / totalValue) * 100 : 0;
+
+  const totalPrevCloseValue = holdings.reduce((sum, h) => {
+    const currentPrice = h.ltp || h.average_buy_price;
+    const prevClose = h.previousClose !== undefined && h.previousClose !== null ? h.previousClose : currentPrice;
+    return sum + (prevClose * h.quantity);
+  }, 0);
+
+  const daysGainPercent = totalPrevCloseValue > 0 ? (daysGain / totalPrevCloseValue) * 100 : 0;
   // ─── Swing Trading Switch Opportunity Calculations ──────────────────────
   const exitCandidates = holdings
     .map(h => {
@@ -302,14 +307,19 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
 
         {/* Day's Change */}
         <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full blur-xl pointer-events-none" />
+          <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-xl pointer-events-none ${daysGain >= 0 ? 'bg-emerald-500/5' : 'bg-rose-500/5'}`} />
           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Day's Gain / Loss</span>
-          <h3 className="text-2xl font-extrabold text-emerald-500 mt-1.5 flex items-center gap-1.5">
-            +<LtpPriceText value={daysGain} />
+          <h3 className={`text-2xl font-extrabold mt-1.5 flex items-center gap-1.5 ${daysGain >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+            {daysGain >= 0 ? '+' : ''}
+            <LtpPriceText value={daysGain} />
           </h3>
           <div className="flex items-center gap-1.5 mt-2">
-            <span className="text-xs text-emerald-500 font-semibold bg-emerald-500/10 border border-emerald-500/10 px-2 py-0.5 rounded-full">
-              +{daysGainPercent.toFixed(2)}% Today
+            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+              daysGain >= 0 
+                ? 'bg-emerald-500/10 border-emerald-500/10 text-emerald-500' 
+                : 'bg-rose-500/10 border-rose-500/10 text-rose-500'
+            }`}>
+              {daysGain >= 0 ? '+' : ''}{daysGainPercent.toFixed(2)}% Today
             </span>
           </div>
         </div>

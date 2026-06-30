@@ -395,8 +395,12 @@ export const More = ({
   const [logSearch, setLogSearch] = useState('');
   const [logTypeFilter, setLogTypeFilter] = useState<'all' | 'info' | 'success' | 'warn' | 'error'>('all');
 
+  const prevDefaultSubTabRef = useRef(defaultSubTab);
   useEffect(() => {
-    setActiveSubTab(defaultSubTab);
+    if (prevDefaultSubTabRef.current !== defaultSubTab) {
+      setActiveSubTab(defaultSubTab);
+      prevDefaultSubTabRef.current = defaultSubTab;
+    }
   }, [defaultSubTab]);
 
   useEffect(() => {

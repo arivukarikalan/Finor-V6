@@ -281,6 +281,32 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   scrollbar-width: none !important;  /* Firefox */
 }
 
+/* Thin custom scrollbar for horizontal timelines */
+.thin-scrollbar::-webkit-scrollbar {
+  height: 4px;
+}
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 99px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 99px;
+}
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+html.light .thin-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.02);
+}
+html.light .thin-scrollbar::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+}
+html.light .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
+}
+
 /* ==========================================================================
    Premium Light Theme System
    ========================================================================== */

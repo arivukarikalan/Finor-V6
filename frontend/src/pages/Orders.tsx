@@ -157,6 +157,33 @@ export const Orders = () => {
     initAuthAndConfig();
   }, []);
 
+  // Listen for order prefill triggers
+  useEffect(() => {
+    const checkPrefill = () => {
+      const stored = localStorage.getItem('finor_prefill_orders');
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          if (data.symbol) setSymbol(data.symbol);
+          if (data.action) setAction(data.action);
+          if (data.quantity) setQuantity(data.quantity);
+          if (data.price) setPrice(String(data.price));
+          // Clean up so it doesn't trigger again on reload
+          localStorage.removeItem('finor_prefill_orders');
+        } catch (e) {
+          console.error('Failed to parse prefill orders:', e);
+        }
+      }
+    };
+    
+    checkPrefill();
+    
+    window.addEventListener('finor-prefill-triggered', checkPrefill);
+    return () => {
+      window.removeEventListener('finor-prefill-triggered', checkPrefill);
+    };
+  }, []);
+
   // Sync LTP when symbol changes
   useEffect(() => {
     if (!symbol) {
@@ -359,6 +386,19 @@ export const Orders = () => {
   const estimatedTaxes = estimatedValue * 0.0006 + 15; // standard simulated brokerage/charges
   const netTotal = estimatedValue + (action === 'BUY' ? estimatedTaxes : -estimatedTaxes);
 
+  // Get all unique stock symbols from holdings, trades, and popular symbols
+  const allStockSymbols = Array.from(
+    new Set([
+      ...holdings.map(h => h.stock_symbol.toUpperCase()),
+      ...trades.map(t => t.stock_symbol.toUpperCase()),
+      ...POPULAR_SYMBOLS.map(s => s.toUpperCase())
+    ])
+  ).sort();
+
+  const filteredSymbols = allStockSymbols.filter(s => 
+    s.includes(symbol.trim().toUpperCase())
+  );
+
   // Group list categories
   const activeOrders = orders.filter(o => o.status === 'OPEN');
   const completedOrders = orders.filter(o => o.status !== 'OPEN');
@@ -518,39 +558,87 @@ export const Orders = () => {
 
                 {/* Autocomplete / Symbol Suggestions */}
                 {showSuggestions && (
-                  <div className="absolute left-0 right-0 mt-1.5 bg-dark-depth-2 border border-dark-border rounded-xl shadow-2xl z-30 overflow-hidden max-h-56">
-                    <div className="p-2 border-b border-dark-border/40 text-[9px] text-gray-500 font-bold uppercase">
-                      Quick Select
-                    </div>
-                    
-                    {/* Holdings list */}
-                    {holdings.length > 0 && (
-                      <div className="divide-y divide-dark-border/20">
-                        {holdings.map((h) => (
-                          <button
-                            key={h.stock_symbol}
-                            onClick={() => selectSymbol(h.stock_symbol)}
-                            className="w-full flex items-center justify-between px-4 py-2 hover:bg-dark-depth-3/60 text-left text-xs font-semibold text-white transition-colors"
-                          >
-                            <span>{h.stock_symbol}</span>
-                            <span className="text-[10px] text-gray-500 font-medium">{h.quantity} held</span>
-                          </button>
-                        ))}
-                      </div>
+                  <div className="absolute left-0 right-0 mt-1.5 bg-dark-depth-2 border border-dark-border rounded-xl shadow-2xl z-30 overflow-hidden max-h-56 overflow-y-auto thin-scrollbar">
+                    {!symbol.trim() ? (
+                      <>
+                        {/* Active Holdings Segment */}
+                        {holdings.length > 0 && (
+                          <>
+                            <div className="p-2 border-b border-dark-border/40 text-[9px] text-gray-500 font-bold uppercase">
+                              Active Holdings
+                            </div>
+                            <div className="divide-y divide-dark-border/20">
+                              {holdings.map((h) => (
+                                <button
+                                  key={h.stock_symbol}
+                                  onClick={() => selectSymbol(h.stock_symbol)}
+                                  className="w-full flex items-center justify-between px-4 py-2 hover:bg-dark-depth-3/60 text-left text-xs font-semibold text-white transition-colors"
+                                >
+                                  <span>{h.stock_symbol}</span>
+                                  <span className="text-[10px] text-gray-500 font-medium">{h.quantity} held</span>
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                        
+                        {/* Popular Symbols Segment */}
+                        <div className="p-2 border-t border-b border-dark-border/40 text-[9px] text-gray-500 font-bold uppercase">
+                          Popular Symbols
+                        </div>
+                        <div className="p-3 bg-dark-depth-1/30 flex flex-wrap gap-1.5">
+                          {POPULAR_SYMBOLS.map((s) => (
+                            <button
+                              key={s}
+                              onClick={() => selectSymbol(s)}
+                              className="px-2.5 py-1 rounded-lg text-[9px] font-bold bg-dark-depth-3 hover:bg-brand-500 hover:text-white border border-dark-border text-gray-300 transition-all cursor-pointer"
+                            >
+                              {s}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-2 border-b border-dark-border/40 text-[9px] text-gray-500 font-bold uppercase">
+                          Matching Symbols ({filteredSymbols.length})
+                        </div>
+                        {filteredSymbols.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-gray-500 font-semibold italic">
+                            No matching symbols found. Press enter to use "{symbol.trim()}"
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-dark-border/20">
+                            {filteredSymbols.map((s) => {
+                              const isHolding = holdings.some(h => h.stock_symbol === s);
+                              const isPastTrade = trades.some(t => t.stock_symbol === s);
+                              let badge = "";
+                              if (isHolding) badge = "Holding";
+                              else if (isPastTrade) badge = "Past Trade";
+                              
+                              return (
+                                <button
+                                  key={s}
+                                  onClick={() => selectSymbol(s)}
+                                  className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-dark-depth-3/60 text-left text-xs font-semibold text-white transition-colors cursor-pointer"
+                                >
+                                  <span>{s}</span>
+                                  {badge && (
+                                    <span className={`text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                                      badge === 'Holding' 
+                                        ? 'bg-emerald-500/10 border border-emerald-500/10 text-emerald-500' 
+                                        : 'bg-indigo-500/10 border border-indigo-500/10 text-indigo-450 dark:text-indigo-400'
+                                    }`}>
+                                      {badge}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
                     )}
-
-                    {/* Popular symbols */}
-                    <div className="p-3 bg-dark-depth-1/30 flex flex-wrap gap-1.5">
-                      {POPULAR_SYMBOLS.map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => selectSymbol(s)}
-                          className="px-2.5 py-1 rounded-lg text-[9px] font-bold bg-dark-depth-3 hover:bg-brand-500 hover:text-white border border-dark-border text-gray-300 transition-all"
-                        >
-                          {s}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 )}
               </div>
