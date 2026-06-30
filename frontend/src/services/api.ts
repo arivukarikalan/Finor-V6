@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { SystemLogger } from '../utils/logger';
+import { useToastStore } from '../context/toastStore';
 
 const rawBaseUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api';
 // Defensive check: Remove trailing slash if any, and append '/api' if not present
@@ -49,6 +50,27 @@ export async function apiRequest(endpoint: string, options: RequestInit & { bypa
 
   SystemLogger.info(`API Request: [${method}] ${endpoint}`);
 
+  // Show loading toast if request takes more than 600ms
+  let loadingToastId: string | null = null;
+  const timeoutId = setTimeout(() => {
+    const displayEndpoints = ['/trades', '/holdings', '/analytics', '/gmail/sync', '/snapshots'];
+    if (displayEndpoints.some(e => endpoint.includes(e))) {
+      let displayName = 'Loading portfolio data';
+      if (endpoint.includes('sync')) {
+        displayName = 'Syncing Gmail trade confirmations';
+      } else if (endpoint.includes('holdings')) {
+        displayName = 'Fetching holdings records';
+      } else if (endpoint.includes('trades')) {
+        displayName = 'Updating transaction history';
+      } else if (endpoint.includes('analytics') || endpoint.includes('pnl')) {
+        displayName = 'Calculating P&L matrix';
+      } else if (endpoint.includes('snapshots')) {
+        displayName = 'Syncing timeline snapshots';
+      }
+      loadingToastId = useToastStore.getState().addToast(`${displayName}...`, 'loading');
+    }
+  }, 600);
+
   try {
     const response = await fetch(`${BASE_URL}${endpoint}`, {
       ...options,
@@ -78,8 +100,17 @@ export async function apiRequest(endpoint: string, options: RequestInit & { bypa
       apiCache.set(cacheKey, { data, expiry: Date.now() + 30000 });
     }
 
+    clearTimeout(timeoutId);
+    if (loadingToastId) {
+      useToastStore.getState().removeToast(loadingToastId);
+    }
+
     return data;
   } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (loadingToastId) {
+      useToastStore.getState().removeToast(loadingToastId);
+    }
     if (err.message && !err.message.includes('API Failed')) {
       SystemLogger.error(`Network Exception: ${err.message}`);
     }

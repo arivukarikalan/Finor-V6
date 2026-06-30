@@ -10,17 +10,50 @@ import { Orders } from './pages/Orders';
 import { Insights } from './pages/Insights';
 import { More } from './pages/More';
 import { Loader2 } from 'lucide-react';
+import { ToastContainer } from './components/ToastContainer';
+import { useToastStore } from './context/toastStore';
 
 import { SystemLogger } from './utils/logger';
 
 function App() {
   const { user, loading, initialize } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<TabId>('holdings');
+  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
 
   useEffect(() => {
     initialize();
     SystemLogger.checkDailyClear();
     SystemLogger.info('Finor Web Application started');
+
+    // Internet connection monitor
+    const updateOnlineStatus = () => {
+      const isOnline = navigator.onLine;
+      if (!isOnline) {
+        useToastStore.getState().addToast('No internet connection. Operating offline.', 'error', 10000);
+      } else {
+        const toasts = useToastStore.getState().toasts;
+        const offlineToast = toasts.find(t => t.message.includes('No internet connection'));
+        if (offlineToast) {
+          useToastStore.getState().removeToast(offlineToast.id);
+        }
+        useToastStore.getState().addToast('Internet connection restored. Back online.', 'success', 3000);
+      }
+    };
+
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+
+    // Initial check for weak connection
+    const navAny = navigator as any;
+    if (navAny.connection) {
+      const conn = navAny.connection;
+      const checkNetworkSpeed = () => {
+        if (conn.effectiveType === '2g' || conn.effectiveType === 'slow-2g') {
+          useToastStore.getState().addToast('Weak internet connection detected. Data loading may take longer.', 'warning', 8000);
+        }
+      };
+      conn.addEventListener('change', checkNetworkSpeed);
+      checkNetworkSpeed();
+    }
 
     const handleSwitchTab = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -41,6 +74,8 @@ function App() {
     window.addEventListener('finor-switch-tab', handleSwitchTab);
     return () => {
       window.removeEventListener('finor-switch-tab', handleSwitchTab);
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
     };
   }, [initialize]);
 
@@ -90,9 +125,12 @@ function App() {
   };
 
   return (
-    <Navigation activeTab={activeTab} setActiveTab={setActiveTab}>
-      {renderTabContent()}
-    </Navigation>
+    <>
+      <Navigation activeTab={activeTab} setActiveTab={setActiveTab}>
+        {renderTabContent()}
+      </Navigation>
+      <ToastContainer />
+    </>
   );
 }
 
