@@ -28,7 +28,9 @@ import {
   Percent,
   PieChart,
   CircleDollarSign,
-  Activity
+  Activity,
+  Download,
+  Printer
 } from 'lucide-react';
 
 interface ClosedTrade {
@@ -350,6 +352,73 @@ export const PnL = () => {
     setShowInsights(false);
     setTimeout(() => setIsInsightsMounted(false), 300);
   };
+
+  const handleExportCSV = () => {
+    try {
+      let csvContent = "";
+      let filename = "pnl_report.csv";
+
+      if (pnlSubTab === 'ledger') {
+        if (viewMode === 'all_time') {
+          // Stock-wise summary
+          csvContent = "Stock,Quantity,Buy Cost (\u20B9),Sell Value (\u20B9),Realized P&L (\u20B9),STCG (\u20B9),LTCG (\u20B9)\n";
+          const summary = Object.entries(
+            closedTrades.reduce((acc, trade) => {
+              const sym = trade.stock_symbol;
+              if (!acc[sym]) acc[sym] = { qty: 0, cost: 0, val: 0, pnl: 0, stcg: 0, ltcg: 0 };
+              acc[sym].qty += trade.quantity;
+              acc[sym].cost += trade.quantity * trade.buy_price;
+              acc[sym].val += trade.quantity * trade.sell_price;
+              acc[sym].pnl += trade.realized_pnl;
+              acc[sym].stcg += (trade.gains_type === 'STCG' ? trade.realized_pnl : 0);
+              acc[sym].ltcg += (trade.gains_type === 'LTCG' ? trade.realized_pnl : 0);
+              return acc;
+            }, {} as Record<string, { qty: number; cost: number; val: number; pnl: number; stcg: number; ltcg: number }>)
+          );
+
+          summary.forEach(([symbol, s]) => {
+            csvContent += `${symbol},${s.qty},${s.cost.toFixed(2)},${s.val.toFixed(2)},${s.pnl.toFixed(2)},${s.stcg.toFixed(2)},${s.ltcg.toFixed(2)}\n`;
+          });
+          filename = "finor_stock_wise_pnl.csv";
+        } else {
+          // Trade-by-trade ledger
+          csvContent = "Stock,Quantity,Buy Date,Sell Date,Buy Price (\u20B9),Sell Price (\u20B9),Realized P&L (\u20B9),Holding Days,Tax Classification\n";
+          closedTrades.forEach((trade) => {
+            const buyDateStr = new Date(trade.buy_date).toLocaleDateString('en-IN');
+            const sellDateStr = new Date(trade.sell_date).toLocaleDateString('en-IN');
+            const taxClass = trade.holding_days > 365 ? "LTCG" : "STCG";
+            csvContent += `${trade.stock_symbol},${trade.quantity},${buyDateStr},${sellDateStr},${trade.buy_price.toFixed(2)},${trade.sell_price.toFixed(2)},${trade.realized_pnl.toFixed(2)},${trade.holding_days},${taxClass}\n`;
+          });
+          filename = "finor_detailed_trade_ledger.csv";
+        }
+      } else {
+        // Time machine snapshot summary
+        csvContent = "Snapshot Date,Portfolio Value (\u20B9),Invested Capital (\u20B9),Returns (\u20B9)\n";
+        snapshots.forEach((s) => {
+          const dateStr = new Date(s.snapshot_date).toLocaleDateString('en-IN');
+          csvContent += `${dateStr},${s.portfolio_value.toFixed(2)},${s.invested_capital.toFixed(2)},${s.returns.toFixed(2)}\n`;
+        });
+        filename = "finor_time_machine_snapshots.csv";
+      }
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", filename);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err: any) {
+      console.error("CSV Export failed:", err.message);
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
   const [taxFilter, setTaxFilter] = useState<'all' | 'stcg' | 'ltcg'>('all');
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | 'profit' | 'loss'>('all');
   const [viewMode, setViewMode] = useState<'expand' | 'collapse_cycle' | 'all_time'>('all_time');
@@ -701,6 +770,22 @@ export const PnL = () => {
         
         {closedTrades.length > 0 && (
           <div className="flex gap-2">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 transition-all cursor-pointer self-start sm:self-auto select-none"
+              title="Export report as CSV / Excel"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export CSV
+            </button>
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 transition-all cursor-pointer self-start sm:self-auto select-none"
+              title="Print report / Save as PDF"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              Print PDF
+            </button>
             <button
               onClick={handleOpenInsights}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-brand-400 bg-brand-500/10 border border-brand-500/20 hover:bg-brand-500/20 hover:border-brand-500/30 transition-all cursor-pointer self-start sm:self-auto select-none"

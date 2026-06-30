@@ -547,4 +547,46 @@ html.light {
   display: inline-block;
 }
 
-
+/* Print styles for financial P&L statements */
+@media print {
+  body {
+    background: white !important;
+    color: #0f172a !important;
+  }
+  /* Hide sidebar navigation, dashboard widgets, quick actions, and toolbars */
+  aside, nav, button, .select-none, .flex.gap-2, .no-print {
+    display: none !important;
+  }
+  /* Force containers to take full print width */
+  main, .space-y-6, .flex-1 {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  /* Convert dark mode card themes into clean paper layouts */
+  .bg-dark-depth-1, .bg-dark-depth-2, .bg-dark-depth-2\/40, .bg-dark-depth-2\/45, .bg-dark-depth-3 {
+    background: white !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+  }
+  h1, h2, h3, h4, span, td, th, p, strong {
+    color: #0f172a !important;
+  }
+  /* Format tables with high-contrast borders for printing */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+  th {
+    background-color: #f1f5f9 !important;
+    border: 1px solid #cbd5e1 !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+  }
+  td {
+    border: 1px solid #e2e8f0 !important;
+    padding: 6px 10px !important;
+  }
+}
