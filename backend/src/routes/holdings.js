@@ -5,47 +5,54 @@ import { fetchMultipleLTPs } from '../services/yahooFinance.js';
 
 const router = express.Router();
 
-// Helper to get all previous closes from settings table
-async function getPreviousCloses(userId) {
+// Helper to get all previous closes from system_settings table
+async function getPreviousCloses() {
   try {
     const { data } = await supabase
-      .from('settings')
+      .from('system_settings')
       .select('value')
-      .eq('user_id', userId)
       .eq('key', 'previous_closes')
       .maybeSingle();
-    return data?.value || {};
+
+    if (data?.value) {
+      try {
+        return typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+      } catch (e) {
+        console.error('[Holdings] Failed to parse previous closes JSON:', e.message);
+        return {};
+      }
+    }
+    return {};
   } catch (err) {
     console.error('[Holdings] Failed to fetch previous closes:', err.message);
     return {};
   }
 }
 
-// Helper to save previous closes to settings table
-async function savePreviousCloses(userId, closes) {
+// Helper to save previous closes to system_settings table
+async function savePreviousCloses(closes) {
   try {
+    const valueString = JSON.stringify(closes);
     const { data: existing } = await supabase
-      .from('settings')
+      .from('system_settings')
       .select('id')
-      .eq('user_id', userId)
       .eq('key', 'previous_closes')
       .maybeSingle();
 
     if (existing) {
       await supabase
-        .from('settings')
+        .from('system_settings')
         .update({
-          value: closes,
+          value: valueString,
           updated_at: new Date().toISOString()
         })
         .eq('id', existing.id);
     } else {
       await supabase
-        .from('settings')
+        .from('system_settings')
         .insert({
-          user_id: userId,
           key: 'previous_closes',
-          value: closes,
+          value: valueString,
           updated_at: new Date().toISOString()
         });
     }
@@ -70,7 +77,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     if (error) throw error;
 
-    const previousCloses = await getPreviousCloses(userId);
+    const previousCloses = await getPreviousCloses();
 
     // Check if cache needs seeding
     const missingSymbols = data
@@ -89,7 +96,7 @@ router.get('/', requireAuth, async (req, res) => {
             }
           });
           if (changed) {
-            await savePreviousCloses(userId, freshCloses);
+            await savePreviousCloses(freshCloses);
           }
         })
         .catch(err => console.error('[HoldingsRoute] Background previousClose seeding failed:', err.message));
@@ -131,7 +138,7 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
     // Fetch prices from Yahoo Finance
     const ltpData = await fetchMultipleLTPs(symbols);
 
-    const previousCloses = await getPreviousCloses(userId);
+    const previousCloses = await getPreviousCloses();
     let cacheChanged = false;
 
     // Update prices in db
@@ -154,7 +161,7 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
 
     await Promise.all(updatePromises);
     if (cacheChanged) {
-      await savePreviousCloses(userId, previousCloses);
+      await savePreviousCloses(previousCloses);
     }
 
     // Fetch updated holdings
