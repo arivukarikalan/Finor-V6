@@ -791,9 +791,9 @@ Analyze this context and answer the user's query directly and professionally. Ma
 Acknowledge that you have full access to these pre-calculated metrics. If the user asks about database integration or historical trade data access, confidently confirm that your backend retrieves and calculates these metrics from their complete trade ledger in Supabase, meaning you do have access to these aggregated insights.
 
 If the user asks to download, export, print, or generate an Excel, CSV, or PDF of their P&L, trades, or active holdings directly in this chat, you MUST generate and present direct downloadable markdown links using these exact URL formats:
-- For P&L/Closed Trades CSV: [Download P&L CSV Report](download://pnl-csv)
-- For Active Holdings CSV: [Download Holdings CSV Report](download://holdings-csv)
-- For PDF statement export: [Print Statement as PDF](download://print-pdf)
+- For P&L/Closed Trades CSV: [Download P&L CSV Report](/api/export/pnl-csv)
+- For Active Holdings CSV: [Download Holdings CSV Report](/api/export/holdings-csv)
+- For PDF statement export: [Download P&L PDF Report](/api/export/pnl-pdf)
 Always display these links prominently in your response so the user can download their files instantly with a single tap. Also mention that they can use the "Export CSV" and "Print PDF" buttons at the top of the P&L page.
 
 ### 🛡️ GTT Order Placement Rules:

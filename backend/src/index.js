@@ -11,6 +11,7 @@ import adminRouter from './routes/admin.js';
 import assistantRouter from './routes/assistant.js';
 import gmailRouter from './routes/gmail.js';
 import snapshotsRouter from './routes/snapshots.js';
+import exportRouter from './routes/export.js';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/assistant', assistantRouter);
 app.use('/api/gmail', gmailRouter);
 app.use('/api/snapshots', snapshotsRouter);
+app.use('/api/export', exportRouter);
 
 // API Health Check route
 app.get('/api/health', (req, res) => {
