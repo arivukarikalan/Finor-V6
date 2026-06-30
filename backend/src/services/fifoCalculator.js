@@ -5,10 +5,17 @@
  * @returns {Object} Realized P&L statistics and closed trade records.
  */
 export function calculateRealizedPnL(trades) {
-  // Sort trades chronologically (ascending)
-  const sortedTrades = [...trades].sort(
-    (a, b) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime()
-  );
+  // Sort trades chronologically in memory, prioritizing BUY over SELL if timestamps are identical
+  const sortedTrades = [...trades].sort((a, b) => {
+    const timeA = new Date(a.trade_date).getTime();
+    const timeB = new Date(b.trade_date).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+    const typeA = a.trade_type.toUpperCase();
+    const typeB = b.trade_type.toUpperCase();
+    if (typeA === 'BUY' && typeB === 'SELL') return -1;
+    if (typeA === 'SELL' && typeB === 'BUY') return 1;
+    return 0;
+  });
 
   const buyQueues = {}; // key: symbol, value: Array of buy trades
   const closedTrades = []; // List of realized matchings

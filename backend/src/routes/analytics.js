@@ -167,8 +167,19 @@ router.get('/portfolio-history', requireAuth, async (req, res) => {
     const chartData = milestones.map((m) => {
       const milestoneDate = m.date;
       
-      // Filter trades up to this milestone
-      const tradesUpToMilestone = trades.filter(t => new Date(t.trade_date) <= milestoneDate);
+      // Filter trades up to this milestone and sort them chronologically (BUY before SELL)
+      const tradesUpToMilestone = trades
+        .filter(t => new Date(t.trade_date) <= milestoneDate)
+        .sort((a, b) => {
+          const timeA = new Date(a.trade_date).getTime();
+          const timeB = new Date(b.trade_date).getTime();
+          if (timeA !== timeB) return timeA - timeB;
+          const typeA = a.trade_type.toUpperCase();
+          const typeB = b.trade_type.toUpperCase();
+          if (typeA === 'BUY' && typeB === 'SELL') return -1;
+          if (typeA === 'SELL' && typeB === 'BUY') return 1;
+          return 0;
+        });
       
       // Trace quantity & average buy price
       const holdingsMap = {};

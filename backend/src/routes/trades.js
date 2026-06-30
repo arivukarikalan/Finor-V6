@@ -96,9 +96,21 @@ export async function recalculateHoldings(userId) {
 
   if (fetchError) throw fetchError;
 
+  // Sort trades chronologically in memory, prioritizing BUY over SELL if timestamps are identical
+  const sortedTrades = [...trades].sort((a, b) => {
+    const timeA = new Date(a.trade_date).getTime();
+    const timeB = new Date(b.trade_date).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+    const typeA = a.trade_type.toUpperCase();
+    const typeB = b.trade_type.toUpperCase();
+    if (typeA === 'BUY' && typeB === 'SELL') return -1;
+    if (typeA === 'SELL' && typeB === 'BUY') return 1;
+    return 0;
+  });
+
   const holdingsMap = {};
 
-  for (const trade of trades) {
+  for (const trade of sortedTrades) {
     const symbol = trade.stock_symbol;
     const type = trade.trade_type.toUpperCase();
     const qty = trade.quantity;
@@ -127,6 +139,19 @@ export async function recalculateHoldings(userId) {
   // Filter out symbols with no remaining quantity
   const activeHoldings = Object.values(holdingsMap).filter(h => h.quantity > 0);
 
+  // Fetch existing holdings to preserve their LTP values
+  const { data: existingHoldings } = await supabase
+    .from('holdings')
+    .select('stock_symbol, ltp')
+    .eq('user_id', userId);
+
+  const ltpMap = {};
+  if (existingHoldings) {
+    existingHoldings.forEach(h => {
+      ltpMap[h.stock_symbol.toUpperCase()] = h.ltp;
+    });
+  }
+
   // Delete existing holdings
   const { error: deleteError } = await supabase
     .from('holdings')
@@ -143,6 +168,7 @@ export async function recalculateHoldings(userId) {
       stock_name: h.stock_name,
       average_buy_price: parseFloat(h.average_buy_price.toFixed(2)),
       quantity: h.quantity,
+      ltp: ltpMap[h.stock_symbol.toUpperCase()] || null,
       last_updated: new Date().toISOString()
     }));
 

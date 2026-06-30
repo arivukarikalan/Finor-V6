@@ -5,8 +5,54 @@ import { fetchMultipleLTPs } from '../services/yahooFinance.js';
 
 const router = express.Router();
 
-// A global cache to hold previous close values in memory so we don't hit Yahoo Finance on every GET
-export const previousCloseCache = new Map();
+// Helper to get all previous closes from settings table
+async function getPreviousCloses(userId) {
+  try {
+    const { data } = await supabase
+      .from('settings')
+      .select('value')
+      .eq('user_id', userId)
+      .eq('key', 'previous_closes')
+      .maybeSingle();
+    return data?.value || {};
+  } catch (err) {
+    console.error('[Holdings] Failed to fetch previous closes:', err.message);
+    return {};
+  }
+}
+
+// Helper to save previous closes to settings table
+async function savePreviousCloses(userId, closes) {
+  try {
+    const { data: existing } = await supabase
+      .from('settings')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('key', 'previous_closes')
+      .maybeSingle();
+
+    if (existing) {
+      await supabase
+        .from('settings')
+        .update({
+          value: closes,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id);
+    } else {
+      await supabase
+        .from('settings')
+        .insert({
+          user_id: userId,
+          key: 'previous_closes',
+          value: closes,
+          updated_at: new Date().toISOString()
+        });
+    }
+  } catch (err) {
+    console.error('[Holdings] Failed to save previous closes:', err.message);
+  }
+}
 
 /**
  * GET /api/holdings
@@ -24,26 +70,34 @@ router.get('/', requireAuth, async (req, res) => {
 
     if (error) throw error;
 
+    const previousCloses = await getPreviousCloses(userId);
+
     // Check if cache needs seeding
     const missingSymbols = data
       .map(h => h.stock_symbol.toUpperCase())
-      .filter(symbol => !previousCloseCache.has(symbol));
+      .filter(symbol => !previousCloses[symbol]);
 
     if (missingSymbols.length > 0) {
       fetchMultipleLTPs(missingSymbols)
-        .then(ltpData => {
+        .then(async (ltpData) => {
+          const freshCloses = { ...previousCloses };
+          let changed = false;
           Object.entries(ltpData).forEach(([symbol, item]) => {
             if (item.previousClose !== undefined && item.previousClose !== null) {
-              previousCloseCache.set(symbol.toUpperCase(), item.previousClose);
+              freshCloses[symbol.toUpperCase()] = item.previousClose;
+              changed = true;
             }
           });
+          if (changed) {
+            await savePreviousCloses(userId, freshCloses);
+          }
         })
         .catch(err => console.error('[HoldingsRoute] Background previousClose seeding failed:', err.message));
     }
 
     const enriched = data.map(h => ({
       ...h,
-      previousClose: previousCloseCache.get(h.stock_symbol.toUpperCase()) || h.ltp
+      previousClose: previousCloses[h.stock_symbol.toUpperCase()] || h.ltp
     }));
 
     res.json(enriched);
@@ -77,11 +131,15 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
     // Fetch prices from Yahoo Finance
     const ltpData = await fetchMultipleLTPs(symbols);
 
+    const previousCloses = await getPreviousCloses(userId);
+    let cacheChanged = false;
+
     // Update prices in db
     const updatePromises = Object.entries(ltpData).map(async ([symbol, data]) => {
       if (data.ltp !== null) {
         if (data.previousClose !== undefined && data.previousClose !== null) {
-          previousCloseCache.set(symbol.toUpperCase(), data.previousClose);
+          previousCloses[symbol.toUpperCase()] = data.previousClose;
+          cacheChanged = true;
         }
         await supabase
           .from('holdings')
@@ -95,6 +153,9 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
     });
 
     await Promise.all(updatePromises);
+    if (cacheChanged) {
+      await savePreviousCloses(userId, previousCloses);
+    }
 
     // Fetch updated holdings
     const { data: updatedHoldings, error: getError } = await supabase
@@ -107,7 +168,7 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
 
     const enriched = updatedHoldings.map(h => ({
       ...h,
-      previousClose: previousCloseCache.get(h.stock_symbol.toUpperCase()) || h.ltp
+      previousClose: previousCloses[h.stock_symbol.toUpperCase()] || h.ltp
     }));
 
     res.json({
