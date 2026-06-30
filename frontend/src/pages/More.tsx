@@ -150,9 +150,65 @@ marked.use({
 
 const MarkdownView = ({ text, isLightMode }: { text: string; isLightMode: boolean }) => {
   if (!text) return null;
+
+  const handleLinkClick = async (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const anchor = target.closest('a');
+    if (anchor) {
+      const href = anchor.getAttribute('href');
+      if (href && href.startsWith('download://')) {
+        e.preventDefault();
+        const actionType = href.replace('download://', '');
+        console.log(`[AI Assistant] Local download helper triggered: ${actionType}`);
+
+        try {
+          if (actionType === 'print-pdf') {
+            window.print();
+          } else if (actionType === 'pnl-csv') {
+            const data = await apiRequest('/analytics/realized-pnl');
+            const closedTrades = data.closed_trades || [];
+
+            let csvContent = "Stock,Quantity,Buy Date,Sell Date,Buy Price (\u20B9),Sell Price (\u20B9),Realized P&L (\u20B9),Holding Days,Tax Classification\n";
+            closedTrades.forEach((trade: any) => {
+              const buyDateStr = new Date(trade.buy_date).toLocaleDateString('en-IN');
+              const sellDateStr = new Date(trade.sell_date).toLocaleDateString('en-IN');
+              const taxClass = trade.holding_days > 365 ? "LTCG" : "STCG";
+              csvContent += `${trade.stock_symbol},${trade.quantity},${buyDateStr},${sellDateStr},${trade.buy_price.toFixed(2)},${trade.sell_price.toFixed(2)},${trade.realized_pnl.toFixed(2)},${trade.holding_days},${taxClass}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "finor_pnl_report.csv";
+            link.click();
+          } else if (actionType === 'holdings-csv') {
+            const holdings = await apiRequest('/holdings');
+            let csvContent = "Stock,Quantity,Avg Buy Price (\u20B9),LTP (\u20B9),Invested Value (\u20B9),Current Value (\u20B9),P&L (\u20B9),P&L (%)\n";
+            holdings.forEach((h: any) => {
+              const invested = h.quantity * h.average_buy_price;
+              const current = h.quantity * (h.ltp || h.average_buy_price);
+              const pnl = current - invested;
+              const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
+              csvContent += `${h.stock_symbol},${h.quantity},${h.average_buy_price.toFixed(2)},${(h.ltp || 0).toFixed(2)},${invested.toFixed(2)},${current.toFixed(2)},${pnl.toFixed(2)},${pnlPct.toFixed(2)}\n`;
+            });
+
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "finor_holdings_report.csv";
+            link.click();
+          }
+        } catch (err: any) {
+          console.error("AI Assistant Download failed:", err.message);
+        }
+      }
+    }
+  };
+
   const parsedHtml = marked.parse(text) as string;
   return (
     <div 
+      onClick={handleLinkClick}
       className={`markdown-body select-text text-xs leading-[1.6] ${isLightMode ? 'text-slate-800' : 'text-gray-200'}`}
       dangerouslySetInnerHTML={{ __html: parsedHtml }} 
     />
