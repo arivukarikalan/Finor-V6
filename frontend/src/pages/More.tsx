@@ -208,11 +208,19 @@ const MarkdownView = ({ text, isLightMode }: { text: string; isLightMode: boolea
             const session = useAuthStore.getState().session;
             const token = session?.access_token;
 
-            const response = await fetch(downloadUrl, {
+            const isPost = href.includes('markdown-pdf') || href.includes('markdown-csv');
+            const cleanText = text.replace(/\[Download.*?\]\(.*?\)/gi, '').trim();
+
+            const fetchOptions: RequestInit = {
+              method: isPost ? 'POST' : 'GET',
               headers: {
-                'Authorization': token ? `Bearer ${token}` : ''
-              }
-            });
+                'Authorization': token ? `Bearer ${token}` : '',
+                ...(isPost ? { 'Content-Type': 'application/json' } : {})
+              },
+              ...(isPost ? { body: JSON.stringify({ markdown: cleanText }) } : {})
+            };
+
+            const response = await fetch(downloadUrl, fetchOptions);
 
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             const blob = await response.blob();
