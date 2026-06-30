@@ -78,6 +78,7 @@ export const Holdings = () => {
   const [addTradeDate, setAddTradeDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [addTradeLoading, setAddTradeLoading] = useState(false);
   const [addTradeResult, setAddTradeResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [showAddTradeSuggestions, setShowAddTradeSuggestions] = useState(false);
 
   // Custom Alert Popups State
   const [alertOpen, setAlertOpen] = useState(false);
@@ -1048,9 +1049,54 @@ export const Holdings = () => {
                   >{t}</button>
                 ))}
               </div>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 relative">
                 <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Stock Symbol (NSE)</label>
-                <input type="text" value={addTradeSymbol} onChange={e => setAddTradeSymbol(e.target.value.toUpperCase())} placeholder="e.g. HAL, NATIONALUM, DABUR" className="w-full px-4 py-3 rounded-xl bg-dark-depth-2/60 border border-dark-border text-sm font-semibold text-white placeholder:text-gray-600 focus:outline-none focus:border-brand-500 transition-colors" />
+                <input 
+                  type="text" 
+                  value={addTradeSymbol} 
+                  onChange={e => setAddTradeSymbol(e.target.value.toUpperCase())} 
+                  onFocus={() => setShowAddTradeSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowAddTradeSuggestions(false), 200)}
+                  placeholder="e.g. HAL, NATIONALUM, DABUR" 
+                  className="w-full px-4 py-3 rounded-xl bg-dark-depth-2/60 border border-dark-border text-sm font-semibold text-white placeholder:text-gray-600 focus:outline-none focus:border-brand-500 transition-colors" 
+                />
+                
+                {/* Autocomplete / Symbol Suggestions */}
+                {showAddTradeSuggestions && (() => {
+                  const POPULAR_SYMBOLS = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'SBIN', 'BHARTIARTL', 'LICI', 'ITC', 'LT', 'NATIONALUM'];
+                  const uniqueTradedSymbols = [...new Set([
+                    ...holdings.map(h => h.stock_symbol),
+                    ...trades.map(t => t.stock_symbol),
+                    ...POPULAR_SYMBOLS
+                  ])];
+                  const filteredSymbols = uniqueTradedSymbols
+                    .filter(s => s.toLowerCase().includes(addTradeSymbol.toLowerCase()))
+                    .slice(0, 6);
+
+                  if (filteredSymbols.length === 0) return null;
+
+                  return (
+                    <div className="absolute left-0 right-0 mt-1 bg-dark-depth-2 border border-dark-border rounded-xl shadow-2xl z-30 overflow-hidden max-h-48 overflow-y-auto thin-scrollbar">
+                      <div className="divide-y divide-dark-border/20">
+                        {filteredSymbols.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setAddTradeSymbol(s)}
+                            className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-dark-depth-3/60 text-left text-xs font-semibold text-white transition-colors cursor-pointer"
+                          >
+                            <span>{s}</span>
+                            {holdings.some(h => h.stock_symbol === s) && (
+                              <span className="text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/10 text-emerald-500">
+                                Holding
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
