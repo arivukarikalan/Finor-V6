@@ -22,14 +22,9 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
 }
 
 /**
- * Fetches the Last Traded Price (LTP) and other market info for a given stock symbol.
- * Defaults to appending .NS (NSE) if no exchange suffix is present.
- * 
- * @param {string} symbol - e.g. "RELIANCE" or "INFY"
- * @returns {Promise<{symbol: string, ticker: string, ltp: number, previousClose: number}>}
+ * Fallback live price fetch from Yahoo Finance
  */
-export async function fetchLTP(symbol) {
-  // Ensure the symbol ends with .NS for Indian markets if not already present
+export async function fetchLTPYahoo(symbol) {
   const ticker = symbol.includes('.') ? symbol : `${symbol}.NS`;
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1m&range=1d`;
   
@@ -64,8 +59,70 @@ export async function fetchLTP(symbol) {
       previousClose: previousClose ? parseFloat(previousClose) : null
     };
   } catch (error) {
-    console.error(`[YahooFinance] Error fetching price for ${symbol}:`, error.message);
+    console.error(`[YahooFinance Fallback] Error fetching price for ${symbol}:`, error.message);
     throw error;
+  }
+}
+
+/**
+ * Fetches the Last Traded Price (LTP) and other market info for a given stock symbol from Google Finance.
+ * Automatically falls back to Yahoo Finance if Google Finance fails.
+ * 
+ * @param {string} symbol - e.g. "RELIANCE" or "INFY"
+ * @returns {Promise<{symbol: string, ticker: string, ltp: number, previousClose: number}>}
+ */
+export async function fetchLTP(symbol) {
+  let googleTicker = symbol.toUpperCase();
+  if (googleTicker === '^NSEI' || googleTicker === 'NIFTY') {
+    googleTicker = 'NIFTY_50:INDEXNSE';
+  } else {
+    if (googleTicker.endsWith('.NS')) {
+      googleTicker = googleTicker.substring(0, googleTicker.length - 3);
+    }
+    googleTicker = `${googleTicker}:NSE`;
+  }
+
+  const url = `https://www.google.com/finance/quote/${googleTicker}`;
+  
+  try {
+    const response = await fetchWithTimeout(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    }, 8000);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP status ${response.status}`);
+    }
+    
+    const html = await response.text();
+    
+    const priceMatch = html.match(/class="N6SYTe"[^>]*><span jsname="Pdsbrc"[^>]*><span>₹?([^<]+)</);
+    if (!priceMatch) {
+      throw new Error(`Price element class N6SYTe not found for ${googleTicker}`);
+    }
+    
+    const priceStr = priceMatch[1].replace(/,/g, '');
+    const ltp = parseFloat(priceStr);
+    
+    const changeMatch = html.match(/jsname="xnruHf"[^>]*><span>₹?([-+0-9,.]+)</);
+    let changeVal = 0;
+    if (changeMatch) {
+      changeVal = parseFloat(changeMatch[1].replace(/,/g, ''));
+    }
+    
+    const previousClose = ltp - changeVal;
+    
+    return {
+      symbol,
+      ticker: googleTicker,
+      ltp,
+      previousClose
+    };
+  } catch (error) {
+    console.warn(`[GoogleFinance] Live price fetch failed for ${symbol}: ${error.message}. Falling back to Yahoo Finance...`);
+    return await fetchLTPYahoo(symbol);
   }
 }
 
