@@ -15,7 +15,8 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   Sparkles,
-  PlusCircle
+  PlusCircle,
+  Calculator
 } from 'lucide-react';
 
 interface Holding {
@@ -68,6 +69,16 @@ export const Holdings = () => {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ message: string; count: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Sub-tab view state
+  const [activeSubTab, setActiveSubTab] = useState<'holdings' | 'simulator'>('holdings');
+
+  // What-If Simulator State
+  const [simStock, setSimStock] = useState('');
+  const [simType, setSimType] = useState<'BUY' | 'SELL'>('BUY');
+  const [simQty, setSimQty] = useState('');
+  const [simPrice, setSimPrice] = useState('');
+  const [simPlannedTrades, setSimPlannedTrades] = useState<Array<{ id: string; type: 'BUY' | 'SELL'; quantity: number; price: number }>>([]);
 
   // Quick Add Trade Modal State
   const [isAddTradeOpen, setIsAddTradeOpen] = useState(false);
@@ -128,9 +139,19 @@ export const Holdings = () => {
       fetchCoreData();
     };
 
+    const handleCacheUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const endpoint = customEvent.detail?.endpoint;
+      if (endpoint === '/holdings' || endpoint === '/trades') {
+        fetchCoreData();
+      }
+    };
+
     window.addEventListener('portfolio-sync-complete', handleSyncComplete);
+    window.addEventListener('finor-cache-updated', handleCacheUpdate);
     return () => {
       window.removeEventListener('portfolio-sync-complete', handleSyncComplete);
+      window.removeEventListener('finor-cache-updated', handleCacheUpdate);
     };
   }, []);
 
@@ -334,8 +355,348 @@ export const Holdings = () => {
     return diffDays;
   };
 
+  const runSimulation = () => {
+    if (!simStock) return null;
+    const stockHolding = holdings.find(h => h.stock_symbol.toUpperCase() === simStock.toUpperCase());
+    
+    let currentQty = stockHolding ? stockHolding.quantity : 0;
+    let currentAvg = stockHolding ? stockHolding.average_buy_price : 0;
+    let currentInvested = currentQty * currentAvg;
+    const ltpVal = stockHolding?.ltp || 0;
+
+    let simQty = currentQty;
+    let simAvg = currentAvg;
+    let simInvested = simQty * simAvg;
+    let totalRealizedPnL = 0;
+    let totalPlannedSaleValue = 0;
+    let totalPlannedBuyValue = 0;
+
+    simPlannedTrades.forEach(trade => {
+      if (trade.type === 'BUY') {
+        const prevQty = simQty;
+        simQty += trade.quantity;
+        if (simQty > 0) {
+          simAvg = ((prevQty * simAvg) + (trade.quantity * trade.price)) / simQty;
+        } else {
+          simAvg = 0;
+        }
+        totalPlannedBuyValue += trade.quantity * trade.price;
+      } else {
+        const soldQty = Math.min(trade.quantity, simQty);
+        totalRealizedPnL += soldQty * (trade.price - simAvg);
+        simQty = Math.max(0, simQty - trade.quantity);
+        if (simQty === 0) {
+          simAvg = 0;
+        }
+        totalPlannedSaleValue += trade.quantity * trade.price;
+      }
+      simInvested = simQty * simAvg;
+    });
+
+    const avgPriceDiff = currentAvg > 0 ? ((simAvg - currentAvg) / currentAvg) * 100 : 0;
+
+    return {
+      currentQty,
+      currentAvg,
+      currentInvested,
+      simQty,
+      simAvg,
+      simInvested,
+      totalRealizedPnL,
+      avgPriceDiff,
+      ltpVal
+    };
+  };
+
+  const renderSimulator = () => {
+    const simResult = runSimulation();
+
+    const handleAddSimTrade = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!simStock) {
+        triggerAlert('error', 'Select Stock', 'Please select a stock to plan simulated trades.');
+        return;
+      }
+      const qty = parseInt(simQty, 10);
+      const prc = parseFloat(simPrice);
+      if (isNaN(qty) || qty <= 0 || isNaN(prc) || prc <= 0) {
+        triggerAlert('error', 'Invalid Trade Data', 'Please enter valid positive quantity and price.');
+        return;
+      }
+
+      const newPlanned = {
+        id: Math.random().toString(36).substring(2, 9),
+        type: simType,
+        quantity: qty,
+        price: prc
+      };
+
+      setSimPlannedTrades([...simPlannedTrades, newPlanned]);
+      setSimQty('');
+      setSimPrice('');
+    };
+
+    const handleRemoveSimTrade = (id: string) => {
+      setSimPlannedTrades(simPlannedTrades.filter(t => t.id !== id));
+    };
+
+    const handleClearSimulation = () => {
+      setSimPlannedTrades([]);
+    };
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Left Column: Form & Simulator Controls (5 cols) */}
+        <div className="lg:col-span-5 space-y-6">
+          <div className="glass-panel rounded-3xl p-6 border border-dark-border space-y-5">
+            <div>
+              <h3 className="text-base font-bold text-white">Simulation Setup</h3>
+              <p className="text-[10px] text-gray-400 mt-0.5">Plan simulated buys and sells for your positions.</p>
+            </div>
+
+            {/* Select Stock Dropdown */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Select Position Ticker</label>
+              <select
+                value={simStock}
+                onChange={(e) => {
+                  setSimStock(e.target.value);
+                  setSimPlannedTrades([]);
+                }}
+                className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-4 py-2.5 text-xs text-white focus:border-brand-500 outline-none cursor-pointer"
+              >
+                <option value="">-- Choose Stock --</option>
+                {holdings.map(h => (
+                  <option key={h.stock_symbol} value={h.stock_symbol}>
+                    {h.stock_symbol} ({h.quantity} shares @ ₹{h.average_buy_price.toFixed(2)})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {simStock && (
+              <form onSubmit={handleAddSimTrade} className="space-y-4 pt-2 border-t border-dark-border/40">
+                <div className="flex gap-3">
+                  {/* Action Selector */}
+                  <div className="flex-1 space-y-1.5">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Action</label>
+                    <div className="flex bg-dark-depth-2 border border-dark-border p-1 rounded-xl">
+                      <button
+                        type="button"
+                        onClick={() => setSimType('BUY')}
+                        className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
+                          simType === 'BUY'
+                            ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        BUY
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSimType('SELL')}
+                        className={`flex-1 py-1.5 text-[10px] font-bold rounded-lg transition-all cursor-pointer ${
+                          simType === 'SELL'
+                            ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        SELL
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Quantity */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Quantity</label>
+                    <input
+                      type="number"
+                      placeholder="e.g. 40"
+                      value={simQty}
+                      onChange={(e) => setSimQty(e.target.value)}
+                      className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-4 py-2.5 text-xs text-white focus:border-brand-500 outline-none"
+                    />
+                  </div>
+
+                  {/* Target Price */}
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Target Price (₹)</label>
+                    <input
+                      type="number"
+                      step="0.05"
+                      placeholder="e.g. 330"
+                      value={simPrice}
+                      onChange={(e) => setSimPrice(e.target.value)}
+                      className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-4 py-2.5 text-xs text-white focus:border-brand-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-bold text-white shadow-lg transition-all cursor-pointer"
+                >
+                  Add Trade to Planner
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Simulation Outcomes & Metrics (7 cols) */}
+        <div className="lg:col-span-7 space-y-6">
+          {simStock ? (
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border space-y-6">
+              
+              {/* Outcome Header */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-white">Outcome Analysis — {simStock}</h3>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Real-time simulation results computed chronologically.</p>
+                </div>
+                {simPlannedTrades.length > 0 && (
+                  <button
+                    onClick={handleClearSimulation}
+                    className="text-[10px] font-bold text-rose-500 hover:text-rose-400 transition-colors cursor-pointer"
+                  >
+                    Reset Plan
+                  </button>
+                )}
+              </div>
+
+              {/* Outcome Comparison Grid */}
+              {simResult && (
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Before Simulation Card */}
+                  <div className="bg-dark-depth-2/40 border border-dark-border/60 rounded-2xl p-4 space-y-2.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Current Position</span>
+                    <div className="space-y-1">
+                      <p className="text-xs text-gray-300">Quantity: <span className="text-white font-bold">{simResult.currentQty}</span></p>
+                      <p className="text-xs text-gray-300">Avg Cost: <span className="text-white font-bold">₹{simResult.currentAvg.toFixed(2)}</span></p>
+                      <p className="text-xs text-gray-300">Total Capital: <span className="text-white font-bold">₹{simResult.currentInvested.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></p>
+                    </div>
+                  </div>
+
+                  {/* After Simulation Card */}
+                  <div className="bg-dark-depth-2/40 border border-dark-border/60 rounded-2xl p-4 space-y-2.5">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-brand-400">Simulated Position</span>
+                    <div className="space-y-1">
+                      <p className="text-xs text-gray-300">Quantity: <span className="text-white font-bold">{simResult.simQty}</span></p>
+                      <p className="text-xs text-gray-300">
+                        Avg Cost: <span className="text-white font-bold">₹{simResult.simAvg.toFixed(2)}</span>
+                        {simResult.avgPriceDiff !== 0 && (
+                          <span className={`text-[10px] font-bold ml-1.5 ${simResult.avgPriceDiff < 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            ({simResult.avgPriceDiff < 0 ? '' : '+'}{simResult.avgPriceDiff.toFixed(2)}%)
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-300">Total Capital: <span className="text-white font-bold">₹{simResult.simInvested.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span></p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Realized Gains Info Alert */}
+              {simResult && (simResult.totalRealizedPnL !== 0 || simPlannedTrades.length > 0) && (
+                <div className="p-4 rounded-2xl bg-brand-500/5 border border-brand-500/10 flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-brand-400">Estimated Outcome Metrics</span>
+                    <p className="text-xs text-gray-200">
+                      Planned Realized Gain: <span className={`font-bold ${simResult.totalRealizedPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {simResult.totalRealizedPnL >= 0 ? '+' : ''}₹{simResult.totalRealizedPnL.toFixed(2)}
+                      </span>
+                    </p>
+                  </div>
+                  {simPlannedTrades.length > 0 && (
+                    <div className="text-right space-y-1">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-gray-500">Planned Triggers</span>
+                      <p className="text-xs text-gray-300 font-medium">{simPlannedTrades.length} operations set</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Planned Trades List */}
+              <div className="space-y-3">
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Planned Chronology</span>
+                {simPlannedTrades.length === 0 ? (
+                  <div className="text-center py-6 border border-dashed border-dark-border/40 rounded-2xl text-xs text-gray-500 select-none">
+                    No planned trades added. Add a simulated Buy/Sell trade using the setup form.
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                    {simPlannedTrades.map((t, idx) => (
+                      <div key={t.id} className="flex items-center justify-between bg-dark-depth-2/30 border border-dark-border/40 px-4 py-2.5 rounded-xl text-xs">
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-500 font-bold">{idx + 1}.</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                            t.type === 'BUY'
+                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                              : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                          }`}>
+                            {t.type}
+                          </span>
+                          <span className="text-white font-semibold">{t.quantity} shares</span>
+                          <span className="text-gray-600">•</span>
+                          <span className="text-gray-400">@ ₹{t.price.toFixed(2)}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              window.dispatchEvent(new CustomEvent('finor-switch-tab', {
+                                detail: {
+                                  tab: 'orders',
+                                  symbol: simStock,
+                                  action: t.type,
+                                  quantity: t.quantity,
+                                  price: t.price.toFixed(2)
+                                }
+                              }));
+                            }}
+                            className="text-[9px] font-bold text-brand-400 hover:text-brand-300 hover:underline cursor-pointer"
+                          >
+                            Set GTT
+                          </button>
+                          <span className="text-gray-700">|</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSimTrade(t.id)}
+                            className="text-gray-500 hover:text-rose-500 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+            </div>
+          ) : (
+            <div className="glass-panel rounded-3xl border border-dark-border min-h-[300px] flex flex-col items-center justify-center text-center p-6 select-none text-xs text-gray-500 gap-3">
+              <Calculator className="w-10 h-10 text-gray-700" />
+              <div>
+                <h4 className="font-bold text-white">Select Stock to Begin Simulation</h4>
+                <p className="mt-1 leading-relaxed max-w-xs mx-auto text-[11px]">
+                  Select any active ticker position from the dropdown menu to simulate planned buys/sells and calculate cost-basis changes.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
+
       
       {/* Header Panel */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -393,8 +754,32 @@ export const Holdings = () => {
         </div>
       )}
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Sub-tab Switcher */}
+      <div className="flex border-b border-dark-border/40 gap-4 mb-6">
+        <button
+          onClick={() => setActiveSubTab('holdings')}
+          className={`pb-3 text-xs font-bold uppercase tracking-wider relative transition-colors cursor-pointer ${
+            activeSubTab === 'holdings' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          Holdings Summary (${holdings.length})
+          {activeSubTab === 'holdings' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-full" />}
+        </button>
+        <button
+          onClick={() => setActiveSubTab('simulator')}
+          className={`pb-3 text-xs font-bold uppercase tracking-wider relative transition-colors cursor-pointer ${
+            activeSubTab === 'simulator' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          What-If Position Simulator
+          {activeSubTab === 'simulator' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-full" />}
+        </button>
+      </div>
+
+      {activeSubTab === 'holdings' ? (
+        <>
+          {/* Summary Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         
         {/* Total Value Card */}
         <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
@@ -741,6 +1126,11 @@ export const Holdings = () => {
             );
           })}
         </div>
+      )}
+
+        </>
+      ) : (
+        renderSimulator()
       )}
 
       {/* CSV Import Modal (Floating Overlay) */}

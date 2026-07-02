@@ -151,6 +151,22 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
     fetchHoldingsData();
     fetchEventsData();
     fetchTradesData();
+
+    const handleCacheUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const endpoint = customEvent.detail?.endpoint;
+      if (endpoint === '/holdings') {
+        fetchHoldingsData();
+      } else if (endpoint === '/trades') {
+        fetchTradesData();
+      } else if (endpoint === '/holdings/events') {
+        fetchEventsData();
+      }
+    };
+    window.addEventListener('finor-cache-updated', handleCacheUpdate);
+    return () => {
+      window.removeEventListener('finor-cache-updated', handleCacheUpdate);
+    };
   }, []);
 
   // Background price synchronization if stale (cooldown 5 mins)
@@ -183,6 +199,18 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
   // Fetch history when period changes
   useEffect(() => {
     fetchHistoryData();
+
+    const handleCacheUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const endpoint = customEvent.detail?.endpoint;
+      if (endpoint === '/holdings/history') {
+        fetchHistoryData();
+      }
+    };
+    window.addEventListener('finor-cache-updated', handleCacheUpdate);
+    return () => {
+      window.removeEventListener('finor-cache-updated', handleCacheUpdate);
+    };
   }, [period]);
 
   // Sync complete event listener (reactive to period)

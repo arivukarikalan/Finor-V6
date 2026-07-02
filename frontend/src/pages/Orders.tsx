@@ -86,7 +86,7 @@ export const Orders = () => {
   const [showConfirmClearHistory, setShowConfirmClearHistory] = useState(false);
 
   // UI state
-  const [listTab, setListTab] = useState<'active' | 'completed' | 'gtt'>('active');
+  const [listTab, setListTab] = useState<'active' | 'completed' | 'gtt' | 'trades'>('active');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -155,6 +155,23 @@ export const Orders = () => {
     };
 
     initAuthAndConfig();
+
+    const handleCacheUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const endpoint = customEvent.detail?.endpoint;
+      if (
+        endpoint === '/trades' ||
+        endpoint === '/holdings' ||
+        endpoint === '/orders/live' ||
+        endpoint === '/orders/gtt/live'
+      ) {
+        fetchLists();
+      }
+    };
+    window.addEventListener('finor-cache-updated', handleCacheUpdate);
+    return () => {
+      window.removeEventListener('finor-cache-updated', handleCacheUpdate);
+    };
   }, []);
 
   // Listen for order prefill triggers
@@ -333,6 +350,21 @@ export const Orders = () => {
       await fetchLists();
     } catch (err: any) {
       setError(err.message || 'Failed to cancel GTT.');
+    }
+  };
+
+  // Delete trade ledger record
+  const handleDeleteTrade = async (tradeId: string) => {
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await apiRequest(`/trades/${tradeId}`, {
+        method: 'DELETE'
+      });
+      setSuccess(res.message);
+      await fetchLists();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete trade.');
     }
   };
 
@@ -977,6 +1009,15 @@ export const Orders = () => {
                   GTT triggers ({gtts.filter(g => g.status === 'ACTIVE').length})
                   {listTab === 'gtt' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-full" />}
                 </button>
+                <button
+                  onClick={() => setListTab('trades')}
+                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer ${
+                    listTab === 'trades' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Trade Ledger ({trades.length})
+                  {listTab === 'trades' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-full" />}
+                </button>
               </div>
 
               {/* Quick actions and refresh button */}
@@ -1031,6 +1072,14 @@ export const Orders = () => {
                   <div>
                     <h5 className="font-bold text-white">No Active GTT Triggers</h5>
                     <p className="mt-1 leading-relaxed">Good-Till-Triggered long-term profit target / stoploss orders are set up here.</p>
+                  </div>
+                </div>
+              ) : listTab === 'trades' && trades.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center select-none text-xs text-gray-500 max-w-xs mx-auto gap-3.5">
+                  <FileText className="w-10 h-10 text-gray-700" />
+                  <div>
+                    <h5 className="font-bold text-white">No Trade Ledger Records</h5>
+                    <p className="mt-1 leading-relaxed">Imported Zerodha statements, synced Gmail confirmations, and manual trades will be logged here.</p>
                   </div>
                 </div>
               ) : (
@@ -1136,6 +1185,37 @@ export const Orders = () => {
                           {gtt.status}
                         </span>
                       )}
+                    </div>
+                  ))}
+
+                  {/* Trade Ledger List */}
+                  {listTab === 'trades' && trades.map((t) => (
+                    <div key={t.id} className="glass-panel rounded-2xl p-4 border border-dark-border flex items-center justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-sm text-white tracking-tight">{t.stock_symbol}</span>
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                            t.trade_type === 'BUY' || t.trade_type === 'B'
+                              ? 'bg-emerald-500/10 border-emerald-500/10 text-emerald-500'
+                              : 'bg-rose-500/10 border-rose-500/10 text-rose-500'
+                          }`}>
+                            {t.trade_type}
+                          </span>
+                          <span className="text-[9px] text-gray-500 font-semibold uppercase">
+                            {new Date(t.trade_date).toLocaleDateString('en-IN')}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-2 font-medium">
+                          Qty: <span className="text-white font-bold">{t.quantity}</span> shares <span className="text-gray-600">•</span> Price: <span className="text-white font-bold">₹{parseFloat(t.price).toFixed(2)}</span>
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteTrade(t.id)}
+                        className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Delete
+                      </button>
                     </div>
                   ))}
 

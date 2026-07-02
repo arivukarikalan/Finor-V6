@@ -206,12 +206,18 @@ router.post('/upload', requireAuth, express.text({ type: 'text/csv', limit: '2mb
 
     if (checkError) throw checkError;
 
-    // Build a unique key helper
+    // Build a unique key helper based on Indian Standard Time (IST) calendar day
     const getTradeKey = (t) => {
-      // Normalize dates to millisecond timestamps to avoid ISO timezone string formatting differences
-      const timestamp = new Date(t.trade_date).getTime();
+      const d = new Date(t.trade_date);
+      const tzOffset = 5.5 * 60 * 60 * 1000; // 5.5h in ms
+      const localTime = d.getTime() + (d.getTimezoneOffset() * 60 * 1000) + tzOffset;
+      const localDate = new Date(localTime);
+      const year = localDate.getFullYear();
+      const month = String(localDate.getMonth() + 1).padStart(2, '0');
+      const day = String(localDate.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
       const priceStr = parseFloat(t.price).toFixed(2);
-      return `${t.stock_symbol}_${timestamp}_${t.trade_type}_${t.quantity}_${priceStr}_${t.order_id || ''}`;
+      return `${t.stock_symbol}_${dateStr}_${t.trade_type}_${t.quantity}_${priceStr}`;
     };
 
     const existingKeys = new Set(existingTrades.map(getTradeKey));
@@ -299,6 +305,33 @@ router.delete('/', requireAuth, async (req, res) => {
 
     res.json({ message: 'Cleared all trades and holdings successfully.' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/trades/:id
+ * Deletes a specific trade by ID and recalculates holdings dynamically
+ */
+router.delete('/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const tradeId = req.params.id;
+
+    const { error: deleteError } = await supabase
+      .from('trades')
+      .delete()
+      .eq('id', tradeId)
+      .eq('user_id', userId);
+
+    if (deleteError) throw deleteError;
+
+    // Recalculate holdings automatically
+    await recalculateHoldings(userId);
+
+    res.json({ message: 'Trade deleted successfully and holdings updated.' });
+  } catch (err) {
+    console.error('[TradesRoute] Specific trade delete failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
