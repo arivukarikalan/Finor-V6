@@ -769,7 +769,7 @@ export const PnL = () => {
         </div>
         
         {closedTrades.length > 0 && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={handleExportCSV}
               className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 transition-all cursor-pointer self-start sm:self-auto select-none"
