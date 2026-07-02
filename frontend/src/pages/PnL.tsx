@@ -265,7 +265,7 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
                             <tr key={idx} className="hover:bg-dark-depth-2/30 transition-colors">
                               <td className="py-2.5">
                                 <span className="font-extrabold text-white block">{h.stock_symbol}</span>
-                                <span className="text-[9px] text-gray-500 block mt-0.5">{h.stock_name}</span>
+                                <span className="text-[9px] text-gray-500 block mt-0.5">{h.stock_name.split('|')[0]}</span>
                               </td>
                               <td className="py-2.5 text-white font-semibold">{h.quantity}</td>
                               <td className="py-2.5 text-gray-300">₹{h.average_buy_price.toFixed(2)}</td>

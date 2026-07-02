@@ -122,6 +122,7 @@ export async function recalculateHoldings(userId) {
         stock_name: trade.stock_name || symbol,
         quantity: 0,
         average_buy_price: 0,
+        buyQueue: []
       };
     }
 
@@ -131,13 +132,41 @@ export async function recalculateHoldings(userId) {
       const newAvg = ((current.quantity * current.average_buy_price) + (qty * price)) / newQty;
       current.quantity = newQty;
       current.average_buy_price = newAvg;
+      
+      current.buyQueue.push({ quantity: qty, price: price });
     } else if (type === 'SELL') {
       current.quantity = Math.max(0, current.quantity - qty);
+      
+      // Consume from FIFO queue
+      let sellQtyRemaining = qty;
+      while (sellQtyRemaining > 0 && current.buyQueue.length > 0) {
+        const earliestBuy = current.buyQueue[0];
+        const matchedQty = Math.min(sellQtyRemaining, earliestBuy.quantity);
+        earliestBuy.quantity -= matchedQty;
+        sellQtyRemaining -= matchedQty;
+        if (earliestBuy.quantity === 0) {
+          current.buyQueue.shift();
+        }
+      }
     }
   }
 
   // Filter out symbols with no remaining quantity
   const activeHoldings = Object.values(holdingsMap).filter(h => h.quantity > 0);
+
+  // Compute FIFO Average Price and format stock_name with weighted average suffix
+  activeHoldings.forEach(h => {
+    const totalQty = h.buyQueue.reduce((acc, b) => acc + b.quantity, 0);
+    const totalCost = h.buyQueue.reduce((acc, b) => acc + (b.quantity * b.price), 0);
+    const fifoAveragePrice = totalQty > 0 ? totalCost / totalQty : h.average_buy_price;
+    
+    // Store weighted cumulative average in stock_name suffix
+    const baseStockName = h.stock_name.split('|')[0].trim();
+    h.stock_name = `${baseStockName}|${h.average_buy_price.toFixed(2)}`;
+    
+    // Set average_buy_price to the FIFO price
+    h.average_buy_price = fifoAveragePrice;
+  });
 
   // Fetch existing holdings to preserve their LTP values
   const { data: existingHoldings } = await supabase

@@ -943,6 +943,7 @@ export const Holdings = () => {
             const settings = stockSettings[h.stock_symbol] || { stoploss_price: null, position_tag: 'TRADING' };
             const isCoreHold = settings.position_tag === 'CORE_HOLD';
             const exitFlag = considerExits.find(ce => ce.symbol === h.stock_symbol);
+            const [stockNameOnly, weightedAvgStr] = h.stock_name.split('|');
 
             return (
               <div 
@@ -968,7 +969,7 @@ export const Holdings = () => {
                       )}
                     </h4>
                     <span className="text-[10px] text-gray-500 mt-0.5 block font-semibold uppercase tracking-wider">
-                      {h.stock_name}
+                      {stockNameOnly}
                     </span>
                   </div>
                   
@@ -1010,8 +1011,13 @@ export const Holdings = () => {
                     <span className="text-sm font-bold text-white">{h.quantity}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-gray-500 block">Avg. Price</span>
+                    <span className="text-[10px] text-gray-500 block">Avg. Price (FIFO)</span>
                     <span className="text-sm font-bold text-white">₹{h.average_buy_price.toFixed(2)}</span>
+                    {weightedAvgStr && (
+                      <span className="text-[9px] text-gray-400 block mt-0.5 font-medium">
+                        Weighted: ₹{parseFloat(weightedAvgStr).toFixed(2)}
+                      </span>
+                    )}
                   </div>
                   <div>
                     <span className="text-[10px] text-gray-500 block">Current LTP</span>
