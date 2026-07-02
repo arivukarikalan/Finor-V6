@@ -2,6 +2,7 @@ import express from 'express';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getStockDailyPrices } from '../services/yahooFinance.js';
+import { recalculateHoldings } from './trades.js';
 
 const router = express.Router();
 
@@ -27,6 +28,13 @@ router.get('/', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
+    
+    // Force a fresh recalculation of active holdings first to ensure FIFO values are up to date
+    try {
+      await recalculateHoldings(userId);
+    } catch (calcErr) {
+      console.warn('[Snapshots] Recalculate holdings failed:', calcErr.message);
+    }
     
     // 1. Fetch active holdings
     const { data: holdings, error: holdError } = await supabase
