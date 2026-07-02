@@ -186,21 +186,26 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
               stock_symbol: sym,
               stock_name: t.stock_name || sym,
               quantity: 0,
-              total_cost: 0,
-              average_buy_price: 0
+              average_buy_price: 0,
+              buyQueue: []
             };
           }
           positions[sym].quantity += qty;
-          positions[sym].total_cost += qty * price;
-          positions[sym].average_buy_price = positions[sym].total_cost / positions[sym].quantity;
+          positions[sym].buyQueue.push({ quantity: qty, price: price });
         } else if (type === 'SELL' || type === 'S') {
           if (positions[sym]) {
-            if (qty >= positions[sym].quantity) {
-              delete positions[sym]; // fully closed
-            } else {
-              positions[sym].quantity -= qty;
-              // Sells reduce total cost proportionally, average cost remains identical under standard accounting
-              positions[sym].total_cost = positions[sym].quantity * positions[sym].average_buy_price;
+            positions[sym].quantity = Math.max(0, positions[sym].quantity - qty);
+            
+            // Consume from FIFO queue
+            let sellQtyRemaining = qty;
+            while (sellQtyRemaining > 0 && positions[sym].buyQueue.length > 0) {
+              const earliestBuy = positions[sym].buyQueue[0];
+              const matchedQty = Math.min(sellQtyRemaining, earliestBuy.quantity);
+              earliestBuy.quantity -= matchedQty;
+              sellQtyRemaining -= matchedQty;
+              if (earliestBuy.quantity === 0) {
+                positions[sym].buyQueue.shift();
+              }
             }
           }
         }
@@ -211,12 +216,17 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
         .filter((h) => h.quantity > 0)
         .map((h) => {
           const historicalLtp = getPriceForDate(h.stock_symbol, snapDateStr);
+          
+          const totalQty = h.buyQueue.reduce((acc, b) => acc + b.quantity, 0);
+          const totalCost = h.buyQueue.reduce((acc, b) => acc + (b.quantity * b.price), 0);
+          const fifoAveragePrice = totalQty > 0 ? totalCost / totalQty : h.average_buy_price;
+
           return {
             stock_symbol: h.stock_symbol,
             stock_name: h.stock_name,
             quantity: h.quantity,
-            average_buy_price: h.average_buy_price,
-            ltp: historicalLtp !== null ? historicalLtp : h.average_buy_price
+            average_buy_price: fifoAveragePrice,
+            ltp: historicalLtp !== null ? historicalLtp : fifoAveragePrice
           };
         });
 
