@@ -13,7 +13,8 @@ import {
   HelpCircle,
   Clock,
   Trash2,
-  Activity
+  Activity,
+  Edit
 } from 'lucide-react';
 
 interface OrderConfig {
@@ -84,6 +85,7 @@ export const Orders = () => {
   const [loadingLists, setLoadingLists] = useState(true);
   const [clearingHistory, setClearingHistory] = useState(false);
   const [showConfirmClearHistory, setShowConfirmClearHistory] = useState(false);
+  const [editingTrade, setEditingTrade] = useState<any | null>(null);
 
   // UI state
   const [listTab, setListTab] = useState<'active' | 'completed' | 'gtt' | 'trades'>('active');
@@ -365,6 +367,40 @@ export const Orders = () => {
       await fetchLists();
     } catch (err: any) {
       setError(err.message || 'Failed to delete trade.');
+    }
+  };
+
+  // Save edited trade ledger record
+  const handleSaveEditTrade = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTrade) return;
+    setError(null);
+    setSuccess(null);
+    try {
+      const res = await apiRequest(`/trades/${editingTrade.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stock_symbol: editingTrade.stock_symbol,
+          trade_type: editingTrade.trade_type,
+          quantity: Number(editingTrade.quantity),
+          price: Number(editingTrade.price),
+          trade_date: editingTrade.trade_date,
+          stock_name: editingTrade.stock_name
+        })
+      });
+      // Clear Dexie IndexedDB cache to force refresh
+      try {
+        const { db: appDb } = await import('../services/api');
+        await appDb.apiCache.clear();
+      } catch (dbErr) {
+        console.warn('Cache clear failed:', dbErr);
+      }
+      setSuccess(res.message);
+      setEditingTrade(null);
+      await fetchLists();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update trade.');
     }
   };
 
@@ -1209,13 +1245,25 @@ export const Orders = () => {
                           Qty: <span className="text-white font-bold">{t.quantity}</span> shares <span className="text-gray-600">•</span> Price: <span className="text-white font-bold">₹{parseFloat(t.price).toFixed(2)}</span>
                         </p>
                       </div>
-                      <button
-                        onClick={() => handleDeleteTrade(t.id)}
-                        className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                        Delete
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            const dateOnly = t.trade_date.split('T')[0];
+                            setEditingTrade({ ...t, trade_date: dateOnly });
+                          }}
+                          className="flex items-center gap-1 text-[10px] font-bold text-brand-400 hover:text-brand-300 bg-brand-500/10 border border-brand-500/20 hover:bg-brand-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTrade(t.id)}
+                          className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Delete
+                        </button>
+                      </div>
                     </div>
                   ))}
 
@@ -1353,6 +1401,121 @@ export const Orders = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Edit Trade Modal */}
+      {editingTrade && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-dark-depth-0/85 backdrop-blur-md">
+          <form 
+            onSubmit={handleSaveEditTrade}
+            className="glass-panel w-full max-w-md rounded-3xl p-6 border border-dark-border shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-200"
+          >
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+              <h3 className="text-base font-extrabold text-white font-display">Edit Transaction</h3>
+              <button 
+                type="button"
+                onClick={() => setEditingTrade(null)}
+                className="p-1 rounded-lg hover:bg-dark-depth-2 text-gray-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 block mb-1.5 uppercase tracking-wider font-display">Stock Ticker</label>
+                <input 
+                  type="text" 
+                  value={editingTrade.stock_symbol}
+                  onChange={(e) => setEditingTrade({ ...editingTrade, stock_symbol: e.target.value.toUpperCase() })}
+                  required
+                  className="w-full bg-dark-depth-2/65 border border-dark-border rounded-xl px-4 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 transition-all font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 block mb-1.5 uppercase tracking-wider font-display">Action</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingTrade({ ...editingTrade, trade_type: 'BUY' })}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      editingTrade.trade_type === 'BUY' || editingTrade.trade_type === 'B'
+                        ? 'bg-emerald-500/10 border border-emerald-500/40 text-emerald-500'
+                        : 'bg-dark-depth-2/40 border border-dark-border text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    BUY
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingTrade({ ...editingTrade, trade_type: 'SELL' })}
+                    className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      editingTrade.trade_type === 'SELL' || editingTrade.trade_type === 'S'
+                        ? 'bg-rose-500/10 border border-rose-500/40 text-rose-500'
+                        : 'bg-dark-depth-2/40 border border-dark-border text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    SELL
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1.5 uppercase tracking-wider font-display">Quantity</label>
+                  <input 
+                    type="number" 
+                    value={editingTrade.quantity}
+                    onChange={(e) => setEditingTrade({ ...editingTrade, quantity: e.target.value })}
+                    required
+                    min="1"
+                    className="w-full bg-dark-depth-2/65 border border-dark-border rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500/80 transition-all font-semibold"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-1.5 uppercase tracking-wider font-display">Price (₹)</label>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    value={editingTrade.price}
+                    onChange={(e) => setEditingTrade({ ...editingTrade, price: e.target.value })}
+                    required
+                    min="0.01"
+                    className="w-full bg-dark-depth-2/65 border border-dark-border rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500/80 transition-all font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 block mb-1.5 uppercase tracking-wider font-display">Date</label>
+                <input 
+                  type="date" 
+                  value={editingTrade.trade_date}
+                  onChange={(e) => setEditingTrade({ ...editingTrade, trade_date: e.target.value })}
+                  required
+                  className="w-full bg-dark-depth-2/65 border border-dark-border rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand-500/80 transition-all font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-3">
+              <button
+                type="button"
+                onClick={() => setEditingTrade(null)}
+                className="flex-1 py-2.5 rounded-xl border border-dark-border text-xs font-bold text-gray-400 hover:text-white hover:bg-dark-depth-2 transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-bold text-white transition-all cursor-pointer shadow-lg shadow-brand-500/10"
+              >
+                Save Changes
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

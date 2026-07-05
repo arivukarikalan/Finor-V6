@@ -95,39 +95,30 @@ function App() {
     return <Login />;
   }
 
-  // Router dispatcher
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'holdings':
-        return <Holdings />;
-      
-      case 'dashboard':
-        return <Dashboard setActiveTab={setActiveTab} />;
-
-      case 'orders':
-        return <Orders />;
-
-      case 'pnl':
-        return <PnL />;
-
-      case 'insights':
-        return <Insights />;
-
-      case 'ai-chat':
-        return <More defaultSubTab="ai-chat" setActiveTab={setActiveTab} />;
-
-      case 'more':
-        return <More defaultSubTab="news" setActiveTab={setActiveTab} />;
-
-      default:
-        return <div>Not found</div>;
-    }
-  };
-
   return (
     <>
       <Navigation activeTab={activeTab} setActiveTab={setActiveTab}>
-        {renderTabContent()}
+        <div className={activeTab === 'dashboard' ? 'block h-full' : 'hidden'}>
+          <Dashboard setActiveTab={setActiveTab} />
+        </div>
+        <div className={activeTab === 'holdings' ? 'block h-full' : 'hidden'}>
+          <Holdings />
+        </div>
+        <div className={activeTab === 'orders' ? 'block h-full' : 'hidden'}>
+          <Orders />
+        </div>
+        <div className={activeTab === 'pnl' ? 'block h-full' : 'hidden'}>
+          <PnL />
+        </div>
+        <div className={activeTab === 'insights' ? 'block h-full' : 'hidden'}>
+          <Insights />
+        </div>
+        <div className={activeTab === 'ai-chat' ? 'block h-full' : 'hidden'}>
+          <More key="ai-chat-view" defaultSubTab="ai-chat" setActiveTab={setActiveTab} />
+        </div>
+        <div className={activeTab === 'more' ? 'block h-full' : 'hidden'}>
+          <More key="more-view" defaultSubTab="news" setActiveTab={setActiveTab} />
+        </div>
       </Navigation>
       <ToastContainer />
     </>

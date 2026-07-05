@@ -431,7 +431,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       </div>
 
       {/* 4. Mobile Bottom Navigation (sm and down) */}
-      <nav className="md:hidden h-16 bg-dark-depth-1/95 backdrop-blur-md border-t border-dark-border flex items-center justify-around z-50 px-2 pb-safe shadow-2xl flex-shrink-0">
+      <nav className="fixed bottom-0 left-0 right-0 w-full md:hidden h-16 bg-dark-depth-1/95 backdrop-blur-md border-t border-dark-border flex items-center justify-around z-50 px-2 pb-safe shadow-2xl flex-shrink-0">
         {navigationItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;

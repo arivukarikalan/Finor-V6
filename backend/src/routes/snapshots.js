@@ -288,6 +288,101 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
       currentDate.setDate(currentDate.getDate() + 7);
     }
 
+    // 4. Force capture of today's snapshot to sync active holdings with P&L statement
+    const todayStr = new Date().toISOString().split('T')[0];
+    const positions = {};
+    
+    trades.forEach(t => {
+      const sym = t.stock_symbol.toUpperCase();
+      const qty = Number(t.quantity);
+      const price = Number(t.price);
+      const type = t.trade_type.toUpperCase();
+
+      if (type === 'BUY' || type === 'B') {
+        if (!positions[sym]) {
+          positions[sym] = {
+            stock_symbol: sym,
+            stock_name: t.stock_name || sym,
+            quantity: 0,
+            average_buy_price: 0,
+            buyQueue: []
+          };
+        }
+        positions[sym].quantity += qty;
+        positions[sym].buyQueue.push({ quantity: qty, price: price });
+      } else if (type === 'SELL' || type === 'S') {
+        if (positions[sym]) {
+          positions[sym].quantity = Math.max(0, positions[sym].quantity - qty);
+          
+          let sellQtyRemaining = qty;
+          while (sellQtyRemaining > 0 && positions[sym].buyQueue.length > 0) {
+            const earliestBuy = positions[sym].buyQueue[0];
+            const matchedQty = Math.min(sellQtyRemaining, earliestBuy.quantity);
+            earliestBuy.quantity -= matchedQty;
+            sellQtyRemaining -= matchedQty;
+            if (earliestBuy.quantity === 0) {
+              positions[sym].buyQueue.shift();
+            }
+          }
+        }
+      }
+    });
+
+    const todayHoldingsState = Object.values(positions)
+      .filter(h => h.quantity > 0)
+      .map(h => {
+        const historicalLtp = getPriceForDate(h.stock_symbol, todayStr);
+        const totalQty = h.buyQueue.reduce((acc, b) => acc + b.quantity, 0);
+        const totalCost = h.buyQueue.reduce((acc, b) => acc + (b.quantity * b.price), 0);
+        const fifoAveragePrice = totalQty > 0 ? totalCost / totalQty : h.average_buy_price;
+
+        return {
+          stock_symbol: h.stock_symbol,
+          stock_name: h.stock_name,
+          quantity: h.quantity,
+          average_buy_price: fifoAveragePrice,
+          ltp: historicalLtp !== null ? historicalLtp : fifoAveragePrice
+        };
+      });
+
+    const totalInvested = todayHoldingsState.reduce((sum, h) => sum + (h.average_buy_price * h.quantity), 0);
+    const totalValue = todayHoldingsState.reduce((sum, h) => sum + (h.ltp * h.quantity), 0);
+    const weeklyPL = totalValue - totalInvested;
+
+    const { data: existingToday, error: checkTodayErr } = await supabase
+      .from('portfolio_snapshots')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('snapshot_date', todayStr)
+      .maybeSingle();
+
+    if (!checkTodayErr) {
+      if (existingToday) {
+        await supabase
+          .from('portfolio_snapshots')
+          .update({
+            holdings_state: todayHoldingsState,
+            total_invested: totalInvested,
+            total_value: totalValue,
+            weekly_pnl: weeklyPL
+          })
+          .eq('id', existingToday.id);
+        updatedCount++;
+      } else {
+        await supabase
+          .from('portfolio_snapshots')
+          .insert({
+            user_id: userId,
+            snapshot_date: todayStr,
+            holdings_state: todayHoldingsState,
+            total_invested: totalInvested,
+            total_value: totalValue,
+            weekly_pnl: weeklyPL
+          });
+        createdCount++;
+      }
+    }
+
     res.json({
       message: 'Historical snapshots successfully reconstructed.',
       created: createdCount,

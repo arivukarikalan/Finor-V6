@@ -366,6 +366,47 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 /**
+ * PUT /api/trades/:id
+ * Updates a specific trade by ID and recalculates holdings dynamically
+ */
+router.put('/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const tradeId = req.params.id;
+    const { stock_symbol, trade_type, quantity, price, trade_date, stock_name } = req.body;
+
+    if (!stock_symbol || !trade_type || !quantity || !price || !trade_date) {
+      return res.status(400).json({ error: 'Missing required trade details.' });
+    }
+
+    const { data: updatedTrade, error: updateError } = await supabase
+      .from('trades')
+      .update({
+        stock_symbol: stock_symbol.toUpperCase(),
+        trade_type: trade_type.toUpperCase(),
+        quantity: Number(quantity),
+        price: Number(price),
+        trade_date: new Date(trade_date).toISOString(),
+        stock_name: stock_name || null
+      })
+      .eq('id', tradeId)
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    // Recalculate holdings automatically
+    await recalculateHoldings(userId);
+
+    res.json({ message: 'Trade updated successfully and holdings updated.', trade: updatedTrade });
+  } catch (err) {
+    console.error('[TradesRoute] Specific trade update failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * POST /api/trades/sync-kite
  * Syncs today's Zerodha executed trades to the database and updates holdings.
  */

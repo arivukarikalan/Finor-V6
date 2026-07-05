@@ -255,7 +255,7 @@ router.get('/portfolio-history', requireAuth, async (req, res) => {
  */
 async function generateAIInsights(apiKey, report) {
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
   
   const prompt = `You are a professional trading coach and portfolio risk auditor. Analyze the following trading behavior statistics of a retail investor:
 - Discipline Score: ${report.disciplineScore}/100 (Grade: ${report.grade} - ${report.gradeMeaning})
@@ -481,7 +481,7 @@ router.post('/pnl-comparison/ai', requireAuth, async (req, res) => {
         try {
           const { GoogleGenerativeAI } = await import('@google/generative-ai');
           const genAI = new GoogleGenerativeAI(apiKey);
-          const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+          const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
           const prompt = `You are a premium trading psychologist and portfolio risk coach. Provide an advanced head-to-head behavioral and profit comparison between stock "${symA}" and stock "${symB}" based on these metrics:
 
@@ -644,7 +644,7 @@ Keep the markdown clean, professional, and directly actionable. Use bullet point
       try {
         const { GoogleGenerativeAI } = await import('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
         const prompt = `You are a premium trading psychologist and risk manager. Analyze the following behavioral trade ledger audit comparison for a retail user:
 

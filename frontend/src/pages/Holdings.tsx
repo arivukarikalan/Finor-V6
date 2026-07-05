@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiRequest } from '../services/api';
+import { useToastStore } from '../context/toastStore';
 import { LtpPriceText } from '../components/LtpPriceText';
 import { CustomAlertModal } from '../components/CustomAlertModal';
 import { 
@@ -16,7 +17,8 @@ import {
   CheckCircle2,
   Sparkles,
   PlusCircle,
-  Calculator
+  Calculator,
+  AlertTriangle
 } from 'lucide-react';
 
 interface Holding {
@@ -46,6 +48,7 @@ export const Holdings = () => {
   const [considerExits, setConsiderExits] = useState<{ symbol: string; reason: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [forceRebuilding, setForceRebuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Edit Stock Settings State
@@ -212,6 +215,38 @@ export const Holdings = () => {
       setError(err.message || 'Failed to sync prices.');
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleForceRecalculate = async () => {
+    setForceRebuilding(true);
+    setError(null);
+    const toastId = useToastStore.getState().addToast('Clearing caches & rebuilding holdings...', 'loading');
+    try {
+      // 1. Clear local IndexedDB cache
+      const { db: appDb } = await import('../services/api');
+      await appDb.apiCache.clear();
+      
+      // 2. Call backend force recalculation
+      await apiRequest('/holdings/force-recalculate', {
+        method: 'POST',
+      });
+      
+      // 3. Rebuild historical snapshots
+      await apiRequest('/snapshots/initialize-history', {
+        method: 'POST',
+      });
+
+      useToastStore.getState().removeToast(toastId);
+      useToastStore.getState().addToast('System successfully synchronized and rebuilt!', 'success');
+      
+      await fetchCoreData();
+    } catch (err: any) {
+      useToastStore.getState().removeToast(toastId);
+      setError(err.message || 'Failed to force recalculation.');
+      useToastStore.getState().addToast(err.message || 'Failed to force recalculation.', 'error');
+    } finally {
+      setForceRebuilding(false);
     }
   };
 
@@ -711,11 +746,21 @@ export const Holdings = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={handleSyncPrices}
-            disabled={syncing || holdings.length === 0}
+            disabled={syncing || forceRebuilding || holdings.length === 0}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-dark-border bg-dark-depth-2/40 text-xs font-semibold text-gray-200 hover:text-white hover:border-brand-500/40 transition-all cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-brand-500' : ''}`} />
             Refresh Prices
+          </button>
+
+          <button
+            onClick={handleForceRecalculate}
+            disabled={syncing || forceRebuilding || holdings.length === 0}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 text-xs font-semibold text-rose-400 hover:text-white hover:bg-rose-500/25 hover:border-rose-500/40 transition-all cursor-pointer disabled:opacity-50"
+            title="Clear all price caches and rebuild positions from scratch"
+          >
+            <AlertTriangle className={`w-3.5 h-3.5 ${forceRebuilding ? 'animate-pulse text-rose-500' : ''}`} />
+            Force Rebuild
           </button>
           
           <button

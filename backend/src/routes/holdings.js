@@ -2,6 +2,7 @@ import express from 'express';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
+import { recalculateHoldings } from './trades.js';
 
 const router = express.Router();
 
@@ -342,7 +343,7 @@ router.post('/sentiment', requireAuth, async (req, res) => {
       try {
         const { GoogleGenerativeAI } = await import('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
 
         const prompt = `You are an expert financial analyst and investment coach for the Finor portfolio dashboard.
 Analyze the ticker symbol "${stockSymbol}" for a retail investor and evaluate its Conviction Score (1-100) and detailed conviction reasons.
@@ -439,6 +440,48 @@ Ensure the response is raw, valid JSON, and does NOT wrap the JSON inside markdo
     res.json(evaluation);
   } catch (err) {
     console.error('[HoldingsRoute] AI sentiment evaluation failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/holdings/force-recalculate
+ * Clears Supabase price cache, clears previous closes setting, and runs holdings recalculation.
+ */
+router.post('/force-recalculate', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Delete all records from price_cache to force fresh Google Finance scrapings
+    try {
+      const { error: clearErr } = await supabase
+        .from('price_cache')
+        .delete()
+        .neq('stock_symbol', '');
+      
+      if (clearErr) throw clearErr;
+      console.log('[ForceSync] Cleared price_cache database table.');
+    } catch (dbErr) {
+      console.warn('[ForceSync] Failed to clear price_cache:', dbErr.message);
+    }
+
+    // 2. Clear previous closes settings
+    try {
+      const { error: settErr } = await supabase
+        .from('system_settings')
+        .delete()
+        .eq('key', 'previous_closes');
+
+      if (settErr) throw settErr;
+    } catch (settErr) {
+      console.warn('[ForceSync] Failed to clear system settings:', settErr.message);
+    }
+
+    // 3. Force a complete recalculation of active holdings using new FIFO cost basis
+    await recalculateHoldings(userId);
+
+    res.json({ message: 'Full database recalculation completed, prices cache cleared.' });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
