@@ -685,8 +685,8 @@ router.post('/chat', requireAuth, async (req, res) => {
       reply = generateSimulatedResponse(message, contextText);
     } else {
       // Determine the target model
-      let targetModel = 'gemini-1.5-flash';
-      if (modelName && modelName !== 'default' && ['gemini-1.5-flash', 'gemini-1.5-pro'].includes(modelName)) {
+      let targetModel = 'gemini-2.5-flash';
+      if (modelName && modelName !== 'default' && ['gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-3.1-flash-lite'].includes(modelName)) {
         targetModel = modelName;
       } else {
         // Auto-switch based on question complexity level
@@ -710,11 +710,11 @@ router.post('/chat', requireAuth, async (req, res) => {
                                msgLower.includes('ltcg');
 
         if (isSimpleGreeting) {
-          targetModel = 'gemini-1.5-flash';
+          targetModel = 'gemini-3.1-flash-lite';
         } else if (isComplexQuery) {
-          targetModel = 'gemini-1.5-pro';
+          targetModel = 'gemini-3.5-flash';
         } else {
-          targetModel = 'gemini-1.5-flash';
+          targetModel = 'gemini-2.5-flash';
         }
       }
 
@@ -858,17 +858,21 @@ Always display these links prominently at the bottom of your response so the use
           return await runGeneration(targetModel, customPrompt);
         } catch (err) {
           console.error(`[AI Assistant] Model ${targetModel} generation failed:`, err.message);
-          if (targetModel !== 'gemini-1.5-flash') {
-            console.log(`[AI Assistant] Falling back to gemini-1.5-flash...`);
+          if (targetModel !== 'gemini-2.5-flash') {
+            console.log(`[AI Assistant] Falling back to gemini-2.5-flash...`);
             try {
-              finalModel = 'gemini-1.5-flash';
-              return await runGeneration('gemini-1.5-flash', customPrompt);
+              finalModel = 'gemini-2.5-flash';
+              return await runGeneration('gemini-2.5-flash', customPrompt);
             } catch (err2) {
-              console.error(`[AI Assistant] Fallback to gemini-1.5-flash failed:`, err2.message);
-              throw err2;
+              console.error(`[AI Assistant] Fallback to gemini-2.5-flash failed:`, err2.message);
+              console.log(`[AI Assistant] Falling back to gemini-3.1-flash-lite...`);
+              finalModel = 'gemini-3.1-flash-lite';
+              return await runGeneration('gemini-3.1-flash-lite', customPrompt);
             }
           } else {
-            throw err;
+            console.log(`[AI Assistant] Falling back to gemini-3.1-flash-lite...`);
+            finalModel = 'gemini-3.1-flash-lite';
+            return await runGeneration('gemini-3.1-flash-lite', customPrompt);
           }
         }
       };
@@ -969,10 +973,12 @@ Always display these links prominently at the bottom of your response so the use
       }
 
       // Map model keys to readable labels
-      if (finalModel === 'gemini-1.5-pro') {
-        engineUsed = 'Gemini 1.5 Pro';
-      } else if (finalModel === 'gemini-1.5-flash') {
-        engineUsed = 'Gemini 1.5 Flash';
+      if (finalModel === 'gemini-3.5-flash') {
+        engineUsed = 'Gemini 3.5 Flash';
+      } else if (finalModel === 'gemini-2.5-flash') {
+        engineUsed = 'Gemini 2.5 Flash';
+      } else if (finalModel === 'gemini-3.1-flash-lite') {
+        engineUsed = 'Gemini 3.1 Flash Lite';
       }
 
       if (!reply) {

@@ -87,6 +87,12 @@ export const Orders = () => {
   const [showConfirmClearHistory, setShowConfirmClearHistory] = useState(false);
   const [editingTrade, setEditingTrade] = useState<any | null>(null);
 
+  // Trade Ledger Filters State
+  const [tradeSearch, setTradeSearch] = useState('');
+  const [tradeActionFilter, setTradeActionFilter] = useState<'ALL' | 'BUY' | 'SELL'>('ALL');
+  const [tradeMergeMode, setTradeMergeMode] = useState<boolean>(true);
+  const [tradeLimitFilter, setTradeLimitFilter] = useState<'10' | '50' | '100' | 'ALL'>('10');
+
   // UI state
   const [listTab, setListTab] = useState<'active' | 'completed' | 'gtt' | 'trades'>('active');
   const [error, setError] = useState<string | null>(null);
@@ -355,18 +361,28 @@ export const Orders = () => {
     }
   };
 
-  // Delete trade ledger record
-  const handleDeleteTrade = async (tradeId: string) => {
+  // Delete trade ledger record(s)
+  const handleDeleteTrade = async (ids: string[]) => {
+    if (!ids || ids.length === 0) return;
     setError(null);
     setSuccess(null);
     try {
-      const res = await apiRequest(`/trades/${tradeId}`, {
-        method: 'DELETE'
-      });
+      let res;
+      if (ids.length === 1) {
+        res = await apiRequest(`/trades/${ids[0]}`, {
+          method: 'DELETE'
+        });
+      } else {
+        res = await apiRequest('/trades/delete-multiple', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids })
+        });
+      }
       setSuccess(res.message);
       await fetchLists();
     } catch (err: any) {
-      setError(err.message || 'Failed to delete trade.');
+      setError(err.message || 'Failed to delete trade(s).');
     }
   };
 
@@ -377,6 +393,9 @@ export const Orders = () => {
     setError(null);
     setSuccess(null);
     try {
+      // If it is a merged trade, delete the other redundant IDs in the database
+      const deleteIds = editingTrade.originalIds ? editingTrade.originalIds.filter((id: string) => id !== editingTrade.id) : [];
+
       const res = await apiRequest(`/trades/${editingTrade.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -386,7 +405,8 @@ export const Orders = () => {
           quantity: Number(editingTrade.quantity),
           price: Number(editingTrade.price),
           trade_date: editingTrade.trade_date,
-          stock_name: editingTrade.stock_name
+          stock_name: editingTrade.stock_name,
+          deleteIds
         })
       });
       // Clear Dexie IndexedDB cache to force refresh
@@ -402,6 +422,82 @@ export const Orders = () => {
     } catch (err: any) {
       setError(err.message || 'Failed to update trade.');
     }
+  };
+
+  // Helper to process, filter, merge, and limit trades for display
+  const getProcessedTrades = () => {
+    let list = [...trades];
+
+    // 1. Filter by Action
+    if (tradeActionFilter !== 'ALL') {
+      list = list.filter(t => t.trade_type.toUpperCase() === tradeActionFilter);
+    }
+
+    // 2. Filter by Symbol Search
+    if (tradeSearch.trim()) {
+      const q = tradeSearch.toUpperCase().trim();
+      list = list.filter(t => t.stock_symbol.toUpperCase().includes(q));
+    }
+
+    // Sort all trades chronologically descending before grouping/limiting
+    list.sort((a, b) => new Date(b.trade_date).getTime() - new Date(a.trade_date).getTime());
+
+    // 3. Merge Mode
+    if (tradeMergeMode) {
+      const groups: Record<string, any[]> = {};
+      list.forEach(t => {
+        const dateOnly = t.trade_date.substring(0, 10); // YYYY-MM-DD
+        const type = t.trade_type.toUpperCase();
+        const sym = t.stock_symbol.toUpperCase();
+        const key = `${sym}_${type}_${dateOnly}`;
+        if (!groups[key]) {
+          groups[key] = [];
+        }
+        groups[key].push(t);
+      });
+
+      const mergedList = Object.values(groups).map(group => {
+        if (group.length === 1) {
+          return {
+            ...group[0],
+            originalIds: [group[0].id],
+            isMerged: false
+          };
+        }
+        const mainTrade = group[0];
+        const totalQty = group.reduce((sum, t) => sum + Number(t.quantity), 0);
+        const totalCost = group.reduce((sum, t) => sum + (Number(t.quantity) * Number(t.price)), 0);
+        const weightedAvgPrice = totalQty > 0 ? totalCost / totalQty : Number(mainTrade.price);
+
+        return {
+          ...mainTrade,
+          quantity: totalQty,
+          price: weightedAvgPrice,
+          originalIds: group.map(t => t.id),
+          isMerged: true,
+          splitCount: group.length
+        };
+      });
+
+      list = mergedList;
+    } else {
+      list = list.map(t => ({
+        ...t,
+        originalIds: [t.id],
+        isMerged: false
+      }));
+    }
+
+    // Re-sort final list descending (newest first)
+    list.sort((a, b) => new Date(b.trade_date).getTime() - new Date(a.trade_date).getTime());
+
+    // 4. Limit output
+    if (tradeLimitFilter !== 'ALL') {
+      const limit = parseInt(tradeLimitFilter);
+      list = list.slice(0, limit);
+    }
+
+    return list;
   };
 
   // Clear mock order history
@@ -1081,6 +1177,74 @@ export const Orders = () => {
 
             {/* List Body */}
             <div className="flex-1 p-6">
+              {/* Trade Ledger Filters Bar */}
+              {listTab === 'trades' && trades.length > 0 && (
+                <div className="mb-6 p-4 rounded-2xl bg-dark-depth-2/40 border border-dark-border/60 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in duration-300">
+                  <div className="flex flex-1 flex-col sm:flex-row items-center gap-3">
+                    {/* Ticker Search */}
+                    <div className="relative w-full sm:w-48">
+                      <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input 
+                        type="text"
+                        placeholder="Search stock..."
+                        value={tradeSearch}
+                        onChange={(e) => setTradeSearch(e.target.value)}
+                        className="w-full bg-dark-depth-2/65 border border-dark-border rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 transition-all font-semibold"
+                      />
+                    </div>
+
+                    {/* Action Selector */}
+                    <div className="flex items-center bg-dark-depth-2 border border-dark-border rounded-xl p-0.5 w-full sm:w-auto">
+                      {(['ALL', 'BUY', 'SELL'] as const).map(action => (
+                        <button
+                          key={action}
+                          type="button"
+                          onClick={() => setTradeActionFilter(action)}
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold uppercase transition-all cursor-pointer flex-1 sm:flex-none ${
+                            tradeActionFilter === action
+                              ? 'bg-brand-500 text-white shadow-md'
+                              : 'text-gray-400 hover:text-white'
+                          }`}
+                        >
+                          {action}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between sm:justify-end gap-4 w-full md:w-auto">
+                    {/* Merge Mode Toggle */}
+                    <label className="flex items-center gap-2 select-none cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={tradeMergeMode}
+                        onChange={(e) => setTradeMergeMode(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-dark-depth-3 rounded-full peer peer-focus:ring-1 peer-focus:ring-brand-500/50 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-600 relative"></div>
+                      <span className="text-[10px] font-bold text-gray-400 peer-checked:text-brand-400 transition-colors uppercase tracking-wider">
+                        Merge Executions
+                      </span>
+                    </label>
+
+                    {/* Limit Dropdown */}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Show:</span>
+                      <select 
+                        value={tradeLimitFilter}
+                        onChange={(e) => setTradeLimitFilter(e.target.value as any)}
+                        className="bg-dark-depth-2 border border-dark-border text-gray-300 text-[10px] font-bold rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-brand-500/40"
+                      >
+                        <option value="10">Last 10</option>
+                        <option value="50">Last 50</option>
+                        <option value="100">Last 100</option>
+                        <option value="ALL">All Trades</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {loadingLists ? (
                 <div className="flex flex-col items-center justify-center py-20 text-xs text-gray-500 gap-3">
                   <Loader2 className="w-7 h-7 text-brand-500 animate-spin" />
@@ -1225,8 +1389,8 @@ export const Orders = () => {
                   ))}
 
                   {/* Trade Ledger List */}
-                  {listTab === 'trades' && trades.map((t) => (
-                    <div key={t.id} className="glass-panel rounded-2xl p-4 border border-dark-border flex items-center justify-between gap-4">
+                  {listTab === 'trades' && getProcessedTrades().map((t) => (
+                    <div key={`${t.id}_${t.isMerged ? 'merged' : 'split'}`} className="glass-panel rounded-2xl p-4 border border-dark-border flex items-center justify-between gap-4">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-extrabold text-sm text-white tracking-tight">{t.stock_symbol}</span>
@@ -1240,6 +1404,11 @@ export const Orders = () => {
                           <span className="text-[9px] text-gray-500 font-semibold uppercase">
                             {new Date(t.trade_date).toLocaleDateString('en-IN')}
                           </span>
+                          {t.isMerged && (
+                            <span className="text-[8px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                              Merged ({t.splitCount} trades)
+                            </span>
+                          )}
                         </div>
                         <p className="text-[10px] text-gray-400 mt-2 font-medium">
                           Qty: <span className="text-white font-bold">{t.quantity}</span> shares <span className="text-gray-600">•</span> Price: <span className="text-white font-bold">₹{parseFloat(t.price).toFixed(2)}</span>
@@ -1257,7 +1426,7 @@ export const Orders = () => {
                           Edit
                         </button>
                         <button
-                          onClick={() => handleDeleteTrade(t.id)}
+                          onClick={() => handleDeleteTrade(t.originalIds)}
                           className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

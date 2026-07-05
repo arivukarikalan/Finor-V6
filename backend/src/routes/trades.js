@@ -373,10 +373,23 @@ router.put('/:id', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
     const tradeId = req.params.id;
-    const { stock_symbol, trade_type, quantity, price, trade_date, stock_name } = req.body;
+    const { stock_symbol, trade_type, quantity, price, trade_date, stock_name, deleteIds } = req.body;
 
     if (!stock_symbol || !trade_type || !quantity || !price || !trade_date) {
       return res.status(400).json({ error: 'Missing required trade details.' });
+    }
+
+    // If there are split trade IDs to delete as part of a merged edit, delete them first
+    if (deleteIds && Array.isArray(deleteIds) && deleteIds.length > 0) {
+      const { error: delErr } = await supabase
+        .from('trades')
+        .delete()
+        .in('id', deleteIds)
+        .eq('user_id', userId);
+      
+      if (delErr) {
+        console.error('[TradesRoute] Failed to delete redundant split trades during edit:', delErr.message);
+      }
     }
 
     const { data: updatedTrade, error: updateError } = await supabase
@@ -402,6 +415,37 @@ router.put('/:id', requireAuth, async (req, res) => {
     res.json({ message: 'Trade updated successfully and holdings updated.', trade: updatedTrade });
   } catch (err) {
     console.error('[TradesRoute] Specific trade update failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/trades/delete-multiple
+ * Deletes multiple trades by ID array and recalculates holdings dynamically
+ */
+router.post('/delete-multiple', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'IDs array is required.' });
+    }
+
+    const { error: deleteError } = await supabase
+      .from('trades')
+      .delete()
+      .in('id', ids)
+      .eq('user_id', userId);
+
+    if (deleteError) throw deleteError;
+
+    // Recalculate holdings automatically
+    await recalculateHoldings(userId);
+
+    res.json({ message: 'Trades deleted successfully and holdings updated.' });
+  } catch (err) {
+    console.error('[TradesRoute] Delete multiple trades failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

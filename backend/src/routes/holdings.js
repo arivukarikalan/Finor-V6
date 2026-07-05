@@ -343,7 +343,7 @@ router.post('/sentiment', requireAuth, async (req, res) => {
       try {
         const { GoogleGenerativeAI } = await import('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
 
         const prompt = `You are an expert financial analyst and investment coach for the Finor portfolio dashboard.
 Analyze the ticker symbol "${stockSymbol}" for a retail investor and evaluate its Conviction Score (1-100) and detailed conviction reasons.

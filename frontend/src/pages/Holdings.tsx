@@ -18,7 +18,11 @@ import {
   Sparkles,
   PlusCircle,
   Calculator,
-  AlertTriangle
+  AlertTriangle,
+  ArrowLeft,
+  PieChart,
+  History,
+  Loader2
 } from 'lucide-react';
 
 interface Holding {
@@ -73,8 +77,12 @@ export const Holdings = () => {
   const [importResult, setImportResult] = useState<{ message: string; count: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sub-tab view state
   const [activeSubTab, setActiveSubTab] = useState<'holdings' | 'simulator'>('holdings');
+
+  // Stock Deep Dive Analyzer State
+  const [activeDetailSymbol, setActiveDetailSymbol] = useState<string | null>(null);
+  const [sentimentData, setSentimentData] = useState<any | null>(null);
+  const [loadingSentiment, setLoadingSentiment] = useState(false);
 
   // What-If Simulator State
   const [simStock, setSimStock] = useState('');
@@ -133,6 +141,58 @@ export const Holdings = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOpenStockDetails = async (symbol: string) => {
+    setActiveDetailSymbol(symbol);
+    setSentimentData(null);
+    setLoadingSentiment(true);
+    try {
+      const res = await apiRequest('/holdings/sentiment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol })
+      });
+      setSentimentData(res);
+    } catch (err: any) {
+      console.error('Failed to load sentiment details:', err);
+    } finally {
+      setLoadingSentiment(false);
+    }
+  };
+
+  const getStockStats = (symbol: string) => {
+    const stockTrades = trades.filter(t => t.stock_symbol.toUpperCase() === symbol.toUpperCase());
+    let totalBuyQty = 0;
+    let totalSellQty = 0;
+    let totalBuyCost = 0;
+    let totalSellVal = 0;
+    
+    stockTrades.forEach(t => {
+      const type = t.trade_type.toUpperCase();
+      if (type === 'BUY' || type === 'B') {
+        totalBuyQty += Number(t.quantity);
+        totalBuyCost += Number(t.quantity) * Number(t.price);
+      } else {
+        totalSellQty += Number(t.quantity);
+        totalSellVal += Number(t.quantity) * Number(t.price);
+      }
+    });
+
+    const closedQty = Math.min(totalBuyQty, totalSellQty);
+    const avgBuyPrice = totalBuyQty > 0 ? totalBuyCost / totalBuyQty : 0;
+    const avgSellPrice = totalSellQty > 0 ? totalSellVal / totalSellQty : 0;
+    const realizedPnL = closedQty * (avgSellPrice - avgBuyPrice);
+    
+    return {
+      tradesCount: stockTrades.length,
+      totalBuyQty,
+      totalSellQty,
+      realizedPnL,
+      avgBuyPrice,
+      avgSellPrice,
+      trades: stockTrades.sort((a, b) => new Date(b.trade_date).getTime() - new Date(a.trade_date).getTime())
+    };
   };
 
   useEffect(() => {
@@ -729,6 +789,303 @@ export const Holdings = () => {
     );
   };
 
+  const allSymbols = Array.from(new Set([
+    ...holdings.map(h => h.stock_symbol.toUpperCase()),
+    ...trades.map(t => t.stock_symbol.toUpperCase())
+  ])).sort();
+
+  if (activeDetailSymbol) {
+    const stats = getStockStats(activeDetailSymbol);
+    const activeHolding = holdings.find(h => h.stock_symbol.toUpperCase() === activeDetailSymbol.toUpperCase());
+    const settings = activeHolding ? (stockSettings[activeHolding.stock_symbol] || { stoploss_price: null, position_tag: 'TRADING' }) : null;
+    const isCoreHold = settings?.position_tag === 'CORE_HOLD';
+    const holdingDays = activeHolding ? getHoldingDays(activeHolding.stock_symbol) : 0;
+    const [stockNameOnly, weightedAvgStr] = activeHolding ? activeHolding.stock_name.split('|') : [activeDetailSymbol, null];
+    const currentLTP = activeHolding ? (activeHolding.ltp || activeHolding.average_buy_price) : 0;
+    const investedVal = activeHolding ? (activeHolding.average_buy_price * activeHolding.quantity) : 0;
+    const currentVal = activeHolding ? (currentLTP * activeHolding.quantity) : 0;
+    const pl = currentVal - investedVal;
+    const roi = investedVal > 0 ? (pl / investedVal) * 100 : 0;
+    const isProfit = pl >= 0;
+
+    return (
+      <div className="space-y-6 animate-in fade-in duration-300">
+        {/* Header & Switcher Row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-dark-border/40 pb-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => {
+                setActiveDetailSymbol(null);
+                setSentimentData(null);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-gray-400 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to Portfolio
+            </button>
+            <div>
+              <h1 className="text-2xl font-black font-display text-white tracking-tight flex items-center gap-2">
+                {activeDetailSymbol}
+                {activeHolding ? (
+                  <span className="text-[10px] text-emerald-400 font-extrabold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Active Position
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-gray-400 font-extrabold bg-gray-500/10 border border-gray-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    Closed Position
+                  </span>
+                )}
+              </h1>
+              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">{stockNameOnly}</p>
+            </div>
+          </div>
+
+          {/* Switcher Dropdown */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Analyze Stock:</span>
+            <select
+              value={activeDetailSymbol}
+              onChange={(e) => handleOpenStockDetails(e.target.value)}
+              className="bg-dark-depth-2 border border-dark-border text-white text-xs font-extrabold rounded-xl px-3 py-2 focus:outline-none focus:border-brand-500 cursor-pointer"
+            >
+              {allSymbols.map(sym => (
+                <option key={sym} value={sym}>{sym}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          
+          {/* Column 1 & 2: Position details and Trades Ledger */}
+          <div className="lg:col-span-2 space-y-6">
+            
+            {/* Position Summary Card */}
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border relative overflow-hidden">
+              <div className="absolute top-[-10%] right-[-10%] w-[30%] h-[30%] rounded-full bg-brand-500/5 blur-[50px] pointer-events-none" />
+              <h3 className="text-xs font-black text-white uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                <PieChart className="w-3.5 h-3.5 text-brand-400" />
+                Position Status
+              </h3>
+              
+              {activeHolding ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Quantity held</span>
+                    <span className="text-lg font-black text-white block mt-1">{activeHolding.quantity} shares</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Average Price (FIFO)</span>
+                    <span className="text-lg font-black text-white block mt-1">₹{activeHolding.average_buy_price.toFixed(2)}</span>
+                    {weightedAvgStr && (
+                      <span className="text-[10px] text-gray-400 block mt-1 font-semibold">
+                        Weighted: ₹{parseFloat(weightedAvgStr).toFixed(2)}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Current LTP</span>
+                    <span className="text-lg font-black text-white block mt-1">₹{currentLTP.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Position tag</span>
+                    <span className="text-lg font-black text-white block mt-1">
+                      <span className={`text-xs font-black px-2.5 py-1 rounded-lg border ${
+                        isCoreHold 
+                          ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' 
+                          : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                      }`}>
+                        {isCoreHold ? 'Core Hold' : 'Trading'}
+                      </span>
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Investment Value</span>
+                    <span className="text-sm font-bold text-white block mt-1">₹{investedVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Current Value</span>
+                    <span className="text-sm font-bold text-white block mt-1">₹{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Active P&L</span>
+                    <span className={`text-sm font-black block mt-1 ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {isProfit ? '+' : ''}₹{pl.toLocaleString('en-IN', { maximumFractionDigits: 2 })} ({isProfit ? '+' : ''}{roi.toFixed(2)}%)
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Holding Period</span>
+                    <span className="text-sm font-bold text-white block mt-1">{holdingDays} Days</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 py-4 text-xs text-gray-400 bg-dark-depth-2/45 border border-dark-border p-4 rounded-2xl">
+                  <CheckCircle2 className="w-5 h-5 text-gray-600" />
+                  <div>
+                    <h5 className="font-extrabold text-white">No Active Position</h5>
+                    <p className="mt-0.5 leading-relaxed">This stock is not currently present in your holdings. All positions have been closed or squared off.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Trade History for this stock */}
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border">
+              <h3 className="text-xs font-black text-white uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                <History className="w-3.5 h-3.5 text-brand-400" />
+                Transaction Ledger
+              </h3>
+              
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {stats.trades.map((t) => {
+                  const isBuy = t.trade_type === 'BUY';
+                  return (
+                    <div key={t.id} className="flex items-center justify-between gap-4 p-3 bg-dark-depth-2/40 border border-dark-border/50 rounded-xl hover:bg-dark-depth-2/70 transition-all select-none">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${
+                            isBuy
+                              ? 'bg-emerald-500/10 border-emerald-500/10 text-emerald-500'
+                              : 'bg-rose-500/10 border-rose-500/10 text-rose-500'
+                          }`}>
+                            {t.trade_type}
+                          </span>
+                          <span className="text-[10px] text-gray-400 font-bold">
+                            {new Date(t.trade_date).toLocaleDateString('en-IN')}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-gray-500 font-semibold mt-1">
+                          {t.quantity} shares @ ₹{Number(t.price).toFixed(2)}
+                        </p>
+                      </div>
+                      <span className="text-xs font-extrabold text-white">
+                        ₹{(Number(t.quantity) * Number(t.price)).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  );
+                })}
+                
+                {stats.trades.length === 0 && (
+                  <p className="text-xs text-gray-500 py-6 text-center">No trades logged for this stock.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Column 3: AI Sentiment, News & realized PnL Analytics */}
+          <div className="space-y-6">
+            
+            {/* realized returns analytics */}
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border">
+              <h3 className="text-xs font-black text-white uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5 text-brand-400" />
+                Realized Returns & Analytics
+              </h3>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center py-2 border-b border-dark-border/40">
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Total Trades</span>
+                  <span className="text-xs font-bold text-white">{stats.tradesCount} executions</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-dark-border/40">
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Total Buy Qty</span>
+                  <span className="text-xs font-semibold text-gray-300">{stats.totalBuyQty} shares</span>
+                </div>
+                <div className="flex justify-between items-center py-2 border-b border-dark-border/40">
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Total Sell Qty</span>
+                  <span className="text-xs font-semibold text-gray-300">{stats.totalSellQty} shares</span>
+                </div>
+                <div className="flex justify-between items-center py-2">
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">Net Realized P&L</span>
+                  <span className={`text-xs font-black ${stats.realizedPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {stats.realizedPnL >= 0 ? '+' : ''}₹{stats.realizedPnL.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* AI Sentiment Analysis */}
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border flex flex-col justify-between">
+              <div>
+                <h3 className="text-xs font-black text-white uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-brand-400 animate-pulse" />
+                  AI Conviction Audit
+                </h3>
+
+                {loadingSentiment ? (
+                  <div className="py-12 flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+                    <span className="text-[10px] text-gray-500 font-extrabold uppercase tracking-wider">Fetching AI analysis...</span>
+                  </div>
+                ) : sentimentData ? (
+                  <div className="space-y-5">
+                    {/* Score gauge */}
+                    <div className="flex items-center gap-4">
+                      <div className="relative flex items-center justify-center w-16 h-16 rounded-full border border-dark-border bg-dark-depth-2">
+                        <span className="text-lg font-black text-brand-400 font-display">{sentimentData.convictionScore}</span>
+                        <span className="text-[8px] text-gray-500 absolute bottom-2 font-bold">SCORE</span>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-black text-white">Conviction Rating</h4>
+                        <p className="text-[10px] text-gray-400 mt-1 font-semibold leading-relaxed">
+                          {sentimentData.convictionScore >= 75 
+                            ? 'High Conviction Long-Term Hold' 
+                            : sentimentData.convictionScore >= 50 
+                            ? 'Moderate Conviction Position' 
+                            : 'Low Conviction Risk Alert'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Audit Reasons */}
+                    <div className="text-[11px] text-gray-300 leading-relaxed font-medium space-y-2 border-t border-dark-border/40 pt-4">
+                      <span className="text-[9px] text-gray-500 font-black uppercase tracking-wider block">Audit Assessment</span>
+                      <div className="space-y-1.5">
+                        {sentimentData.convictionReasons && sentimentData.convictionReasons.split('\n').filter(Boolean).map((line: string, idx: number) => (
+                          <p key={idx} className="flex items-start gap-1.5">
+                            <span className="text-brand-500 mt-0.5">•</span>
+                            <span>{line.replace(/^[-\*\s•]+/, '')}</span>
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* News List */}
+                    {sentimentData.newsArticles && sentimentData.newsArticles.length > 0 && (
+                      <div className="border-t border-dark-border/40 pt-4 space-y-3">
+                        <span className="text-[9px] text-gray-500 font-black uppercase tracking-wider block">Latest News Headlines</span>
+                        <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                          {sentimentData.newsArticles.slice(0, 4).map((art: any, idx: number) => {
+                            const sent = (art.sentiment || 'Neutral').toUpperCase();
+                            const sentColor = sent === 'BULLISH' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' : sent === 'BEARISH' ? 'text-rose-400 bg-rose-500/10 border-rose-500/20' : 'text-gray-400 bg-gray-500/10 border-gray-500/20';
+                            return (
+                              <div key={idx} className="p-2.5 rounded-xl bg-dark-depth-2/45 border border-dark-border/50 text-[10px] space-y-1.5 hover:bg-dark-depth-2/70 transition-all">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase ${sentColor}`}>{sent}</span>
+                                  <span className="text-[8px] text-gray-500 font-semibold">{art.date || new Date().toLocaleDateString('en-IN')}</span>
+                                </div>
+                                <p className="font-semibold text-gray-200 leading-normal">{art.title || art.headline}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-6 flex flex-col items-center justify-center text-center text-gray-500 text-[10px] font-semibold gap-1.5 border border-dark-border/45 rounded-xl bg-dark-depth-2/30">
+                    <Sparkles className="w-5 h-5 text-gray-700" />
+                    <span>No active conviction audit loaded for this stock symbol.</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
 
@@ -993,7 +1350,8 @@ export const Holdings = () => {
             return (
               <div 
                 key={h.id} 
-                className="glass-panel rounded-2xl p-5 border border-dark-border flex flex-col justify-between"
+                onClick={() => handleOpenStockDetails(h.stock_symbol)}
+                className="glass-panel rounded-2xl p-5 border border-dark-border flex flex-col justify-between cursor-pointer transition-all hover:border-brand-500/30 hover:scale-[1.01]"
                 style={exitFlag ? { borderColor: 'rgba(239, 68, 68, 0.3)', boxShadow: '0 0 10px rgba(239, 68, 68, 0.05)' } : {}}
               >
                 
@@ -1028,7 +1386,8 @@ export const Holdings = () => {
                     </span>
                     
                     <button 
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setEditingStock(h);
                         setEditStoploss(settings.stoploss_price !== null ? String(settings.stoploss_price) : '');
                         setEditTag(settings.position_tag);
@@ -1121,7 +1480,8 @@ export const Holdings = () => {
                       {/* GTT Sell Suggestion Trigger */}
                       {isNearTarget && (
                         <button
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.stopPropagation();
                             window.dispatchEvent(new CustomEvent('finor-switch-tab', {
                               detail: {
                                 tab: 'orders',
@@ -1160,7 +1520,8 @@ export const Holdings = () => {
 
                 {/* AI Mode Toggle Button */}
                 <button
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     setSelectedAiStock({
                       stock: h,
                       roi,
