@@ -4,7 +4,6 @@ import {
   Briefcase, 
   FileText, 
   BarChart3, 
-  Lightbulb, 
   Grid,
   LogOut,
   User,
@@ -189,7 +188,6 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'holdings' as TabId, label: 'Holdings', icon: Briefcase },
     { id: 'orders' as TabId, label: 'Orders', icon: FileText },
     { id: 'pnl' as TabId, label: 'P&L', icon: BarChart3 },
-    { id: 'insights' as TabId, label: 'Insights', icon: Lightbulb },
     { id: 'ai-chat' as TabId, label: 'AI Assistant', icon: Brain },
     { id: 'more' as TabId, label: 'More', icon: Grid },
   ];
@@ -286,7 +284,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       </aside>
 
       {/* 2. Mobile Top Header (sm and down) */}
-      <header className="md:hidden h-14 bg-dark-depth-1/80 backdrop-blur-md border-b border-dark-border flex items-center justify-between px-4 flex-shrink-0 z-40 w-full relative min-h-[56px]">
+      <header className="md:hidden fixed top-0 left-0 right-0 h-14 bg-dark-depth-1/95 backdrop-blur-md border-b border-dark-border flex items-center justify-between px-4 z-40 w-full min-h-[56px]">
         
         {/* Left Branding with Status Ping */}
         <div className="flex items-center gap-2 select-none">
@@ -408,7 +406,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 
         {/* Main Content Container */}
         <main className={`flex-grow overflow-y-auto ${
-          activeTab === 'ai-chat' ? 'px-0 pt-0 pb-0 md:p-6' : 'px-4 pt-4 pb-16 md:px-8 md:pt-6 md:pb-16'
+          activeTab === 'ai-chat' ? 'px-0 pt-14 pb-16 md:p-6' : 'px-4 pt-18 pb-20 md:px-8 md:pt-6 md:pb-16'
         } min-h-0`}>
           <div className="max-w-7xl mx-auto h-full flex flex-col">
             {!isOnline && (

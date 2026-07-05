@@ -67,9 +67,12 @@ function drawTableRow(doc, y, columns, isHeader = false) {
  * GET /api/export/markdown-pdf
  * Converts the latest assistant markdown statement into a formatted PDF document.
  */
-router.get('/markdown-pdf', requireAuth, async (req, res) => {
+router.all('/markdown-pdf', requireAuth, async (req, res) => {
   try {
-    let markdown = await getLastAssistantMessage(req.user.id);
+    let markdown = req.body?.markdown;
+    if (!markdown) {
+      markdown = await getLastAssistantMessage(req.user.id);
+    }
     if (!markdown) {
       markdown = "### Finor Statement\nNo recent assistant messages found. Please ask the Finor AI Assistant a question to generate a report first!";
     }
@@ -236,9 +239,12 @@ router.get('/markdown-pdf', requireAuth, async (req, res) => {
  * GET /api/export/markdown-csv
  * Extracts the first table from the latest assistant markdown and downloads it as a CSV file.
  */
-router.get('/markdown-csv', requireAuth, async (req, res) => {
+router.all('/markdown-csv', requireAuth, async (req, res) => {
   try {
-    let markdown = await getLastAssistantMessage(req.user.id);
+    let markdown = req.body?.markdown;
+    if (!markdown) {
+      markdown = await getLastAssistantMessage(req.user.id);
+    }
     if (!markdown) {
       markdown = "### Finor Statement\nNo recent assistant messages found. Please ask the Finor AI Assistant a question to generate a report first!";
     }

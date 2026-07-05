@@ -7,7 +7,6 @@ import { Holdings } from './pages/Holdings';
 import { Dashboard } from './pages/Dashboard';
 import { PnL } from './pages/PnL';
 import { Orders } from './pages/Orders';
-import { Insights } from './pages/Insights';
 import { More } from './pages/More';
 import { Loader2 } from 'lucide-react';
 import { ToastContainer } from './components/ToastContainer';
@@ -110,9 +109,7 @@ function App() {
         <div className={activeTab === 'pnl' ? 'block h-full' : 'hidden'}>
           <PnL />
         </div>
-        <div className={activeTab === 'insights' ? 'block h-full' : 'hidden'}>
-          <Insights />
-        </div>
+
         <div className={activeTab === 'ai-chat' ? 'block h-full' : 'hidden'}>
           <More key="ai-chat-view" defaultSubTab="ai-chat" setActiveTab={setActiveTab} />
         </div>

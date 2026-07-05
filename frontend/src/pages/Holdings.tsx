@@ -83,6 +83,7 @@ export const Holdings = () => {
   const [activeDetailSymbol, setActiveDetailSymbol] = useState<string | null>(null);
   const [sentimentData, setSentimentData] = useState<any | null>(null);
   const [loadingSentiment, setLoadingSentiment] = useState(false);
+  const [detailViewMerged, setDetailViewMerged] = useState(true);
 
   // What-If Simulator State
   const [simStock, setSimStock] = useState('');
@@ -162,36 +163,159 @@ export const Holdings = () => {
   };
 
   const getStockStats = (symbol: string) => {
-    const stockTrades = trades.filter(t => t.stock_symbol.toUpperCase() === symbol.toUpperCase());
+    // Sort ascending for calculations
+    const stockTrades = trades
+      .filter(t => t.stock_symbol.toUpperCase() === symbol.toUpperCase())
+      .sort((a, b) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+    
     let totalBuyQty = 0;
     let totalSellQty = 0;
     let totalBuyCost = 0;
     let totalSellVal = 0;
+
+    // FIFO Calculator
+    const buys: { quantity: number; price: number; trade_date: string }[] = [];
+    let allTimeRealizedPnL = 0;
     
+    // Group monthly stats (realized P&L matched to the month of the SELL trade)
+    const monthlyData: Record<string, { pnl: number; count: number; buyQty: number; sellQty: number }> = {};
+
     stockTrades.forEach(t => {
       const type = t.trade_type.toUpperCase();
+      const qty = Number(t.quantity);
+      const price = Number(t.price);
+      const monthKey = t.trade_date.substring(0, 7); // YYYY-MM
+
+      if (!monthlyData[monthKey]) {
+        monthlyData[monthKey] = { pnl: 0, count: 0, buyQty: 0, sellQty: 0 };
+      }
+      monthlyData[monthKey].count++;
+
       if (type === 'BUY' || type === 'B') {
-        totalBuyQty += Number(t.quantity);
-        totalBuyCost += Number(t.quantity) * Number(t.price);
+        totalBuyQty += qty;
+        totalBuyCost += qty * price;
+        monthlyData[monthKey].buyQty += qty;
+        buys.push({ quantity: qty, price: price, trade_date: t.trade_date });
       } else {
-        totalSellQty += Number(t.quantity);
-        totalSellVal += Number(t.quantity) * Number(t.price);
+        totalSellQty += qty;
+        totalSellVal += qty * price;
+        monthlyData[monthKey].sellQty += qty;
+
+        let sellRemaining = qty;
+        while (sellRemaining > 0 && buys.length > 0) {
+          const firstBuy = buys[0];
+          const match = Math.min(sellRemaining, firstBuy.quantity);
+          const profit = match * (price - firstBuy.price);
+          allTimeRealizedPnL += profit;
+          monthlyData[monthKey].pnl += profit;
+
+          firstBuy.quantity -= match;
+          sellRemaining -= match;
+          if (firstBuy.quantity === 0) {
+            buys.shift();
+          }
+        }
       }
     });
 
-    const closedQty = Math.min(totalBuyQty, totalSellQty);
+    // Find current active cycle start date
+    let runningQty = 0;
+    let cycleStartIdx = -1;
+    stockTrades.forEach((t, idx) => {
+      const type = t.trade_type.toUpperCase();
+      const qty = Number(t.quantity);
+      if (runningQty === 0 && (type === 'BUY' || type === 'B')) {
+        cycleStartIdx = idx;
+      }
+      if (type === 'BUY' || type === 'B') {
+        runningQty += qty;
+      } else {
+        runningQty = Math.max(0, runningQty - qty);
+      }
+    });
+
+    let cycleStartDate: Date | null = null;
+    let cycleRealizedPnL = 0;
+
+    if (cycleStartIdx !== -1 && runningQty > 0) {
+      cycleStartDate = new Date(stockTrades[cycleStartIdx].trade_date);
+      // Run FIFO on trades on or after cycleStartDate
+      const cycleBuys: { quantity: number; price: number }[] = [];
+      const cycleTrades = stockTrades.slice(cycleStartIdx);
+      cycleTrades.forEach(t => {
+        const type = t.trade_type.toUpperCase();
+        const qty = Number(t.quantity);
+        const price = Number(t.price);
+        if (type === 'BUY' || type === 'B') {
+          cycleBuys.push({ quantity: qty, price: price });
+        } else {
+          let sellRemaining = qty;
+          while (sellRemaining > 0 && cycleBuys.length > 0) {
+            const firstBuy = cycleBuys[0];
+            const match = Math.min(sellRemaining, firstBuy.quantity);
+            cycleRealizedPnL += match * (price - firstBuy.price);
+            firstBuy.quantity -= match;
+            sellRemaining -= match;
+            if (firstBuy.quantity === 0) {
+              cycleBuys.shift();
+            }
+          }
+        }
+      });
+    }
+
+    // Month-wise formatted array
+    const monthWiseStats = Object.entries(monthlyData)
+      .map(([month, data]) => ({
+        month,
+        ...data
+      }))
+      .sort((a, b) => b.month.localeCompare(a.month));
+
+    // Sort descending chronologically for list display
+    const rawTrades = [...stockTrades].sort((a, b) => new Date(b.trade_date).getTime() - new Date(a.trade_date).getTime());
+
+    // Merged Trades logic (group by symbol, date, type)
+    const mergedMap = new Map<string, any>();
+    rawTrades.forEach(t => {
+      const dateStr = t.trade_date.substring(0, 10);
+      const key = `${t.trade_type}_${dateStr}`;
+      if (!mergedMap.has(key)) {
+        mergedMap.set(key, {
+          ...t,
+          splitIds: [t.id],
+          splitCount: 1,
+          quantity: Number(t.quantity),
+          price: Number(t.price),
+          totalVal: Number(t.quantity) * Number(t.price)
+        });
+      } else {
+        const existing = mergedMap.get(key);
+        existing.splitIds.push(t.id);
+        existing.splitCount += 1;
+        existing.quantity += Number(t.quantity);
+        existing.totalVal += Number(t.quantity) * Number(t.price);
+        existing.price = existing.totalVal / existing.quantity;
+      }
+    });
+
+    const mergedTrades = Array.from(mergedMap.values()).sort((a, b) => new Date(b.trade_date).getTime() - new Date(a.trade_date).getTime());
+
     const avgBuyPrice = totalBuyQty > 0 ? totalBuyCost / totalBuyQty : 0;
     const avgSellPrice = totalSellQty > 0 ? totalSellVal / totalSellQty : 0;
-    const realizedPnL = closedQty * (avgSellPrice - avgBuyPrice);
-    
+
     return {
       tradesCount: stockTrades.length,
       totalBuyQty,
       totalSellQty,
-      realizedPnL,
+      realizedPnL: allTimeRealizedPnL,
       avgBuyPrice,
       avgSellPrice,
-      trades: stockTrades.sort((a, b) => new Date(b.trade_date).getTime() - new Date(a.trade_date).getTime())
+      cycleStartDate,
+      cycleRealizedPnL,
+      monthWiseStats,
+      rawTrades,
+      mergedTrades
     };
   };
 
@@ -450,6 +574,37 @@ export const Holdings = () => {
     return diffDays;
   };
 
+  const getOutstandingBuys = (symbol: string) => {
+    const symbolTrades = trades
+      .filter(t => t.stock_symbol.toUpperCase() === symbol.toUpperCase())
+      .sort((a, b) => new Date(a.trade_date).getTime() - new Date(b.trade_date).getTime());
+    
+    const outstandingBuys: { quantity: number; price: number; trade_date: string }[] = [];
+    
+    symbolTrades.forEach(t => {
+      const type = t.trade_type.toUpperCase();
+      const qty = Number(t.quantity);
+      const price = Number(t.price);
+      
+      if (type === 'BUY' || type === 'B') {
+        outstandingBuys.push({ quantity: qty, price: price, trade_date: t.trade_date });
+      } else {
+        let sellRemaining = qty;
+        while (sellRemaining > 0 && outstandingBuys.length > 0) {
+          const firstBuy = outstandingBuys[0];
+          const match = Math.min(sellRemaining, firstBuy.quantity);
+          firstBuy.quantity -= match;
+          sellRemaining -= match;
+          if (firstBuy.quantity === 0) {
+            outstandingBuys.shift();
+          }
+        }
+      }
+    });
+    
+    return outstandingBuys.filter(b => b.quantity > 0);
+  };
+
   const runSimulation = () => {
     if (!simStock) return null;
     const stockHolding = holdings.find(h => h.stock_symbol.toUpperCase() === simStock.toUpperCase());
@@ -459,47 +614,71 @@ export const Holdings = () => {
     let currentInvested = currentQty * currentAvg;
     const ltpVal = stockHolding?.ltp || 0;
 
-    let simQty = currentQty;
-    let simAvg = currentAvg;
-    let simInvested = simQty * simAvg;
-    let totalRealizedPnL = 0;
-    let totalPlannedSaleValue = 0;
-    let totalPlannedBuyValue = 0;
+    // Retrieve active outstanding buys queue
+    const runningBuys = getOutstandingBuys(simStock);
+    
+    let cumulativeRealizedPnL = 0;
+    const stepResults: any[] = [];
 
     simPlannedTrades.forEach(trade => {
+      let stepRealizedPnL = 0;
       if (trade.type === 'BUY') {
-        const prevQty = simQty;
-        simQty += trade.quantity;
-        if (simQty > 0) {
-          simAvg = ((prevQty * simAvg) + (trade.quantity * trade.price)) / simQty;
-        } else {
-          simAvg = 0;
-        }
-        totalPlannedBuyValue += trade.quantity * trade.price;
+        runningBuys.push({
+          quantity: trade.quantity,
+          price: trade.price,
+          trade_date: new Date().toISOString()
+        });
       } else {
-        const soldQty = Math.min(trade.quantity, simQty);
-        totalRealizedPnL += soldQty * (trade.price - simAvg);
-        simQty = Math.max(0, simQty - trade.quantity);
-        if (simQty === 0) {
-          simAvg = 0;
+        let sellRemaining = trade.quantity;
+        while (sellRemaining > 0 && runningBuys.length > 0) {
+          const firstBuy = runningBuys[0];
+          const match = Math.min(sellRemaining, firstBuy.quantity);
+          const profit = match * (trade.price - firstBuy.price);
+          
+          stepRealizedPnL += profit;
+          cumulativeRealizedPnL += profit;
+          
+          firstBuy.quantity -= match;
+          sellRemaining -= match;
+          if (firstBuy.quantity === 0) {
+            runningBuys.shift();
+          }
         }
-        totalPlannedSaleValue += trade.quantity * trade.price;
       }
-      simInvested = simQty * simAvg;
+
+      const stepQty = runningBuys.reduce((sum, b) => sum + b.quantity, 0);
+      const stepTotalCost = runningBuys.reduce((sum, b) => sum + (b.quantity * b.price), 0);
+      const stepAvg = stepQty > 0 ? stepTotalCost / stepQty : 0;
+      const stepActivePnL = stepQty > 0 && ltpVal > 0 ? stepQty * (ltpVal - stepAvg) : 0;
+
+      stepResults.push({
+        tradeId: trade.id,
+        simQty: stepQty,
+        simAvg: stepAvg,
+        stepRealizedPnL,
+        cumulativeRealizedPnL,
+        activePnL: stepActivePnL
+      });
     });
 
-    const avgPriceDiff = currentAvg > 0 ? ((simAvg - currentAvg) / currentAvg) * 100 : 0;
+    const finalQty = runningBuys.reduce((sum, b) => sum + b.quantity, 0);
+    const finalCost = runningBuys.reduce((sum, b) => sum + (b.quantity * b.price), 0);
+    const finalAvg = finalQty > 0 ? finalCost / finalQty : 0;
+    const finalInvested = finalQty * finalAvg;
+
+    const avgPriceDiff = currentAvg > 0 ? ((finalAvg - currentAvg) / currentAvg) * 100 : 0;
 
     return {
       currentQty,
       currentAvg,
       currentInvested,
-      simQty,
-      simAvg,
-      simInvested,
-      totalRealizedPnL,
+      simQty: finalQty,
+      simAvg: finalAvg,
+      simInvested: finalInvested,
+      totalRealizedPnL: cumulativeRealizedPnL,
       avgPriceDiff,
-      ltpVal
+      ltpVal,
+      stepResults
     };
   };
 
@@ -722,51 +901,86 @@ export const Holdings = () => {
                     No planned trades added. Add a simulated Buy/Sell trade using the setup form.
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                    {simPlannedTrades.map((t, idx) => (
-                      <div key={t.id} className="flex items-center justify-between bg-dark-depth-2/30 border border-dark-border/40 px-4 py-2.5 rounded-xl text-xs">
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-500 font-bold">{idx + 1}.</span>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
-                            t.type === 'BUY'
-                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
-                              : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
-                          }`}>
-                            {t.type}
-                          </span>
-                          <span className="text-white font-semibold">{t.quantity} shares</span>
-                          <span className="text-gray-600">•</span>
-                          <span className="text-gray-400">@ ₹{t.price.toFixed(2)}</span>
+                  <div className="space-y-3.5 max-h-[380px] overflow-y-auto pr-1">
+                    {simPlannedTrades.map((t, idx) => {
+                      const step = simResult?.stepResults?.[idx];
+                      return (
+                        <div key={t.id} className="bg-dark-depth-2/30 border border-dark-border/40 p-4 rounded-2xl space-y-3">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 font-bold">{idx + 1}.</span>
+                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded border ${
+                                t.type === 'BUY'
+                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500'
+                                  : 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                              }`}>
+                                {t.type}
+                              </span>
+                              <span className="text-white font-extrabold">{t.quantity} shares</span>
+                              <span className="text-gray-600">•</span>
+                              <span className="text-gray-400 font-semibold">@ ₹{t.price.toFixed(2)}</span>
+                            </div>
+                            
+                            <div className="flex items-center gap-2 select-none">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  window.dispatchEvent(new CustomEvent('finor-switch-tab', {
+                                    detail: {
+                                      tab: 'orders',
+                                      symbol: simStock,
+                                      action: t.type,
+                                      quantity: t.quantity,
+                                      price: t.price.toFixed(2)
+                                    }
+                                  }));
+                                }}
+                                className="text-[9px] font-extrabold text-brand-400 hover:text-brand-300 hover:underline cursor-pointer"
+                              >
+                                Set GTT
+                              </button>
+                              <span className="text-gray-700">|</span>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSimTrade(t.id)}
+                                className="text-gray-500 hover:text-rose-500 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Step Position Outcomes (FIFO) */}
+                          {step && (
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2.5 border-t border-dark-border/30 text-[10px] text-gray-400">
+                              <div>
+                                  <span className="block text-gray-500 font-bold uppercase text-[8px]">Sim Qty</span>
+                                  <span className="font-extrabold text-white block mt-0.5">{step.simQty} shares</span>
+                              </div>
+                              <div>
+                                  <span className="block text-gray-500 font-bold uppercase text-[8px]">Avg Cost (FIFO)</span>
+                                  <span className="font-extrabold text-white block mt-0.5">₹{step.simAvg.toFixed(2)}</span>
+                              </div>
+                              <div>
+                                  <span className="block text-gray-500 font-bold uppercase text-[8px]">Active P&L</span>
+                                  <span className={`font-extrabold block mt-0.5 ${step.activePnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    {step.activePnL >= 0 ? '+' : ''}₹{step.activePnL.toFixed(2)}
+                                  </span>
+                              </div>
+                              <div>
+                                  <span className="block text-gray-500 font-bold uppercase text-[8px]">{t.type === 'SELL' ? 'Realized P&L' : 'Cumul. Realized'}</span>
+                                  <span className={`font-extrabold block mt-0.5 ${
+                                    (t.type === 'SELL' ? step.stepRealizedPnL : step.cumulativeRealizedPnL) >= 0 ? 'text-emerald-500' : 'text-rose-500'
+                                  }`}>
+                                    {(t.type === 'SELL' ? step.stepRealizedPnL : step.cumulativeRealizedPnL) >= 0 ? '+' : ''}
+                                    ₹{(t.type === 'SELL' ? step.stepRealizedPnL : step.cumulativeRealizedPnL).toFixed(2)}
+                                  </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              window.dispatchEvent(new CustomEvent('finor-switch-tab', {
-                                detail: {
-                                  tab: 'orders',
-                                  symbol: simStock,
-                                  action: t.type,
-                                  quantity: t.quantity,
-                                  price: t.price.toFixed(2)
-                                }
-                              }));
-                            }}
-                            className="text-[9px] font-bold text-brand-400 hover:text-brand-300 hover:underline cursor-pointer"
-                          >
-                            Set GTT
-                          </button>
-                          <span className="text-gray-700">|</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveSimTrade(t.id)}
-                            className="text-gray-500 hover:text-rose-500 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -869,7 +1083,7 @@ export const Holdings = () => {
               </h3>
               
               {activeHolding ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-6">
                   <div>
                     <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Quantity held</span>
                     <span className="text-lg font-black text-white block mt-1">{activeHolding.quantity} shares</span>
@@ -900,6 +1114,10 @@ export const Holdings = () => {
                     </span>
                   </div>
                   <div>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Holding Period</span>
+                    <span className="text-lg font-black text-white block mt-1">{holdingDays} Days</span>
+                  </div>
+                  <div>
                     <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Investment Value</span>
                     <span className="text-sm font-bold text-white block mt-1">₹{investedVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                   </div>
@@ -914,8 +1132,10 @@ export const Holdings = () => {
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Holding Period</span>
-                    <span className="text-sm font-bold text-white block mt-1">{holdingDays} Days</span>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Cycle Realized P&L</span>
+                    <span className={`text-sm font-black block mt-1 ${stats.cycleRealizedPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                      {stats.cycleRealizedPnL >= 0 ? '+' : ''}₹{stats.cycleRealizedPnL.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -931,13 +1151,39 @@ export const Holdings = () => {
 
             {/* Trade History for this stock */}
             <div className="glass-panel rounded-3xl p-6 border border-dark-border">
-              <h3 className="text-xs font-black text-white uppercase tracking-wider mb-4 flex items-center gap-1.5">
-                <History className="w-3.5 h-3.5 text-brand-400" />
-                Transaction Ledger
-              </h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-brand-400" />
+                  Transaction Ledger
+                </h3>
+                
+                {/* Merged vs Split Toggle */}
+                <div className="flex items-center bg-dark-depth-2/60 border border-dark-border/60 p-0.5 rounded-lg text-[10px]">
+                  <button
+                    onClick={() => setDetailViewMerged(true)}
+                    className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                      detailViewMerged 
+                        ? 'bg-brand-600 text-white shadow-sm' 
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    Merged View
+                  </button>
+                  <button
+                    onClick={() => setDetailViewMerged(false)}
+                    className={`px-2.5 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                      !detailViewMerged 
+                        ? 'bg-brand-600 text-white shadow-sm' 
+                        : 'text-gray-400 hover:text-white'
+                    }`}
+                  >
+                    All Executions
+                  </button>
+                </div>
+              </div>
               
               <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                {stats.trades.map((t) => {
+                {(detailViewMerged ? stats.mergedTrades : stats.rawTrades).map((t) => {
                   const isBuy = t.trade_type === 'BUY';
                   return (
                     <div key={t.id} className="flex items-center justify-between gap-4 p-3 bg-dark-depth-2/40 border border-dark-border/50 rounded-xl hover:bg-dark-depth-2/70 transition-all select-none">
@@ -953,6 +1199,11 @@ export const Holdings = () => {
                           <span className="text-[10px] text-gray-400 font-bold">
                             {new Date(t.trade_date).toLocaleDateString('en-IN')}
                           </span>
+                          {t.splitCount > 1 && (
+                            <span className="text-[9px] font-black bg-brand-500/10 border border-brand-500/20 text-brand-400 px-1.5 py-0.5 rounded">
+                              Merged ({t.splitCount} trades)
+                            </span>
+                          )}
                         </div>
                         <p className="text-[10px] text-gray-500 font-semibold mt-1">
                           {t.quantity} shares @ ₹{Number(t.price).toFixed(2)}
@@ -965,9 +1216,61 @@ export const Holdings = () => {
                   );
                 })}
                 
-                {stats.trades.length === 0 && (
+                {(detailViewMerged ? stats.mergedTrades : stats.rawTrades).length === 0 && (
                   <p className="text-xs text-gray-500 py-6 text-center">No trades logged for this stock.</p>
                 )}
+              </div>
+            </div>
+
+            {/* Month-Wise Analytical Card */}
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border">
+              <h3 className="text-xs font-black text-white uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5 text-brand-400" />
+                Month-Wise Analytics (Active & Historical)
+              </h3>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-dark-border/40 text-[10px] text-gray-500 font-bold uppercase tracking-wider">
+                      <th className="py-2.5">Month</th>
+                      <th className="py-2.5 text-right">Buys (Qty)</th>
+                      <th className="py-2.5 text-right">Sells (Qty)</th>
+                      <th className="py-2.5 text-center">Trades</th>
+                      <th className="py-2.5 text-right">Realized P&L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.monthWiseStats.map((row) => {
+                      const isProfit = row.pnl >= 0;
+                      // Determine if this month falls within the current buy cycle
+                      const isCurrentCycle = stats.cycleStartDate && new Date(row.month + '-02') >= new Date(stats.cycleStartDate.getFullYear(), stats.cycleStartDate.getMonth(), 1);
+                      return (
+                        <tr key={row.month} className="border-b border-dark-border/20 hover:bg-dark-depth-2/20 transition-all select-none">
+                          <td className="py-3 font-semibold text-gray-300 flex items-center gap-1.5">
+                            {row.month}
+                            {isCurrentCycle && (
+                              <span className="text-[8px] font-black bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 px-1 py-0.2 rounded uppercase">
+                                Active Cycle
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 text-right text-gray-400">{row.buyQty > 0 ? `${row.buyQty} shares` : '—'}</td>
+                          <td className="py-3 text-right text-gray-400">{row.sellQty > 0 ? `${row.sellQty} shares` : '—'}</td>
+                          <td className="py-3 text-center text-gray-400">{row.count}</td>
+                          <td className={`py-3 text-right font-bold ${row.pnl === 0 ? 'text-gray-500' : isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            {row.pnl === 0 ? '—' : `${isProfit ? '+' : ''}₹${row.pnl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {stats.monthWiseStats.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-xs text-gray-500">No monthly trading activity recorded.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
