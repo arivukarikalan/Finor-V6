@@ -905,13 +905,23 @@ Always display these links prominently at the bottom of your response so the use
         // Normal chat execution
         const { resultObj, chatObj } = await runWithFallback();
         
-        // Check for tool/function calls
-        const calls = resultObj.response.functionCalls();
-        if (calls && calls.length > 0) {
+        // Check for tool/function calls with a loop to support sequential multi-step tool calls
+        let currentResponse = resultObj;
+        let loopCount = 0;
+        const maxLoops = 6;
+
+        while (loopCount < maxLoops) {
+          const calls = currentResponse.response.functionCalls();
+          if (!calls || calls.length === 0) {
+            reply = currentResponse.response.text();
+            break;
+          }
+
           const call = calls[0];
+          console.log(`[AI Assistant] Executing tool call loop [${loopCount}]: ${call.name}`);
+
+          let toolResponseData;
           if (call.name === 'placeGttOrder') {
-            // INTERCEPT call: Do NOT execute order placement.
-            // Return order arguments so the frontend can display the interactive confirmation card
             const args = call.args;
             console.log('[AI Assistant] Intercepted placeGttOrder tool call:', args);
             reply = `I have prepared the GTT order details for your review. Please click the **Confirm Placement** button below when you are ready to place this order.`;
@@ -919,56 +929,51 @@ Always display these links prominently at the bottom of your response so the use
               tool: 'placeGttOrder',
               args
             };
+            break; // Stop loop to wait for user confirmation click
           } else if (call.name === 'fetchStockNews') {
-            const symbol = call.args.stock_symbol;
-            console.log(`[AI Assistant] Executing fetchStockNews tool for: ${symbol}`);
+            const symbol = call.args.stock_symbol || call.args.symbol || '';
+            console.log(`[AI Assistant] Tool Loop: Fetching news for: ${symbol}`);
             try {
               const articles = await fetchNewsForSymbol(symbol);
-              const secondResponse = await chatObj.sendMessage([{
-                functionResponse: {
-                  name: 'fetchStockNews',
-                  response: { articles }
-                }
-              }]);
-              reply = secondResponse.response.text();
+              toolResponseData = { articles };
             } catch (err) {
-              console.error('[AI Assistant] fetchStockNews tool failed:', err.message);
-              reply = `I encountered an issue retrieving news for ${symbol}. Please try again.`;
+              console.error('[AI Assistant] Tool Loop: fetchStockNews failed:', err.message);
+              toolResponseData = { error: err.message };
             }
           } else if (call.name === 'fetchCorporateActions') {
-            const symbol = call.args.stock_symbol;
-            console.log(`[AI Assistant] Executing fetchCorporateActions tool for: ${symbol}`);
+            const symbol = call.args.stock_symbol || call.args.symbol || '';
+            console.log(`[AI Assistant] Tool Loop: Fetching corporate actions for: ${symbol}`);
             try {
               const actions = await fetchCorporateActionsForSymbol(symbol);
-              const secondResponse = await chatObj.sendMessage([{
-                functionResponse: {
-                  name: 'fetchCorporateActions',
-                  response: { corporate_actions: actions }
-                }
-              }]);
-              reply = secondResponse.response.text();
+              toolResponseData = { corporate_actions: actions };
             } catch (err) {
-              console.error('[AI Assistant] fetchCorporateActions tool failed:', err.message);
-              reply = `I encountered an issue retrieving corporate actions for ${symbol}. Please try again.`;
+              console.error('[AI Assistant] Tool Loop: fetchCorporateActions failed:', err.message);
+              toolResponseData = { error: err.message };
             }
           } else {
-            // Hallucinated/unknown tool call: return error message to the model and request a text-only fallback response
-            console.warn(`[AI Assistant] Model hallucinated unregistered tool call: ${call.name}`);
-            try {
-              const secondResponse = await chatObj.sendMessage([{
-                functionResponse: {
-                  name: call.name,
-                  response: { error: `Tool '${call.name}' is not registered. Please respond to the user query directly using text.` }
-                }
-              }]);
-              reply = secondResponse.response.text();
-            } catch (fallbackErr) {
-              console.error('[AI Assistant] Failed to handle hallucinated tool call fallback:', fallbackErr.message);
-              reply = resultObj.response.text();
-            }
+            console.warn(`[AI Assistant] Tool Loop: Model requested unknown tool: ${call.name}`);
+            toolResponseData = { error: `Tool '${call.name}' is not registered. Please respond to the user query directly using text.` };
           }
-        } else {
-          reply = resultObj.response.text();
+
+          // Send the tool outcome back to the model
+          try {
+            const nextResponse = await chatObj.sendMessage([{
+              functionResponse: {
+                name: call.name,
+                response: toolResponseData
+              }
+            }]);
+            currentResponse = nextResponse;
+            loopCount++;
+          } catch (sendErr) {
+            console.error('[AI Assistant] Tool Loop: Failed to send function response to Gemini:', sendErr.message);
+            reply = `I encountered a communication error while analyzing data for ${call.args.stock_symbol || 'your holdings'}. Please try again.`;
+            break;
+          }
+        }
+
+        if (loopCount >= maxLoops) {
+          reply = currentResponse.response.text() || "I checked the corporate actions and news for your holdings but reached the search limit. Please feel free to ask about a subset of stocks!";
         }
       }
 
