@@ -582,7 +582,11 @@ router.post('/sync-gmail', requireAuth, async (req, res) => {
 // ─── POST /api/finance/sms-webhook ───────────────────────────────────────────
 router.post('/sms-webhook', async (req, res) => {
   try {
-    const { sender, body, timestamp, secret } = req.body;
+    const sender = req.body.sender || req.body.from;
+    const body = req.body.body || req.body.text;
+    const timestamp = req.body.timestamp || req.body.sentStamp || req.body.receivedStamp;
+    const secret = req.body.secret;
+
     if (!secret) return res.status(401).json({ error: 'Missing webhook secret.' });
 
     // Lookup webhook config in system_settings
