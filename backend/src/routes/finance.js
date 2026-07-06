@@ -156,10 +156,39 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       silverPricePerGram = 88;  // ~₹88 per gram
     }
 
+    // 6. Manage SMS Webhook configuration
+    let smsSecret = '';
+    try {
+      const { data: configData } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'sms_webhook_config')
+        .maybeSingle();
+
+      if (!configData) {
+        // Automatically provision a unique secret
+        const randomSecret = 'finor_sms_' + Math.random().toString(36).substring(2, 15);
+        const newConfig = { secret: randomSecret, user_id: userId };
+        await supabase
+          .from('system_settings')
+          .insert({ key: 'sms_webhook_config', value: JSON.stringify(newConfig) });
+        smsSecret = randomSecret;
+      } else {
+        const config = typeof configData.value === 'string' ? JSON.parse(configData.value) : configData.value;
+        smsSecret = config.secret;
+      }
+    } catch (e) {
+      console.warn('[FinanceRoute] SMS config initialization failed:', e.message);
+    }
+
     res.json({
       transactions: transactions || [],
       debts: debts || [],
       goals: goals || [],
+      smsWebhook: {
+        url: `${req.protocol}://${req.get('host')}/api/finance/sms-webhook`,
+        secret: smsSecret
+      },
       autoValuations: {
         equity: equityValue,
         etf: etfValue,
@@ -546,6 +575,94 @@ router.post('/sync-gmail', requireAuth, async (req, res) => {
 
   } catch (err) {
     console.error('[FinanceRoute] Gmail transaction sync failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/finance/sms-webhook ───────────────────────────────────────────
+router.post('/sms-webhook', async (req, res) => {
+  try {
+    const { sender, body, timestamp, secret } = req.body;
+    if (!secret) return res.status(401).json({ error: 'Missing webhook secret.' });
+
+    // Lookup webhook config in system_settings
+    const { data: configData } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'sms_webhook_config')
+      .maybeSingle();
+
+    const config = configData?.value ? (typeof configData.value === 'string' ? JSON.parse(configData.value) : configData.value) : null;
+    
+    if (!config || config.secret !== secret) {
+      return res.status(401).json({ error: 'Invalid webhook secret.' });
+    }
+
+    const userId = config.user_id;
+
+    // Run parse logic on SMS text
+    const textToAnalyze = (body || '').toLowerCase();
+    const isDebit = /debit|spent|paid|sent|withdrawn|payment/i.test(textToAnalyze);
+    const isCredit = /credit|received|deposited|added|refund/i.test(textToAnalyze);
+
+    const amtMatch = textToAnalyze.match(/(?:rs\.?|inr|₹)\s*([0-9,]+(?:\.[0-9]{2})?)/i) || 
+                     textToAnalyze.match(/(?:amt|amount)\s*(?:of)?\s*(?:rs\.?|inr|₹)?\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+
+    if (!amtMatch) {
+      return res.status(400).json({ error: 'Could not extract amount from SMS.' });
+    }
+
+    const amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+    const type = isCredit ? 'INCOME' : 'EXPENSE';
+
+    const merchantMatch = (body || '').match(/(?:to|at|from|towards|merchant)\s+([a-zA-Z0-9\s&*]{3,25})/i);
+    let description = '';
+    if (type === 'EXPENSE') {
+      description = merchantMatch ? `UPI to ${merchantMatch[1].trim()}` : `Debit Alert (SMS from ${sender || 'Bank'})`;
+    } else {
+      description = merchantMatch ? `Credits from ${merchantMatch[1].trim()}` : `Credit Alert (SMS from ${sender || 'Bank'})`;
+    }
+
+    const category = autoCategorize(description);
+
+    // Generate a unique ref ID based on a hash of body + timestamp to prevent duplicate imports
+    const crypto = await import('crypto');
+    const hash = crypto.createHash('md5').update((body || '') + (timestamp || '')).digest('hex');
+    const refId = `sms_tx_${hash}`;
+
+    // Check if already synced
+    const { data: existing } = await supabase
+      .from('finance_transactions')
+      .select('id')
+      .eq('external_ref_id', refId)
+      .maybeSingle();
+
+    if (existing) {
+      return res.json({ message: 'Transaction already synced.', status: 'DUPLICATE' });
+    }
+
+    const { data: newTx, error: txErr } = await supabase
+      .from('finance_transactions')
+      .insert({
+        user_id: userId,
+        date: timestamp ? new Date(timestamp).toISOString() : new Date().toISOString(),
+        amount,
+        type,
+        category,
+        method: 'UPI',
+        description,
+        source: 'GMAIL', // Store under GMAIL source to satisfy CHECK constraints
+        external_ref_id: refId
+      })
+      .select()
+      .maybeSingle();
+
+    if (txErr) throw txErr;
+
+    res.json({ message: 'SMS transaction synced successfully.', transaction: newTx, status: 'SUCCESS' });
+
+  } catch (err) {
+    console.error('[SMSWebhook] Failed to process SMS:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
