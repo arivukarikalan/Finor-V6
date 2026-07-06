@@ -72,58 +72,7 @@ export async function fetchLTPYahoo(symbol) {
  * @returns {Promise<{symbol: string, ticker: string, ltp: number, previousClose: number}>}
  */
 export async function fetchLTP(symbol) {
-  let googleTicker = symbol.toUpperCase();
-  if (googleTicker === '^NSEI' || googleTicker === 'NIFTY') {
-    googleTicker = 'NIFTY_50:INDEXNSE';
-  } else {
-    if (googleTicker.endsWith('.NS')) {
-      googleTicker = googleTicker.substring(0, googleTicker.length - 3);
-    }
-    googleTicker = `${googleTicker}:NSE`;
-  }
-
-  const url = `https://www.google.com/finance/quote/${googleTicker}`;
-  
-  try {
-    const response = await fetchWithTimeout(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9'
-      }
-    }, 8000);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP status ${response.status}`);
-    }
-    
-    const html = await response.text();
-    
-    const priceMatch = html.match(/class="N6SYTe"[^>]*><span jsname="Pdsbrc"[^>]*><span>₹?([^<]+)</);
-    if (!priceMatch) {
-      throw new Error(`Price element class N6SYTe not found for ${googleTicker}`);
-    }
-    
-    const priceStr = priceMatch[1].replace(/,/g, '');
-    const ltp = parseFloat(priceStr);
-    
-    const changeMatch = html.match(/jsname="xnruHf"[^>]*><span>₹?([-+0-9,.]+)</);
-    let changeVal = 0;
-    if (changeMatch) {
-      changeVal = parseFloat(changeMatch[1].replace(/,/g, ''));
-    }
-    
-    const previousClose = ltp - changeVal;
-    
-    return {
-      symbol,
-      ticker: googleTicker,
-      ltp,
-      previousClose
-    };
-  } catch (error) {
-    console.warn(`[GoogleFinance] Live price fetch failed for ${symbol}: ${error.message}. Falling back to Yahoo Finance...`);
-    return await fetchLTPYahoo(symbol);
-  }
+  return await fetchLTPYahoo(symbol);
 }
 
 /**

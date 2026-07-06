@@ -1098,7 +1098,9 @@ export const Holdings = () => {
                   </span>
                 )}
               </h1>
-              <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">{stockNameOnly}</p>
+              {stockNameOnly.toUpperCase() !== activeDetailSymbol.toUpperCase() && (
+                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">{stockNameOnly}</p>
+              )}
             </div>
           </div>
 

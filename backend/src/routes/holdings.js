@@ -34,28 +34,32 @@ async function getPreviousCloses() {
 async function savePreviousCloses(closes) {
   try {
     const valueString = JSON.stringify(closes);
-    const { data: existing } = await supabase
+    const { data: existing, error: fetchErr } = await supabase
       .from('system_settings')
-      .select('id')
+      .select('key')
       .eq('key', 'previous_closes')
       .maybeSingle();
 
+    if (fetchErr) throw fetchErr;
+
     if (existing) {
-      await supabase
+      const { error: updateErr } = await supabase
         .from('system_settings')
         .update({
           value: valueString,
           updated_at: new Date().toISOString()
         })
-        .eq('id', existing.id);
+        .eq('key', 'previous_closes');
+      if (updateErr) throw updateErr;
     } else {
-      await supabase
+      const { error: insertErr } = await supabase
         .from('system_settings')
         .insert({
           key: 'previous_closes',
           value: valueString,
           updated_at: new Date().toISOString()
         });
+      if (insertErr) throw insertErr;
     }
   } catch (err) {
     console.error('[Holdings] Failed to save previous closes:', err.message);
