@@ -47,11 +47,31 @@ interface Trade {
 }
 
 export const Holdings = () => {
-  const [holdings, setHoldings] = useState<Holding[]>([]);
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [stockSettings, setStockSettings] = useState<Record<string, { stoploss_price: number | null, position_tag: 'TRADING' | 'CORE_HOLD' }>>({});
+  const [holdings, setHoldings] = useState<Holding[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_holdings') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [trades, setTrades] = useState<Trade[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_trades') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [stockSettings, setStockSettings] = useState<Record<string, { stoploss_price: number | null, position_tag: 'TRADING' | 'CORE_HOLD' }>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_stock_settings') || '{}');
+    } catch {
+      return {};
+    }
+  });
   const [considerExits, setConsiderExits] = useState<{ symbol: string; reason: string }[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => {
+    return !localStorage.getItem('finor_cached_holdings');
+  });
   const [syncing, setSyncing] = useState(false);
   const [forceRebuilding, setForceRebuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,6 +105,8 @@ export const Holdings = () => {
   const [sentimentData, setSentimentData] = useState<any | null>(null);
   const [loadingSentiment, setLoadingSentiment] = useState(false);
   const [detailViewMerged, setDetailViewMerged] = useState(true);
+  const sentimentCache = useRef<Record<string, any>>({});
+  const activeDetailSymbolRef = useRef<string>('');
 
   // What-If Simulator State
   const [simStock, setSimStock] = useState('');
@@ -118,18 +140,24 @@ export const Holdings = () => {
   };
 
   const fetchCoreData = async () => {
-    setLoading(true);
+    const hasCache = localStorage.getItem('finor_cached_holdings');
+    if (!hasCache) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const holdingsData = await apiRequest('/holdings');
       setHoldings(holdingsData);
+      localStorage.setItem('finor_cached_holdings', JSON.stringify(holdingsData));
       
       const tradesData = await apiRequest('/trades');
       setTrades(tradesData);
+      localStorage.setItem('finor_cached_trades', JSON.stringify(tradesData));
 
       // Fetch settings
       const settingsData = await apiRequest('/holdings/settings');
       setStockSettings(settingsData || {});
+      localStorage.setItem('finor_cached_stock_settings', JSON.stringify(settingsData || {}));
 
       // Fetch consider exits from insights
       if (holdingsData.length > 0) {
@@ -146,20 +174,39 @@ export const Holdings = () => {
   };
 
   const handleOpenStockDetails = async (symbol: string) => {
+    activeDetailSymbolRef.current = symbol;
     setActiveDetailSymbol(symbol);
-    setSentimentData(null);
-    setLoadingSentiment(true);
+    
+    // Check local in-memory cache first
+    const cached = sentimentCache.current[symbol];
+    if (cached) {
+      setSentimentData(cached);
+      setLoadingSentiment(false); // No full page loading screen if we have cached data!
+    } else {
+      setSentimentData(null);
+      setLoadingSentiment(true);
+    }
+
     try {
       const res = await apiRequest('/holdings/sentiment', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol })
       });
-      setSentimentData(res);
+      
+      // Save response to cache
+      sentimentCache.current[symbol] = res;
+
+      // Only update state if this is still the active detail symbol
+      if (activeDetailSymbolRef.current === symbol) {
+        setSentimentData(res);
+      }
     } catch (err: any) {
       console.error('Failed to load sentiment details:', err);
     } finally {
-      setLoadingSentiment(false);
+      if (activeDetailSymbolRef.current === symbol) {
+        setLoadingSentiment(false);
+      }
     }
   };
 

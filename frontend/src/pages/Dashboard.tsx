@@ -89,13 +89,43 @@ const periodTitles = {
 
 export const Dashboard = ({ setActiveTab }: DashboardProps) => {
   const [period, setPeriod] = useState<'1W' | '1M' | '3M' | '6M' | '1Y' | 'ALL'>('1Y');
-  const [history, setHistory] = useState<HistoryPoint[]>([]);
-  const [holdings, setHoldings] = useState<Holding[]>([]);
-  const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
-  const [trades, setTrades] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingHistory, setLoadingHistory] = useState(true);
-  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [history, setHistory] = useState<HistoryPoint[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_dashboard_history') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [holdings, setHoldings] = useState<Holding[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_holdings') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [upcomingEvents, setUpcomingEvents] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_upcoming_events') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [trades, setTrades] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_trades') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    return !localStorage.getItem('finor_cached_holdings');
+  });
+  const [loadingHistory, setLoadingHistory] = useState(() => {
+    return !localStorage.getItem('finor_cached_dashboard_history');
+  });
+  const [loadingEvents, setLoadingEvents] = useState(() => {
+    return !localStorage.getItem('finor_cached_upcoming_events');
+  });
   const [error, setError] = useState<string | null>(null);
   const [selectedEventDetails, setSelectedEventDetails] = useState<any | null>(null);
 
@@ -103,16 +133,21 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
     try {
       const holdingsData = await apiRequest('/holdings');
       setHoldings(holdingsData || []);
+      localStorage.setItem('finor_cached_holdings', JSON.stringify(holdingsData || []));
     } catch (err: any) {
       console.error('Failed to load holdings:', err);
     }
   };
 
   const fetchEventsData = async () => {
-    setLoadingEvents(true);
+    const hasCache = localStorage.getItem('finor_cached_upcoming_events');
+    if (!hasCache) {
+      setLoadingEvents(true);
+    }
     try {
       const res = await apiRequest('/news/corporate-actions');
       setUpcomingEvents(res.upcoming || []);
+      localStorage.setItem('finor_cached_upcoming_events', JSON.stringify(res.upcoming || []));
     } catch (err) {
       console.error('Failed to load corporate actions:', err);
     } finally {
@@ -124,16 +159,21 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
     try {
       const tradesData = await apiRequest('/trades');
       setTrades(tradesData || []);
+      localStorage.setItem('finor_cached_trades', JSON.stringify(tradesData || []));
     } catch (err) {
       console.error('Failed to load trades:', err);
     }
   };
 
   const fetchHistoryData = async () => {
-    setLoadingHistory(true);
+    const hasCache = localStorage.getItem('finor_cached_dashboard_history');
+    if (!hasCache) {
+      setLoadingHistory(true);
+    }
     try {
       const histData = await apiRequest(`/analytics/portfolio-history?period=${period}`);
       setHistory(histData || []);
+      localStorage.setItem('finor_cached_dashboard_history', JSON.stringify(histData || []));
       setError(null);
     } catch (err: any) {
       console.error(err);

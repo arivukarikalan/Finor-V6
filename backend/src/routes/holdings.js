@@ -351,9 +351,9 @@ Here is the integrated data for this stock:
 
 ## Active Position:
 - Quantity: ${holding ? holding.quantity : 0}
-- Average Buy Cost: ₹${holding ? holding.average_cost : 0}
+- Average Buy Cost: ₹${holding ? holding.average_buy_price : 0}
 - Current Market Price (LTP): ₹${holding ? holding.ltp : 0}
-- Active P&L: ₹${holding ? ((holding.ltp - holding.average_cost) * holding.quantity).toFixed(2) : 0} (${holding && holding.average_cost > 0 ? (((holding.ltp - holding.average_cost) / holding.average_cost) * 100).toFixed(2) : 0}%)
+- Active P&L: ₹${holding ? ((holding.ltp - holding.average_buy_price) * holding.quantity).toFixed(2) : 0} (${holding && holding.average_buy_price > 0 ? (((holding.ltp - holding.average_buy_price) / holding.average_buy_price) * 100).toFixed(2) : 0}%)
 - Holding Days: ${holding && holding.holding_days ? holding.holding_days : 0} days
 
 ## Historical Closed Trades Performance:
@@ -408,7 +408,7 @@ Ensure the response is raw, valid JSON, and does NOT wrap the JSON inside markdo
       for (let i = 0; i < stockSymbol.length; i++) charSum += stockSymbol.charCodeAt(i);
       score += (charSum % 20) - 10; // 40 to 60
 
-      const roi = holding && holding.average_cost > 0 ? ((holding.ltp - holding.average_cost) / holding.average_cost) * 100 : 0;
+      const roi = holding && holding.average_buy_price > 0 ? ((holding.ltp - holding.average_buy_price) / holding.average_buy_price) * 100 : 0;
       score += roi * 0.5; // adjust by active ROI
       score += winRate * 0.3; // adjust by past win rate
       score = Math.max(10, Math.min(95, Math.round(score)));
@@ -425,9 +425,9 @@ Ensure the response is raw, valid JSON, and does NOT wrap the JSON inside markdo
           : `No major news headlines detected. Pricing movement is driven by standard liquidity flows.`,
         performance_audit: closedTradesCount > 0
           ? `You have closed ${closedTradesCount} trades for this stock with a win rate of ${winRate.toFixed(0)}%, generating ₹${totalRealizedPnL.toLocaleString('en-IN')} in realized gains. Active P&L is currently at ${roi.toFixed(1)}%.`
-          : `No historical closed trades in ledger. Active position is currently held at ₹${holding ? holding.average_cost : 0} cost basis.`,
+          : `No historical closed trades in ledger. Active position is currently held at ₹${holding ? holding.average_buy_price : 0} cost basis.`,
         technical_outlook: roi >= 0 
-          ? `The stock is showing positive breakout signals. Holding above support level of ₹${holding ? (holding.average_cost * 0.95).toFixed(2) : 0}.`
+          ? `The stock is showing positive breakout signals. Holding above support level of ₹${holding ? (holding.average_buy_price * 0.95).toFixed(2) : 0}.`
           : `The stock is trading below its primary entry triggers. Support is currently testable at ₹${holding ? (holding.ltp * 0.9).toFixed(2) : 0}.`,
         coach_advice: score >= 71
           ? `Maintain current accumulator strategy. Consider buying additional tranches on pullbacks to support levels.`
