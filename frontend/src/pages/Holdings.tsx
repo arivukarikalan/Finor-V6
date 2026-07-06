@@ -1533,21 +1533,44 @@ export const Holdings = () => {
                   <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider">Loading events...</span>
                 </div>
               ) : sentimentData?.corporateActions && sentimentData.corporateActions.length > 0 ? (
-                <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
-                  {sentimentData.corporateActions.map((act: any, idx: number) => {
-                    const eventDate = act.event_date || act.ex_date || act.meeting_date || 'N/A';
-                    return (
-                      <div key={idx} className="p-3 rounded-2xl bg-dark-depth-2/45 border border-dark-border/50 text-[10px] space-y-1.5 hover:bg-dark-depth-2/70 transition-all">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-[8px] font-black px-1.5 py-0.5 rounded border uppercase bg-brand-500/10 border-brand-500/20 text-brand-400">
-                            {act.type || 'Announcement'}
-                          </span>
-                          <span className="text-[8px] text-gray-500 font-bold">{eventDate}</span>
-                        </div>
-                        <p className="font-bold text-gray-250 leading-normal">{act.title || act.purpose || act.value}</p>
-                      </div>
-                    );
-                  })}
+                <div className="overflow-x-auto w-full">
+                  <table className="w-full text-left border-collapse text-[10px]">
+                    <thead>
+                      <tr className="border-b border-dark-border/40 text-[9px] text-gray-500 font-black uppercase tracking-wider">
+                        <th className="pb-2 font-extrabold">Action</th>
+                        <th className="pb-2 font-extrabold">Details</th>
+                        <th className="pb-2 font-extrabold text-right">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-dark-border/30">
+                      {sentimentData.corporateActions.map((act: any, idx: number) => {
+                        const eventDateStr = act.date || act.event_date || act.ex_date || act.meeting_date || 'N/A';
+                        const formattedDate = eventDateStr !== 'N/A'
+                          ? new Date(eventDateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                          : 'N/A';
+                        const details = act.description || act.title || act.purpose || act.value || 'Upcoming Announcement';
+                        
+                        return (
+                          <tr key={idx} className="hover:bg-dark-depth-2/20 transition-colors">
+                            <td className="py-2.5 pr-2 align-middle">
+                              <span className="text-[8px] font-black px-1.5 py-0.5 rounded border uppercase bg-brand-500/10 border-brand-500/20 text-brand-400 inline-block">
+                                {act.type || 'Event'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 text-gray-250 font-semibold leading-normal" title={details}>
+                              {details}
+                            </td>
+                            <td className="py-2.5 text-right whitespace-nowrap align-middle">
+                              <span className="text-white font-bold block">{formattedDate}</span>
+                              {act.date_type && (
+                                <span className="text-[8px] text-gray-500 font-bold block mt-0.5">{act.date_type}</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               ) : (
                 <div className="py-6 text-center text-xs text-gray-550 border border-dashed border-dark-border/40 rounded-2xl select-none">
