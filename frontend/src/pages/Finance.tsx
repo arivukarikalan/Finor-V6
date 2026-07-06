@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Landmark, ArrowDownRight, RefreshCw, CheckCircle2, AlertCircle, Plus, Trash2, 
-  Edit2, UserMinus, UserPlus, Users, Sparkles, X, Copy
+  Edit2, UserMinus, UserPlus, Users, Sparkles, X
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
@@ -56,7 +56,7 @@ export const Finance: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [smsWebhook, setSmsWebhook] = useState<{ url: string; secret: string } | null>(null);
+  const [personalGmailConnected, setPersonalGmailConnected] = useState<boolean>(false);
   const [autoValuations, setAutoValuations] = useState<AutoValuations>({
     equity: 0,
     etf: 0,
@@ -126,7 +126,7 @@ export const Finance: React.FC = () => {
       setTransactions(data.transactions);
       setDebts(data.debts);
       setGoals(data.goals);
-      setSmsWebhook(data.smsWebhook);
+      setPersonalGmailConnected(data.personalGmailConnected);
       setAutoValuations(data.autoValuations);
     } catch (err: any) {
       triggerToast('error', err.message || 'Failed to fetch financial data.');
@@ -137,6 +137,21 @@ export const Finance: React.FC = () => {
 
   useEffect(() => {
     fetchDashboardData();
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('personal_gmail_connected') === 'true') {
+      triggerToast('success', 'Personal Gmail connected successfully! You can now sync daily expenses.');
+      const url = new URL(window.location.href);
+      url.searchParams.delete('personal_gmail_connected');
+      window.history.replaceState({}, '', url.pathname + url.search);
+      fetchDashboardData(true);
+    } else if (params.get('personal_gmail_error')) {
+      const err = params.get('personal_gmail_error');
+      triggerToast('error', `Failed to connect personal Gmail: ${err}`);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('personal_gmail_error');
+      window.history.replaceState({}, '', url.pathname + url.search);
+    }
   }, []);
 
   // Compute values
@@ -200,6 +215,12 @@ export const Finance: React.FC = () => {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const handleConnectPersonalGmail = () => {
+    const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+    const base = backendUrl.endsWith('/api') ? backendUrl.replace('/api', '') : backendUrl;
+    window.open(`${base}/api/gmail/auth-personal`, '_self');
   };
 
   // Transaction Actions
@@ -578,61 +599,44 @@ export const Finance: React.FC = () => {
             </div>
           </div>
 
-          {/* SMS Webhook Ingestion Configuration Setup Panel */}
-          {smsWebhook && (
-            <div className="glass-panel border border-dark-border/60 rounded-3xl p-6 space-y-4">
-              <div className="flex items-center gap-2 border-b border-dark-border/40 pb-3">
-                <Sparkles className="w-4 h-4 text-indigo-400" />
-                <h4 className="text-xs font-extrabold text-white uppercase tracking-wider">SMS Auto-Sync Setup</h4>
+          {/* Personal Gmail Sync Config Setup Panel */}
+          {!personalGmailConnected ? (
+            <div className="glass-panel border border-brand-500/30 bg-brand-500/[0.02] rounded-3xl p-6 space-y-4">
+              <div className="flex items-center gap-2 pb-1">
+                <Sparkles className="w-4 h-4 text-brand-400" />
+                <h4 className="text-xs font-extrabold text-white uppercase tracking-wider">Automate Expense Ingestion</h4>
               </div>
               <p className="text-[10px] text-gray-400 leading-relaxed">
-                Forward banking transaction alerts from your Android device directly to Finor. This allows you to track UPI, Credit Card, and bank balances automatically across all phone accounts.
+                Connect your personal Gmail account to automatically pull and parse transaction receipts, Google Pay confirmations, and bank alerts sent to your registered email address.
               </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                {/* Endpoint URL Input with copy */}
-                <div className="space-y-1.5">
-                  <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wide block">Webhook Endpoint URL</span>
-                  <div className="flex items-center gap-1 bg-dark-depth-2/45 border border-dark-border/50 rounded-xl px-3 py-2">
-                    <span className="text-[10px] font-semibold text-gray-300 select-all truncate flex-1">{smsWebhook.url}</span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(smsWebhook.url);
-                        triggerToast('success', 'Endpoint URL copied to clipboard.');
-                      }}
-                      className="p-1 rounded-lg hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-all cursor-pointer shrink-0"
-                      title="Copy URL"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+              <div className="pt-1">
+                <button
+                  onClick={handleConnectPersonalGmail}
+                  className="px-4 py-2.5 text-xs font-bold rounded-xl bg-brand-500 text-white hover:bg-brand-600 transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <Landmark className="w-4 h-4" />
+                  Connect Personal Gmail
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="glass-panel border border-dark-border/60 rounded-3xl p-5 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4" />
                 </div>
-
-                {/* Secret Key Input with copy */}
-                <div className="space-y-1.5">
-                  <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wide block">Webhook Secret Key</span>
-                  <div className="flex items-center gap-1 bg-dark-depth-2/45 border border-dark-border/50 rounded-xl px-3 py-2">
-                    <span className="text-[10px] font-bold text-indigo-400 select-all truncate flex-1">{smsWebhook.secret}</span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(smsWebhook.secret);
-                        triggerToast('success', 'Secret key copied to clipboard.');
-                      }}
-                      className="p-1 rounded-lg hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-all cursor-pointer shrink-0"
-                      title="Copy Secret"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                <div>
+                  <span className="text-xs font-bold text-white block">Personal Gmail Sync Active</span>
+                  <span className="text-[9px] text-emerald-400 block mt-0.5">Connected and ready to sync daily expenses</span>
                 </div>
               </div>
-              <div className="bg-dark-depth-2/30 border border-dark-border/40 rounded-xl p-3.5 text-[10px] text-gray-400 space-y-2">
-                <span className="font-extrabold text-white block uppercase tracking-wider text-[8px] text-indigo-400">Android Setup Guide</span>
-                <ol className="list-decimal pl-4 space-y-1.5 leading-relaxed">
-                  <li>Install a free SMS forwarding app (e.g. <strong>SmsForwarder</strong> or <strong>SMS to HTTP</strong>) from Google Play.</li>
-                  <li>Create a new forwarder rule matching bank codes or messages containing <code>debited</code>, <code>credited</code>, <code>spent</code>.</li>
-                  <li>Configure the HTTP Request method as <strong>POST</strong> and point to the Endpoint URL above.</li>
-                  <li>Add parameters or request body (JSON) sending fields <code>sender</code>, <code>body</code>, <code>timestamp</code>, and <code>secret</code>.</li>
-                </ol>
+              <div>
+                <button
+                  onClick={handleConnectPersonalGmail}
+                  className="text-[9px] font-bold text-gray-500 hover:text-white transition-all cursor-pointer border border-dark-border rounded-lg px-2.5 py-1.5 hover:bg-dark-depth-3"
+                >
+                  Reconnect Account
+                </button>
               </div>
             </div>
           )}
