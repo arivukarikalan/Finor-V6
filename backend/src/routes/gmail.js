@@ -167,21 +167,36 @@ router.get('/auth', (req, res) => {
   const url = auth.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',   // Always request refresh token
-    scope: SCOPES
+    scope: SCOPES,
+    state: 'trading'
+  });
+  res.redirect(url);
+});
+
+// ─── GET /api/gmail/auth-personal ────────────────────────────────────────────
+router.get('/auth-personal', (req, res) => {
+  const auth = getOAuth2Client();
+  const url = auth.generateAuthUrl({
+    access_type: 'offline',
+    prompt: 'consent',   // Always request refresh token
+    scope: SCOPES,
+    state: 'personal'
   });
   res.redirect(url);
 });
 
 // ─── GET /api/gmail/callback ─────────────────────────────────────────────────
 router.get('/callback', async (req, res) => {
-  const { code, error: oauthError } = req.query;
+  const { code, state, error: oauthError } = req.query;
   const frontendUrl = process.env.FRONTEND_URL || 'https://finor-v6.vercel.app';
+  
+  const isPersonal = state === 'personal';
 
   if (oauthError) {
-    return res.redirect(`${frontendUrl}?gmail_error=${oauthError}`);
+    return res.redirect(`${frontendUrl}?${isPersonal ? 'personal_gmail_error' : 'gmail_error'}=${oauthError}`);
   }
   if (!code) {
-    return res.redirect(`${frontendUrl}?gmail_error=no_code`);
+    return res.redirect(`${frontendUrl}?${isPersonal ? 'personal_gmail_error' : 'gmail_error'}=no_code`);
   }
 
   try {
@@ -189,24 +204,26 @@ router.get('/callback', async (req, res) => {
     const { tokens } = await auth.getToken(code);
 
     if (tokens.refresh_token) {
-      // Got a new refresh token — save it
-      await saveRefreshToken(tokens.refresh_token);
-      console.log('Gmail refresh token saved successfully');
-    } else {
-      // No new refresh token — check if we already have one saved
-      const existingToken = await getRefreshToken();
-      if (!existingToken) {
-        // No token at all — user needs to revoke and re-authorize
-        console.error('No refresh token received and none stored');
-        return res.redirect(`${frontendUrl}?gmail_error=no_refresh_token`);
+      if (isPersonal) {
+        await savePersonalRefreshToken(tokens.refresh_token);
+        console.log('Personal Gmail refresh token saved successfully');
+      } else {
+        await saveRefreshToken(tokens.refresh_token);
+        console.log('Gmail refresh token saved successfully');
       }
-      console.log('Using existing refresh token (no new one issued)');
+    } else {
+      const existingToken = isPersonal ? await getPersonalRefreshToken() : await getRefreshToken();
+      if (!existingToken) {
+        console.error(`No ${isPersonal ? 'personal ' : ''}refresh token received and none stored`);
+        return res.redirect(`${frontendUrl}?${isPersonal ? 'personal_gmail_error' : 'gmail_error'}=no_refresh_token`);
+      }
+      console.log(`Using existing ${isPersonal ? 'personal ' : ''}refresh token`);
     }
 
-    res.redirect(`${frontendUrl}?gmail_connected=true`);
+    res.redirect(`${frontendUrl}?${isPersonal ? 'personal_gmail_connected' : 'gmail_connected'}=true`);
   } catch (err) {
     console.error('Gmail OAuth callback error:', err.message);
-    res.redirect(`${frontendUrl}?gmail_error=${encodeURIComponent(err.message)}`);
+    res.redirect(`${frontendUrl}?${isPersonal ? 'personal_gmail_error' : 'gmail_error'}=${encodeURIComponent(err.message)}`);
   }
 });
 
@@ -225,61 +242,6 @@ router.get('/status-personal', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Personal Gmail status error:', err.message);
     res.json({ connected: false });
-  }
-});
-
-// ─── GET /api/gmail/auth-personal ────────────────────────────────────────────
-router.get('/auth-personal', (req, res) => {
-  const auth = getOAuth2Client();
-  const url = auth.generateAuthUrl({
-    access_type: 'offline',
-    prompt: 'consent',
-    scope: SCOPES,
-    // Add custom state if needed to distinguish callback, but a dedicated callback url is simpler
-    redirect_uri: (process.env.BACKEND_URL || 'http://localhost:5000/api') + '/gmail/callback-personal'
-  });
-  res.redirect(url);
-});
-
-// ─── GET /api/gmail/callback-personal ────────────────────────────────────────
-router.get('/callback-personal', async (req, res) => {
-  const { code, error: oauthError } = req.query;
-  const frontendUrl = process.env.FRONTEND_URL || 'https://finor-v6.vercel.app';
-  const backendUrl = process.env.BACKEND_URL || 'http://localhost:5000/api';
-
-  if (oauthError) {
-    return res.redirect(`${frontendUrl}?personal_gmail_error=${oauthError}`);
-  }
-  if (!code) {
-    return res.redirect(`${frontendUrl}?personal_gmail_error=no_code`);
-  }
-
-  try {
-    // We must pass the matching redirect URI when getting token
-    const auth = new google.auth.OAuth2(
-      process.env.GMAIL_CLIENT_ID,
-      process.env.GMAIL_CLIENT_SECRET,
-      backendUrl + '/gmail/callback-personal'
-    );
-    
-    const { tokens } = await auth.getToken(code);
-
-    if (tokens.refresh_token) {
-      await savePersonalRefreshToken(tokens.refresh_token);
-      console.log('Personal Gmail refresh token saved successfully');
-    } else {
-      const existingToken = await getPersonalRefreshToken();
-      if (!existingToken) {
-        console.error('No personal refresh token received and none stored');
-        return res.redirect(`${frontendUrl}?personal_gmail_error=no_refresh_token`);
-      }
-      console.log('Using existing personal refresh token');
-    }
-
-    res.redirect(`${frontendUrl}?personal_gmail_connected=true`);
-  } catch (err) {
-    console.error('Personal Gmail OAuth callback error:', err.message);
-    res.redirect(`${frontendUrl}?personal_gmail_error=${encodeURIComponent(err.message)}`);
   }
 });
 
