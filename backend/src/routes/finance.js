@@ -20,10 +20,10 @@ const getRefreshToken = async () => {
   const { data, error } = await supabase
     .from('system_settings')
     .select('value')
-    .eq('key', 'gmail_refresh_token')
+    .eq('key', 'gmail_personal_refresh_token')
     .maybeSingle();
   if (error) {
-    console.error('Error reading refresh token:', error.message);
+    console.error('Error reading personal refresh token:', error.message);
     throw error;
   }
   return data?.value || null;
@@ -156,10 +156,26 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       silverPricePerGram = 88;  // ~₹88 per gram
     }
 
+    // 6. Check personal Gmail connection status
+    let personalGmailConnected = false;
+    try {
+      const { data: personalToken } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'gmail_personal_refresh_token')
+        .maybeSingle();
+      if (personalToken?.value) {
+        personalGmailConnected = true;
+      }
+    } catch (e) {
+      console.warn('[FinanceRoute] Personal Gmail status check failed:', e.message);
+    }
+
     res.json({
       transactions: transactions || [],
       debts: debts || [],
       goals: goals || [],
+      personalGmailConnected,
       autoValuations: {
         equity: equityValue,
         etf: etfValue,
