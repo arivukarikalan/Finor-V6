@@ -1553,12 +1553,12 @@ export const More = ({
             {isSidebarOpen && (
               <div 
                 onClick={() => setIsSidebarOpen(false)}
-                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-35 md:hidden transition-all animate-fadeIn"
+                className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[55] md:hidden transition-all animate-fadeIn"
               />
             )}
 
             {/* Left Chat History Sidebar */}
-            <div className={`w-[200px] shrink-0 h-full border-r flex flex-col transition-transform duration-300 z-40 md:relative md:translate-x-0 ${
+            <div className={`w-[200px] shrink-0 h-full border-r flex flex-col transition-transform duration-300 z-[60] md:relative md:translate-x-0 ${
               isLightMode 
                 ? 'bg-slate-50/50 border-slate-200' 
                 : 'bg-dark-depth-2 border-dark-border'
