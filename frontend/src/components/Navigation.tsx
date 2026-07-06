@@ -15,13 +15,14 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  Menu
+  Menu,
+  Landmark
 } from 'lucide-react';
 import { useAuthStore } from '../context/authStore';
 import { supabase } from '../services/supabase';
 import { apiRequest } from '../services/api';
 
-export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'more';
+export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'finance' | 'more';
 
 interface NavigationProps {
   activeTab: TabId;
@@ -190,6 +191,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'holdings' as TabId, label: 'Holdings', icon: Briefcase },
     { id: 'orders' as TabId, label: 'Orders', icon: FileText },
     { id: 'pnl' as TabId, label: 'P&L', icon: BarChart3 },
+    { id: 'finance' as TabId, label: 'Finance', icon: Landmark },
     { id: 'ai-chat' as TabId, label: 'AI Assistant', icon: Brain },
     { id: 'more' as TabId, label: 'More', icon: Grid },
   ];
@@ -345,7 +347,7 @@ export const Navigation: React.FC<NavigationProps> = ({
         <header className="hidden md:flex h-16 bg-dark-depth-1 border-b border-dark-border items-center justify-between px-8 flex-shrink-0 z-30">
           <div className="flex items-center gap-2">
             <span className="font-extrabold font-display text-sm tracking-widest uppercase bg-gradient-to-r from-brand-100 to-brand-500 bg-clip-text text-transparent">
-              {activeTab === 'ai-chat' ? 'AI Assistant' : activeTab === 'pnl' ? 'P&L Statement' : activeTab}
+              {activeTab === 'ai-chat' ? 'AI Assistant' : activeTab === 'pnl' ? 'P&L Statement' : activeTab === 'finance' ? 'Finance Hub' : activeTab}
             </span>
           </div>
 

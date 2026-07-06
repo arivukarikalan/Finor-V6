@@ -8,6 +8,7 @@ import { Dashboard } from './pages/Dashboard';
 import { PnL } from './pages/PnL';
 import { Orders } from './pages/Orders';
 import { More } from './pages/More';
+import { Finance } from './pages/Finance';
 import { Loader2 } from 'lucide-react';
 import { ToastContainer } from './components/ToastContainer';
 import { useToastStore } from './context/toastStore';
@@ -108,6 +109,9 @@ function App() {
         </div>
         <div className={activeTab === 'pnl' ? 'block w-full' : 'hidden'}>
           <PnL />
+        </div>
+        <div className={activeTab === 'finance' ? 'block w-full' : 'hidden'}>
+          <Finance />
         </div>
 
         <div className={activeTab === 'ai-chat' ? 'block h-full' : 'hidden'}>
