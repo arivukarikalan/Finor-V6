@@ -568,7 +568,7 @@ export const Finance: React.FC = () => {
                   });
                   setShowTxModal(true);
                 }}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-white text-dark-depth-0 hover:bg-slate-100 transition-all cursor-pointer flex items-center gap-1.5"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-brand-500 text-white hover:bg-brand-600 transition-all cursor-pointer flex items-center gap-1.5"
               >
                 <Plus className="w-4 h-4" />
                 Add Cash Record
@@ -700,7 +700,7 @@ export const Finance: React.FC = () => {
                 });
                 setShowDebtModal(true);
               }}
-              className="px-4 py-2 text-xs font-bold rounded-xl bg-white text-dark-depth-0 hover:bg-slate-100 transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2 text-xs font-bold rounded-xl bg-brand-500 text-white hover:bg-brand-600 transition-all cursor-pointer flex items-center gap-1.5"
             >
               <Plus className="w-4 h-4" />
               Create Debt Entry
@@ -815,7 +815,7 @@ export const Finance: React.FC = () => {
       {/* ─── MODAL 1: ADD/EDIT TRANSACTION ─── */}
       {showTxModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0b0e14] border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-dark-border/60 flex items-center justify-between">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">{txForm.id ? 'Edit Transaction' : 'Record Cash/Manual Transaction'}</h3>
               <button onClick={() => setShowTxModal(false)} className="text-gray-400 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
@@ -907,7 +907,7 @@ export const Finance: React.FC = () => {
       {/* ─── MODAL 2: ADD/EDIT DEBT ENTRY ─── */}
       {showDebtModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0b0e14] border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-dark-border/60 flex items-center justify-between">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">{debtForm.id ? 'Edit Debt Record' : 'Create Debt Entry'}</h3>
               <button onClick={() => setShowDebtModal(false)} className="text-gray-400 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
@@ -988,7 +988,7 @@ export const Finance: React.FC = () => {
       {/* ─── MODAL 3: RECORD DEBT REPAYMENT ─── */}
       {showRepayModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0b0e14] border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-dark-border/60 flex items-center justify-between">
               <div>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">Record Repayment</h3>
@@ -1059,7 +1059,7 @@ export const Finance: React.FC = () => {
       {/* ─── MODAL 4: EDIT GOAL TARGET ─── */}
       {showGoalModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#0b0e14] border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-dark-border/60 flex items-center justify-between">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider">Update Target settings</h3>
               <button onClick={() => setShowGoalModal(null)} className="text-gray-400 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>

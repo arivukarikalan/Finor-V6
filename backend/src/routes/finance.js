@@ -453,11 +453,11 @@ router.post('/sync-gmail', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Gmail connection missing. Connect your account first.' });
     }
 
-    // Fetch messages from past 7 days (to prevent large load sizes)
-    const sevenDaysAgo = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
-    const q = `after:${sevenDaysAgo} (subject:"debited" OR subject:"credited" OR "transaction alert" OR "google pay" OR "upi")`;
+    // Fetch messages from past 30 days (broader sync window)
+    const thirtyDaysAgo = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000);
+    const q = `after:${thirtyDaysAgo} (subject:"debited" OR subject:"credited" OR subject:"transaction alert" OR "google pay" OR "upi" OR "gpay" OR "spent" OR "received" OR "payment")`;
 
-    const listRes = await gmail.users.messages.list({ userId: 'me', q, maxResults: 50 });
+    const listRes = await gmail.users.messages.list({ userId: 'me', q, maxResults: 100 });
     const messages = listRes.data.messages || [];
 
     let countAdded = 0;
@@ -482,34 +482,29 @@ router.post('/sync-gmail', requireAuth, async (req, res) => {
         const dateHeader = headers.find(h => h.name === 'Date')?.value || '';
 
         const body = getBodyText(payload);
-        if (!body) continue;
-
+        
         let amount = null;
         let type = null;
         let description = '';
 
-        // 1. Check for Debit formats
-        const debitMatch = body.match(/(?:debited|spent|paid|transferr?ed|withdrawn)\s*(?:for|with|of)?\s*(?:rs\.?|inr|₹)\s*([0-9,]+(?:\.[0-9]{2})?)/i);
-        // 2. Check for Credit formats
-        const creditMatch = body.match(/(?:credited|received|deposited|added)\s*(?:with|of)?\s*(?:rs\.?|inr|₹)\s*([0-9,]+(?:\.[0-9]{2})?)/i);
-        // 3. Match merchant/to name if available
-        const merchantMatch = body.match(/(?:to|at|from|towards)\s+([a-zA-Z0-9\s&*]{3,25})/i);
+        // Check if transaction is debit or credit
+        const textToAnalyze = (subject + ' ' + body).toLowerCase();
+        const isDebit = /debit|spent|paid|sent|withdrawn|payment/i.test(textToAnalyze);
+        const isCredit = /credit|received|deposited|added|refund/i.test(textToAnalyze);
 
-        if (debitMatch) {
-          amount = parseFloat(debitMatch[1].replace(/,/g, ''));
-          type = 'EXPENSE';
-          description = merchantMatch ? `UPI payment to ${merchantMatch[1].trim()}` : `Debit Alert: ${subject}`;
-        } else if (creditMatch) {
-          amount = parseFloat(creditMatch[1].replace(/,/g, ''));
-          type = 'INCOME';
-          description = merchantMatch ? `Credits from ${merchantMatch[1].trim()}` : `Credit Alert: ${subject}`;
-        } else {
-          // Check for Google Pay specific receipt structure
-          const gpayMatch = body.match(/(?:paid|received)\s*(?:rs\.?|inr|₹)\s*([0-9,.]+)/i);
-          if (gpayMatch) {
-            amount = parseFloat(gpayMatch[1].replace(/,/g, ''));
-            type = body.toLowerCase().includes('received') ? 'INCOME' : 'EXPENSE';
-            description = `UPI via Google Pay: ${subject}`;
+        // Extract currency amount
+        const amtMatch = textToAnalyze.match(/(?:rs\.?|inr|₹)\s*([0-9,]+(?:\.[0-9]{2})?)/i) || 
+                         textToAnalyze.match(/(?:amt|amount)\s*(?:of)?\s*(?:rs\.?|inr|₹)?\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+
+        if (amtMatch) {
+          amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+          type = isCredit ? 'INCOME' : 'EXPENSE'; // Default to expense if not explicitly credit
+          
+          const merchantMatch = body.match(/(?:to|at|from|towards|merchant)\s+([a-zA-Z0-9\s&*]{3,25})/i);
+          if (type === 'EXPENSE') {
+            description = merchantMatch ? `UPI to ${merchantMatch[1].trim()}` : `Debit Alert: ${subject}`;
+          } else {
+            description = merchantMatch ? `Credits from ${merchantMatch[1].trim()}` : `Credit Alert: ${subject}`;
           }
         }
 
