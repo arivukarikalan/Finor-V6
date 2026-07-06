@@ -148,6 +148,8 @@ export const Navigation: React.FC<NavigationProps> = ({
         document.documentElement.classList.remove('light');
         localStorage.setItem('finor_theme', 'dark');
       }
+      // Update browser status bar meta theme-color dynamically
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', isThemeLight ? '#f8fafc' : '#080b11');
       window.dispatchEvent(new Event('themechange'));
     }
   }, [isThemeLight]);
@@ -406,7 +408,7 @@ export const Navigation: React.FC<NavigationProps> = ({
 
         {/* Main Content Container */}
         <main className={`flex-grow overflow-y-auto ${
-          activeTab === 'ai-chat' ? 'px-0 pt-14 pb-16 md:p-6' : 'px-4 pt-18 pb-20 md:px-8 md:pt-6 md:pb-16'
+          activeTab === 'ai-chat' ? 'px-0 pt-[56px] pb-[64px] md:p-6' : 'px-4 pt-[72px] pb-[88px] md:px-8 md:pt-6 md:pb-16'
         } min-h-0`}>
           <div className="max-w-7xl mx-auto h-full flex flex-col">
             {!isOnline && (

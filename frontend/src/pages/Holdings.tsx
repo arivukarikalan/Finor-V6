@@ -1083,61 +1083,132 @@ export const Holdings = () => {
               </h3>
               
               {activeHolding ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-6">
-                  <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Quantity held</span>
-                    <span className="text-lg font-black text-white block mt-1">{activeHolding.quantity} shares</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Average Price (FIFO)</span>
-                    <span className="text-lg font-black text-white block mt-1">₹{activeHolding.average_buy_price.toFixed(2)}</span>
-                    {weightedAvgStr && (
-                      <span className="text-[10px] text-gray-400 block mt-1 font-semibold">
-                        Weighted: ₹{parseFloat(weightedAvgStr).toFixed(2)}
+                <>
+                  {/* Desktop View (md and up) */}
+                  <div className="hidden md:grid grid-cols-5 gap-6">
+                    <div>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Quantity held</span>
+                      <span className="text-lg font-black text-white block mt-1">{activeHolding.quantity} shares</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Average Price (FIFO)</span>
+                      <span className="text-lg font-black text-white block mt-1">₹{activeHolding.average_buy_price.toFixed(2)}</span>
+                      {weightedAvgStr && (
+                        <span className="text-[10px] text-gray-400 block mt-1 font-semibold">
+                          Weighted: ₹{parseFloat(weightedAvgStr).toFixed(2)}
+                        </span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Current LTP</span>
+                      <span className="text-lg font-black text-white block mt-1">₹{currentLTP.toFixed(2)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Position tag</span>
+                      <span className="text-lg font-black text-white block mt-1">
+                        <span className={`text-xs font-black px-2.5 py-1 rounded-lg border ${
+                          isCoreHold 
+                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' 
+                            : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                        }`}>
+                          {isCoreHold ? 'Core Hold' : 'Trading'}
+                        </span>
                       </span>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Current LTP</span>
-                    <span className="text-lg font-black text-white block mt-1">₹{currentLTP.toFixed(2)}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Position tag</span>
-                    <span className="text-lg font-black text-white block mt-1">
-                      <span className={`text-xs font-black px-2.5 py-1 rounded-lg border ${
-                        isCoreHold 
-                          ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' 
-                          : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
-                      }`}>
-                        {isCoreHold ? 'Core Hold' : 'Trading'}
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Holding Period</span>
+                      <span className="text-lg font-black text-white block mt-1">{holdingDays} Days</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Investment Value</span>
+                      <span className="text-sm font-bold text-white block mt-1">₹{investedVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Current Value</span>
+                      <span className="text-sm font-bold text-white block mt-1">₹{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Active P&L</span>
+                      <span className={`text-sm font-black block mt-1 ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {isProfit ? '+' : ''}₹{pl.toLocaleString('en-IN', { maximumFractionDigits: 2 })} ({isProfit ? '+' : ''}{roi.toFixed(2)}%)
                       </span>
-                    </span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Cycle Realized P&L</span>
+                      <span className={`text-sm font-black block mt-1 ${stats.cycleRealizedPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {stats.cycleRealizedPnL >= 0 ? '+' : ''}₹{stats.cycleRealizedPnL.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Holding Period</span>
-                    <span className="text-lg font-black text-white block mt-1">{holdingDays} Days</span>
+
+                  {/* Mobile View (below md) */}
+                  <div className="md:hidden space-y-4">
+                    {/* Hero P&L Banner */}
+                    <div className="flex items-center justify-between p-4 bg-dark-depth-2/40 border border-dark-border/60 rounded-2xl select-none">
+                      <div>
+                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Active P&L</span>
+                        <span className={`text-xl font-black block mt-0.5 ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {isProfit ? '+' : ''}₹{pl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </span>
+                        <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full mt-1.5 inline-block ${
+                          isProfit ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        }`}>
+                          {isProfit ? '+' : ''}{roi.toFixed(2)}% ROI
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Current Value</span>
+                        <span className="text-base font-black text-white block mt-0.5">
+                          ₹{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </span>
+                        <span className="text-[10px] text-gray-400 block mt-1 font-bold">
+                          LTP: ₹{currentLTP.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Key Details Rows */}
+                    <div className="bg-dark-depth-2/20 border border-dark-border/40 rounded-2xl overflow-hidden divide-y divide-dark-border/30">
+                      <div className="flex items-center justify-between px-4 py-3 text-xs">
+                        <span className="text-gray-500 font-bold uppercase text-[9px] tracking-wider">Quantity Held</span>
+                        <span className="font-extrabold text-white">{activeHolding.quantity} shares</span>
+                      </div>
+                      <div className="flex items-center justify-between px-4 py-3 text-xs">
+                        <span className="text-gray-500 font-bold uppercase text-[9px] tracking-wider">Avg Buy Price (FIFO)</span>
+                        <div className="text-right">
+                          <span className="font-extrabold text-white block">₹{activeHolding.average_buy_price.toFixed(2)}</span>
+                          {weightedAvgStr && (
+                            <span className="text-[9px] text-gray-400 font-semibold block">
+                              Weighted: ₹{parseFloat(weightedAvgStr).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between px-4 py-3 text-xs">
+                        <span className="text-gray-500 font-bold uppercase text-[9px] tracking-wider">Investment Value</span>
+                        <span className="font-extrabold text-white">₹{investedVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                      </div>
+                      <div className="flex items-center justify-between px-4 py-3 text-xs">
+                        <span className="text-gray-500 font-bold uppercase text-[9px] tracking-wider">Holding Period</span>
+                        <span className="font-extrabold text-white">{holdingDays} Days</span>
+                      </div>
+                      <div className="flex items-center justify-between px-4 py-3 text-xs">
+                        <span className="text-gray-500 font-bold uppercase text-[9px] tracking-wider">Cycle Realized P&L</span>
+                        <span className={`font-extrabold ${stats.cycleRealizedPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {stats.cycleRealizedPnL >= 0 ? '+' : ''}₹{stats.cycleRealizedPnL.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between px-4 py-3 text-xs">
+                        <span className="text-gray-500 font-bold uppercase text-[9px] tracking-wider">Position Tag</span>
+                        <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-md border ${
+                          isCoreHold ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                        }`}>
+                          {isCoreHold ? 'Core Hold' : 'Trading'}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Investment Value</span>
-                    <span className="text-sm font-bold text-white block mt-1">₹{investedVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Current Value</span>
-                    <span className="text-sm font-bold text-white block mt-1">₹{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Active P&L</span>
-                    <span className={`text-sm font-black block mt-1 ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {isProfit ? '+' : ''}₹{pl.toLocaleString('en-IN', { maximumFractionDigits: 2 })} ({isProfit ? '+' : ''}{roi.toFixed(2)}%)
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-wider block">Cycle Realized P&L</span>
-                    <span className={`text-sm font-black block mt-1 ${stats.cycleRealizedPnL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {stats.cycleRealizedPnL >= 0 ? '+' : ''}₹{stats.cycleRealizedPnL.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
+                </>
               ) : (
                 <div className="flex items-center gap-3 py-4 text-xs text-gray-400 bg-dark-depth-2/45 border border-dark-border p-4 rounded-2xl">
                   <CheckCircle2 className="w-5 h-5 text-gray-600" />

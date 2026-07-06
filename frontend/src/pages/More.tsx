@@ -30,7 +30,8 @@ import {
   ThumbsDown,
   Copy,
   Check,
-  Search
+  Search,
+  Download
 } from 'lucide-react';
 import { marked } from 'marked';
 
@@ -988,6 +989,31 @@ export const More = ({
     setIsSidebarOpen(false);
   };
 
+  const handleExportChat = () => {
+    if (messages.length === 0) return;
+    
+    let text = `=========================================\n`;
+    text += `   FINOR AI COACH CHAT HISTORY EXPORT\n`;
+    text += `   Generated: ${new Date().toLocaleString('en-IN')}\n`;
+    text += `=========================================\n\n`;
+    
+    messages.forEach((m) => {
+      const sender = m.role === 'user' ? 'USER' : 'FINOR AI COACH';
+      const engineStr = m.engine ? ` (Engine: ${m.engine})` : '';
+      const time = m.timestamp ? ` [${m.timestamp}]` : '';
+      text += `[${sender}]${engineStr}${time}:\n${m.content}\n`;
+      text += `--------------------------------------------------\n\n`;
+    });
+    
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    const sessionTitle = chats.find(c => c.id === currentChatId)?.title || 'session';
+    const sanitizedTitle = sessionTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    link.download = `finor_chat_${sanitizedTitle}.txt`;
+    link.click();
+  };
+
   const handleDeleteChat = (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const updated = chats.filter(c => c.id !== chatId);
@@ -1754,6 +1780,20 @@ export const More = ({
                       }`}>
                         {isMobile ? `${usageRemaining}/100` : `${usageRemaining} of 100 queries left`}
                       </span>
+                    )}
+                    {messages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleExportChat}
+                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                          isLightMode 
+                            ? 'border-slate-200 hover:bg-slate-100 text-slate-655' 
+                            : 'border-neutral-800 hover:bg-neutral-800 text-gray-400 hover:text-white'
+                        }`}
+                        title="Export Chat History"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
                     )}
                     <button
                       type="button"

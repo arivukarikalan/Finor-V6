@@ -475,6 +475,47 @@ async function buildPortfolioContext(userId, skipInsights = false) {
     ctx += `No trade history found.\n`;
   }
 
+  // 4. Fetch cached corporate actions for all holdings
+  let corporateActionsText = '';
+  if (holdings && holdings.length > 0) {
+    const symbols = holdings.map(h => `${h.stock_symbol.toUpperCase()}_ACTIONS`);
+    try {
+      const { data: cachedActions } = await supabase
+        .from('news_cache')
+        .select('*')
+        .in('stock_symbol', symbols);
+
+      if (cachedActions && cachedActions.length > 0) {
+        corporateActionsText += `\n## Upcoming Corporate Actions & News Events for Active Holdings:\n`;
+        cachedActions.forEach(row => {
+          const symbol = row.stock_symbol.replace('_ACTIONS', '');
+          const content = typeof row.news_content === 'string' ? JSON.parse(row.news_content) : row.news_content;
+          if (content && content.length > 0) {
+            const upcoming = content.filter(e => {
+              const dateStr = e.event_date || e.ex_date || '';
+              if (!dateStr) return false;
+              const date = new Date(dateStr);
+              return date >= new Date(); // Only upcoming/future events
+            });
+            
+            if (upcoming.length > 0) {
+              corporateActionsText += `- **${symbol}**:\n`;
+              upcoming.forEach(e => {
+                corporateActionsText += `  - [${e.type || 'Event'}] ${e.purpose || 'Upcoming action'} on ${e.event_date || e.ex_date || 'N/A'}\n`;
+              });
+            }
+          }
+        });
+      }
+    } catch (eActions) {
+      console.error('[AI Assistant] Pre-loading corporate actions failed:', eActions.message);
+    }
+  }
+
+  if (corporateActionsText) {
+    ctx += corporateActionsText;
+  }
+
   // Cache the built context
   portfolioContextCache.set(cacheKey, {
     contextText: ctx,
