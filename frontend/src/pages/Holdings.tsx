@@ -1532,51 +1532,67 @@ export const Holdings = () => {
                   <Loader2 className="w-6 h-6 text-brand-500 animate-spin" />
                   <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider">Loading events...</span>
                 </div>
-              ) : sentimentData?.corporateActions && sentimentData.corporateActions.length > 0 ? (
-                <div className="overflow-x-auto w-full">
-                  <table className="w-full text-left border-collapse text-[10px]">
-                    <thead>
-                      <tr className="border-b border-dark-border/40 text-[9px] text-gray-500 font-black uppercase tracking-wider">
-                        <th className="pb-2 font-extrabold">Action</th>
-                        <th className="pb-2 font-extrabold">Details</th>
-                        <th className="pb-2 font-extrabold text-right">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-dark-border/30">
-                      {sentimentData.corporateActions.map((act: any, idx: number) => {
-                        const eventDateStr = act.date || act.event_date || act.ex_date || act.meeting_date || 'N/A';
-                        const formattedDate = eventDateStr !== 'N/A'
-                          ? new Date(eventDateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                          : 'N/A';
-                        const details = act.description || act.title || act.purpose || act.value || 'Upcoming Announcement';
-                        
-                        return (
-                          <tr key={idx} className="hover:bg-dark-depth-2/20 transition-colors">
-                            <td className="py-2.5 pr-2 align-middle">
-                              <span className="text-[8px] font-black px-1.5 py-0.5 rounded border uppercase bg-brand-500/10 border-brand-500/20 text-brand-400 inline-block">
-                                {act.type || 'Event'}
-                              </span>
-                            </td>
-                            <td className="py-2.5 text-gray-250 font-semibold leading-normal" title={details}>
-                              {details}
-                            </td>
-                            <td className="py-2.5 text-right whitespace-nowrap align-middle">
-                              <span className="text-white font-bold block">{formattedDate}</span>
-                              {act.date_type && (
-                                <span className="text-[8px] text-gray-500 font-bold block mt-0.5">{act.date_type}</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="py-6 text-center text-xs text-gray-550 border border-dashed border-dark-border/40 rounded-2xl select-none">
-                  No upcoming dividends, results, or board meetings scheduled.
-                </div>
-              )}
+              ) : (() => {
+                const upcomingActions = (sentimentData?.corporateActions || []).filter((act: any) => {
+                  if (act.is_upcoming === true) return true;
+                  const eventDateStr = act.date || act.event_date || act.ex_date || act.meeting_date;
+                  if (!eventDateStr) return false;
+                  const eventDate = new Date(eventDateStr);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  return eventDate >= today;
+                });
+
+                if (upcomingActions.length === 0) {
+                  return (
+                    <div className="py-6 text-center text-xs text-gray-550 border border-dashed border-dark-border/40 rounded-2xl select-none">
+                      No upcoming dividends, results, or board meetings scheduled.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="overflow-x-auto w-full">
+                    <table className="w-full text-left border-collapse text-[10px]">
+                      <thead>
+                        <tr className="border-b border-dark-border/40 text-[9px] text-gray-500 font-black uppercase tracking-wider">
+                          <th className="pb-2 font-extrabold">Action</th>
+                          <th className="pb-2 font-extrabold">Details</th>
+                          <th className="pb-2 font-extrabold text-right">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-dark-border/30">
+                        {upcomingActions.map((act: any, idx: number) => {
+                          const eventDateStr = act.date || act.event_date || act.ex_date || act.meeting_date || 'N/A';
+                          const formattedDate = eventDateStr !== 'N/A'
+                            ? new Date(eventDateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                            : 'N/A';
+                          const details = act.description || act.title || act.purpose || act.value || 'Upcoming Announcement';
+                          
+                          return (
+                            <tr key={idx} className="hover:bg-dark-depth-2/20 transition-colors">
+                              <td className="py-2.5 pr-2 align-middle">
+                                <span className="text-[8px] font-black px-1.5 py-0.5 rounded border uppercase bg-brand-500/10 border-brand-500/20 text-brand-400 inline-block">
+                                  {act.type || 'Event'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 text-gray-250 font-semibold leading-normal" title={details}>
+                                {details}
+                              </td>
+                              <td className="py-2.5 text-right whitespace-nowrap align-middle">
+                                <span className="text-white font-bold block">{formattedDate}</span>
+                                {act.date_type && (
+                                  <span className="text-[8px] text-gray-550 block mt-0.5">{act.date_type}</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
