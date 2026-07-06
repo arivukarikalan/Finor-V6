@@ -97,23 +97,23 @@ function App() {
   return (
     <>
       <Navigation activeTab={activeTab} setActiveTab={setActiveTab}>
-        <div className={activeTab === 'dashboard' ? 'block h-full' : 'hidden'}>
+        <div className={activeTab === 'dashboard' ? 'block w-full' : 'hidden'}>
           <Dashboard setActiveTab={setActiveTab} />
         </div>
-        <div className={activeTab === 'holdings' ? 'block h-full' : 'hidden'}>
+        <div className={activeTab === 'holdings' ? 'block w-full' : 'hidden'}>
           <Holdings />
         </div>
-        <div className={activeTab === 'orders' ? 'block h-full' : 'hidden'}>
+        <div className={activeTab === 'orders' ? 'block w-full' : 'hidden'}>
           <Orders />
         </div>
-        <div className={activeTab === 'pnl' ? 'block h-full' : 'hidden'}>
+        <div className={activeTab === 'pnl' ? 'block w-full' : 'hidden'}>
           <PnL />
         </div>
 
         <div className={activeTab === 'ai-chat' ? 'block h-full' : 'hidden'}>
           <More key="ai-chat-view" defaultSubTab="ai-chat" setActiveTab={setActiveTab} />
         </div>
-        <div className={activeTab === 'more' ? 'block h-full' : 'hidden'}>
+        <div className={activeTab === 'more' ? 'block w-full' : 'hidden'}>
           <More key="more-view" defaultSubTab="news" setActiveTab={setActiveTab} />
         </div>
       </Navigation>
