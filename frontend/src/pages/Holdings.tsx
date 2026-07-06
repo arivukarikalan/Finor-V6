@@ -1071,7 +1071,7 @@ export const Holdings = () => {
     const isProfit = pl >= 0;
 
     return (
-      <div className="space-y-6 pt-4 md:pt-0 animate-in fade-in duration-300">
+      <div className="space-y-6 pt-6 md:pt-0 animate-in fade-in duration-300">
         {/* Header & Switcher Row */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-dark-border/40 pb-4">
           <div className="flex items-center gap-3">
