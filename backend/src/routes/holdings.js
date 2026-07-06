@@ -437,7 +437,11 @@ Ensure the response is raw, valid JSON, and does NOT wrap the JSON inside markdo
       };
     }
 
-    res.json(evaluation);
+    res.json({
+      ...evaluation,
+      newsArticles,
+      corporateActions
+    });
   } catch (err) {
     console.error('[HoldingsRoute] AI sentiment evaluation failed:', err.message);
     res.status(500).json({ error: err.message });

@@ -22,7 +22,8 @@ import {
   ArrowLeft,
   PieChart,
   History,
-  Loader2
+  Loader2,
+  Calendar
 } from 'lucide-react';
 
 interface Holding {
@@ -1378,7 +1379,7 @@ export const Holdings = () => {
             </div>
 
             {/* AI Sentiment Analysis */}
-            <div className="glass-panel rounded-3xl p-6 border border-dark-border flex flex-col justify-between">
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border">
               <div>
                 <h3 className="text-xs font-black text-white uppercase tracking-wider mb-4 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-brand-400 animate-pulse" />
@@ -1395,31 +1396,49 @@ export const Holdings = () => {
                     {/* Score gauge */}
                     <div className="flex items-center gap-4">
                       <div className="relative flex items-center justify-center w-16 h-16 rounded-full border border-dark-border bg-dark-depth-2">
-                        <span className="text-lg font-black text-brand-400 font-display">{sentimentData.convictionScore}</span>
+                        <span className="text-lg font-black text-brand-400 font-display">{sentimentData.score ?? 50}</span>
                         <span className="text-[8px] text-gray-500 absolute bottom-2 font-bold">SCORE</span>
                       </div>
                       <div>
                         <h4 className="text-xs font-black text-white">Conviction Rating</h4>
                         <p className="text-[10px] text-gray-400 mt-1 font-semibold leading-relaxed">
-                          {sentimentData.convictionScore >= 75 
+                          {(sentimentData.score ?? 50) >= 71 
                             ? 'High Conviction Long-Term Hold' 
-                            : sentimentData.convictionScore >= 50 
+                            : (sentimentData.score ?? 50) >= 41 
                             ? 'Moderate Conviction Position' 
                             : 'Low Conviction Risk Alert'}
                         </p>
                       </div>
                     </div>
 
-                    {/* Audit Reasons */}
-                    <div className="text-[11px] text-gray-300 leading-relaxed font-medium space-y-2 border-t border-dark-border/40 pt-4">
+                    {/* Audit Assessment details */}
+                    <div className="text-[11px] text-gray-300 leading-relaxed font-medium space-y-3.5 border-t border-dark-border/40 pt-4">
                       <span className="text-[9px] text-gray-500 font-black uppercase tracking-wider block">Audit Assessment</span>
-                      <div className="space-y-1.5">
-                        {sentimentData.convictionReasons && sentimentData.convictionReasons.split('\n').filter(Boolean).map((line: string, idx: number) => (
-                          <p key={idx} className="flex items-start gap-1.5">
-                            <span className="text-brand-500 mt-0.5">•</span>
-                            <span>{line.replace(/^[-\*\s•]+/, '')}</span>
-                          </p>
-                        ))}
+                      <div className="space-y-2.5">
+                        {sentimentData.performance_audit && (
+                          <div className="space-y-0.5">
+                            <span className="text-[9px] text-gray-500 font-extrabold uppercase block">Performance Audit</span>
+                            <p className="text-gray-300 leading-normal font-medium">{sentimentData.performance_audit}</p>
+                          </div>
+                        )}
+                        {sentimentData.news_impact && (
+                          <div className="space-y-0.5">
+                            <span className="text-[9px] text-gray-500 font-extrabold uppercase block">News & Actions Impact</span>
+                            <p className="text-gray-300 leading-normal font-medium">{sentimentData.news_impact}</p>
+                          </div>
+                        )}
+                        {sentimentData.technical_outlook && (
+                          <div className="space-y-0.5">
+                            <span className="text-[9px] text-gray-500 font-extrabold uppercase block">Outlook</span>
+                            <p className="text-gray-300 leading-normal font-medium">{sentimentData.technical_outlook}</p>
+                          </div>
+                        )}
+                        {sentimentData.coach_advice && (
+                          <div className="p-3 rounded-2xl bg-brand-500/5 border border-brand-500/10 text-gray-250 mt-2 font-semibold">
+                            <span className="text-[8px] text-brand-400 font-black uppercase block tracking-wider mb-0.5">Coach's Rule</span>
+                            "{sentimentData.coach_advice}"
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1437,7 +1456,7 @@ export const Holdings = () => {
                                   <span className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase ${sentColor}`}>{sent}</span>
                                   <span className="text-[8px] text-gray-500 font-semibold">{art.date || new Date().toLocaleDateString('en-IN')}</span>
                                 </div>
-                                <p className="font-semibold text-gray-200 leading-normal">{art.title || art.headline}</p>
+                                <p className="font-semibold text-gray-250 leading-normal">{art.title || art.headline}</p>
                               </div>
                             );
                           })}
@@ -1454,6 +1473,41 @@ export const Holdings = () => {
               </div>
             </div>
 
+            {/* Upcoming Events Calendar */}
+            <div className="glass-panel rounded-3xl p-6 border border-dark-border">
+              <h3 className="text-xs font-black text-white uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-brand-400" />
+                Upcoming Corporate Actions
+              </h3>
+              
+              {loadingSentiment ? (
+                <div className="py-8 flex flex-col items-center justify-center gap-2">
+                  <Loader2 className="w-6 h-6 text-brand-500 animate-spin" />
+                  <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider">Loading events...</span>
+                </div>
+              ) : sentimentData?.corporateActions && sentimentData.corporateActions.length > 0 ? (
+                <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
+                  {sentimentData.corporateActions.map((act: any, idx: number) => {
+                    const eventDate = act.event_date || act.ex_date || act.meeting_date || 'N/A';
+                    return (
+                      <div key={idx} className="p-3 rounded-2xl bg-dark-depth-2/45 border border-dark-border/50 text-[10px] space-y-1.5 hover:bg-dark-depth-2/70 transition-all">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[8px] font-black px-1.5 py-0.5 rounded border uppercase bg-brand-500/10 border-brand-500/20 text-brand-400">
+                            {act.type || 'Announcement'}
+                          </span>
+                          <span className="text-[8px] text-gray-500 font-bold">{eventDate}</span>
+                        </div>
+                        <p className="font-bold text-gray-250 leading-normal">{act.title || act.purpose || act.value}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="py-6 text-center text-xs text-gray-550 border border-dashed border-dark-border/40 rounded-2xl select-none">
+                  No upcoming dividends, results, or board meetings scheduled.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
