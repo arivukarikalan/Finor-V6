@@ -1008,7 +1008,7 @@ export const More = ({
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8;' });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    const sessionTitle = chats.find(c => c.id === currentChatId)?.title || 'session';
+    const sessionTitle = chats.find(c => c.id === activeChatId)?.title || 'session';
     const sanitizedTitle = sessionTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
     link.download = `finor_chat_${sanitizedTitle}.txt`;
     link.click();
