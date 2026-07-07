@@ -56,7 +56,7 @@ export const Finance: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
-  const [personalGmailConnected, setPersonalGmailConnected] = useState<boolean>(false);
+
   const [autoValuations, setAutoValuations] = useState<AutoValuations>({
     equity: 0,
     etf: 0,
@@ -126,7 +126,6 @@ export const Finance: React.FC = () => {
       setTransactions(data.transactions);
       setDebts(data.debts);
       setGoals(data.goals);
-      setPersonalGmailConnected(data.personalGmailConnected);
       setAutoValuations(data.autoValuations);
     } catch (err: any) {
       triggerToast('error', err.message || 'Failed to fetch financial data.');
@@ -137,21 +136,6 @@ export const Finance: React.FC = () => {
 
   useEffect(() => {
     fetchDashboardData();
-
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('personal_gmail_connected') === 'true') {
-      triggerToast('success', 'Personal Gmail connected successfully! You can now sync daily expenses.');
-      const url = new URL(window.location.href);
-      url.searchParams.delete('personal_gmail_connected');
-      window.history.replaceState({}, '', url.pathname + url.search);
-      fetchDashboardData(true);
-    } else if (params.get('personal_gmail_error')) {
-      const err = params.get('personal_gmail_error');
-      triggerToast('error', `Failed to connect personal Gmail: ${err}`);
-      const url = new URL(window.location.href);
-      url.searchParams.delete('personal_gmail_error');
-      window.history.replaceState({}, '', url.pathname + url.search);
-    }
   }, []);
 
   // Compute values
@@ -215,12 +199,6 @@ export const Finance: React.FC = () => {
     } finally {
       setSyncing(false);
     }
-  };
-
-  const handleConnectPersonalGmail = () => {
-    const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
-    const base = backendUrl.endsWith('/api') ? backendUrl.replace('/api', '') : backendUrl;
-    window.open(`${base}/api/gmail/auth-personal`, '_self');
   };
 
   // Transaction Actions
@@ -561,7 +539,7 @@ export const Finance: React.FC = () => {
               <Sparkles className="w-4 h-4 text-brand-400" />
               <div>
                 <h4 className="text-xs font-bold text-white">Gmail Pull Ingestion</h4>
-                <p className="text-[9px] text-gray-400 mt-0.5">Click to search and parse Google Pay/banking transaction emails from the last 7 days.</p>
+                <p className="text-[9px] text-gray-400 mt-0.5">Click to search and parse forwarded bank alert and GPay emails in FinorVTrades@gmail.com inbox.</p>
               </div>
             </div>
 
@@ -599,46 +577,7 @@ export const Finance: React.FC = () => {
             </div>
           </div>
           {/* Personal Gmail Sync Config Setup Panel */}
-          {!personalGmailConnected ? (
-            <div className="glass-panel border border-brand-500/30 bg-brand-500/[0.02] rounded-3xl p-6 space-y-4">
-              <div className="flex items-center gap-2 pb-1">
-                <Sparkles className="w-4 h-4 text-brand-400" />
-                <h4 className="text-xs font-extrabold text-white uppercase tracking-wider">Automate Expense Ingestion</h4>
-              </div>
-              <p className="text-[10px] text-gray-400 leading-relaxed">
-                Connect your personal Gmail account (`arivukarikalan7@gmail.com`) to automatically pull and parse transaction receipts, Google Pay confirmations, and bank alerts sent to your registered email address.
-              </p>
-              <div className="pt-1">
-                <button
-                  onClick={handleConnectPersonalGmail}
-                  className="px-4 py-2.5 text-xs font-bold rounded-xl bg-brand-500 text-white hover:bg-brand-600 transition-all cursor-pointer flex items-center gap-1.5"
-                >
-                  <Landmark className="w-4 h-4" />
-                  Connect Personal Gmail
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="glass-panel border border-dark-border/60 rounded-3xl p-5 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-white block">Personal Gmail Sync Active</span>
-                  <span className="text-[9px] text-emerald-400 block mt-0.5">Connected to arivukarikalan7@gmail.com. Ready to sync daily expenses.</span>
-                </div>
-              </div>
-              <div>
-                <button
-                  onClick={handleConnectPersonalGmail}
-                  className="text-[9px] font-bold text-gray-500 hover:text-white transition-all cursor-pointer border border-dark-border rounded-lg px-2.5 py-1.5 hover:bg-dark-depth-3"
-                >
-                  Reconnect Account
-                </button>
-              </div>
-            </div>
-          )}
+
 
           {/* Transactions Table */}
           <div className="glass-panel rounded-3xl border border-dark-border overflow-hidden">
