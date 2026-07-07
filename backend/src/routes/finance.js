@@ -551,4 +551,107 @@ router.post('/sync-gmail', requireAuth, async (req, res) => {
 });
 
 // ─── POST /api/finance/sms-webhook ───────────────────────────────────────────
+router.post('/sms-webhook', async (req, res) => {
+  try {
+    const apiKeyHeader = req.headers['x-api-key'];
+    if (!apiKeyHeader) {
+      return res.status(401).json({ error: 'API key missing in x-api-key header.' });
+    }
+
+    // Get key from DB, generate default if missing
+    let { data: dbKey } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'sms_ingestion_api_key')
+      .maybeSingle();
+
+    if (!dbKey) {
+      // Insert default key
+      await supabase
+        .from('system_settings')
+        .insert({ key: 'sms_ingestion_api_key', value: 'FinorSMS_8d2f7a9c3e' });
+      dbKey = { value: 'FinorSMS_8d2f7a9c3e' };
+    }
+
+    if (apiKeyHeader !== dbKey.value) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid API key.' });
+    }
+
+    const { sender, message, timestamp } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: 'Missing raw message in request body.' });
+    }
+
+    // 1. Get userId dynamically
+    let userId = '56fdfb1f-1068-4120-9e1c-18ef69d837d0'; // Fallback
+    const { data: sampleGoal } = await supabase
+      .from('finance_goals')
+      .select('user_id')
+      .limit(1)
+      .maybeSingle();
+    if (sampleGoal?.user_id) {
+      userId = sampleGoal.user_id;
+    }
+
+    // 2. Parse raw SMS text
+    const textToAnalyze = message.toLowerCase();
+    const isDebit = /debit|spent|paid|sent|withdrawn|payment/i.test(textToAnalyze);
+    const isCredit = /credit|received|deposited|added|refund/i.test(textToAnalyze);
+
+    // Extract currency amount
+    const amtMatch = textToAnalyze.match(/(?:rs\.?|inr|₹)\s*([0-9,]+(?:\.[0-9]{2})?)/i) || 
+                     textToAnalyze.match(/(?:amt|amount)\s*(?:of)?\s*(?:rs\.?|inr|₹)?\s*([0-9,]+(?:\.[0-9]{2})?)/i);
+
+    if (!amtMatch) {
+      return res.status(422).json({ error: 'Failed to extract amount from SMS text.' });
+    }
+
+    const amount = parseFloat(amtMatch[1].replace(/,/g, ''));
+    const type = isCredit ? 'INCOME' : 'EXPENSE';
+
+    const merchantMatch = message.match(/(?:to|at|from|towards|merchant)\s+([a-zA-Z0-9\s&*]{3,25})/i);
+    let description = '';
+    if (type === 'EXPENSE') {
+      description = merchantMatch ? `UPI to ${merchantMatch[1].trim()}` : `Spent via SMS alert`;
+    } else {
+      description = merchantMatch ? `Credits from ${merchantMatch[1].trim()}` : `Credits via SMS alert`;
+    }
+
+    // Append sender header detail
+    description += ` (${sender || 'Unknown'})`;
+
+    const category = autoCategorize(description);
+    const txDate = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
+
+    const { data: insertedTx, error: insertError } = await supabase
+      .from('finance_transactions')
+      .insert({
+        user_id: userId,
+        date: txDate,
+        amount,
+        type,
+        category,
+        method: 'UPI',
+        description,
+        source: 'SMS'
+      })
+      .select()
+      .maybeSingle();
+
+    if (insertError) {
+      throw insertError;
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Transaction successfully processed and logged from SMS webhook.',
+      transaction: insertedTx
+    });
+
+  } catch (err) {
+    console.error('[SMSWebhookRoute] Ingestion failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
