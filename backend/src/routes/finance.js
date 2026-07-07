@@ -198,6 +198,32 @@ router.delete('/transaction/:id', requireAuth, async (req, res) => {
   }
 });
 
+// ─── POST /api/finance/transaction/bulk-delete ───────────────────────────────
+router.post('/transaction/bulk-delete', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Missing or invalid list of transaction IDs.' });
+    }
+
+    const { error } = await supabase
+      .from('finance_transactions')
+      .delete()
+      .in('id', ids)
+      .eq('user_id', userId);
+    if (error) throw error;
+
+    res.json({ message: `Successfully deleted ${ids.length} transactions.` });
+
+  } catch (err) {
+    console.error('[FinanceRoute] Bulk delete transactions failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ─── POST /api/finance/debt ──────────────────────────────────────────────────
 router.post('/debt', requireAuth, async (req, res) => {
   try {

@@ -73,6 +73,16 @@ export const Finance: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
+  // Selection & Bulk Actions
+  const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [txIdToDelete, setTxIdToDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Debt deletion confirm states
+  const [showDebtDeleteConfirm, setShowDebtDeleteConfirm] = useState(false);
+  const [debtIdToDelete, setDebtIdToDelete] = useState<string | null>(null);
+
   // Forms
   const [showTxModal, setShowTxModal] = useState(false);
   const [txForm, setTxForm] = useState<{
@@ -285,19 +295,49 @@ export const Finance: React.FC = () => {
     }
   };
 
-  const handleDeleteTx = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this transaction?')) return;
+  const confirmDeleteTx = (id: string) => {
+    setTxIdToDelete(id);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmBulkDelete = () => {
+    if (selectedTxIds.length === 0) return;
+    setTxIdToDelete(null);
+    setShowDeleteConfirm(true);
+  };
+
+  const executeDelete = async () => {
+    setDeleting(true);
+    const isBulk = txIdToDelete === null;
     const rollback = [...transactions];
 
-    setTransactions(prev => prev.filter(t => t.id !== id));
-    triggerToast('success', 'Transaction deleted.');
-
     try {
-      await apiRequest(`/finance/transaction/${id}`, { method: 'DELETE' });
+      if (isBulk) {
+        setTransactions(prev => prev.filter(t => !selectedTxIds.includes(t.id)));
+        setSelectedTxIds([]);
+        triggerToast('success', 'Selected transactions deleted.');
+        setShowDeleteConfirm(false);
+
+        await apiRequest('/finance/transaction/bulk-delete', {
+          method: 'POST',
+          body: JSON.stringify({ ids: selectedTxIds })
+        });
+      } else {
+        const id = txIdToDelete!;
+        setTransactions(prev => prev.filter(t => t.id !== id));
+        setSelectedTxIds(prev => prev.filter(selectedId => selectedId !== id));
+        triggerToast('success', 'Transaction deleted.');
+        setShowDeleteConfirm(false);
+
+        await apiRequest(`/finance/transaction/${id}`, { method: 'DELETE' });
+      }
       fetchDashboardData(true);
     } catch (err: any) {
       setTransactions(rollback);
       triggerToast('error', err.message || 'Failed to delete.');
+    } finally {
+      setDeleting(false);
+      setTxIdToDelete(null);
     }
   };
 
@@ -389,12 +429,20 @@ export const Finance: React.FC = () => {
     }
   };
 
-  const handleDeleteDebt = async (id: string) => {
-    if (!confirm('Delete this debt record?')) return;
+  const confirmDeleteDebt = (id: string) => {
+    setDebtIdToDelete(id);
+    setShowDebtDeleteConfirm(true);
+  };
+
+  const executeDeleteDebt = async () => {
+    if (!debtIdToDelete) return;
+    setDeleting(true);
+    const id = debtIdToDelete;
     const rollback = [...debts];
 
     setDebts(prev => prev.filter(d => d.id !== id));
     triggerToast('success', 'Debt record deleted.');
+    setShowDebtDeleteConfirm(false);
 
     try {
       await apiRequest(`/finance/debt/${id}`, { method: 'DELETE' });
@@ -402,6 +450,9 @@ export const Finance: React.FC = () => {
     } catch (err: any) {
       setDebts(rollback);
       triggerToast('error', err.message || 'Failed to delete.');
+    } finally {
+      setDeleting(false);
+      setDebtIdToDelete(null);
     }
   };
 
@@ -879,12 +930,51 @@ export const Finance: React.FC = () => {
                 </select>
               </div>
             </div>
+
+            {/* Bulk Action Toolbar */}
+            {selectedTxIds.length > 0 && (
+              <div className="px-5 py-3 bg-rose-500/10 border-b border-dark-border/60 flex items-center justify-between gap-4 animate-in slide-in-from-top duration-200">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">{selectedTxIds.length} transactions selected</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setSelectedTxIds([])}
+                    className="px-3 py-1.5 text-[10px] font-extrabold text-gray-400 hover:text-white uppercase tracking-wider transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmBulkDelete}
+                    className="px-3.5 py-1.5 text-[10px] font-extrabold rounded-xl bg-rose-600 hover:bg-rose-700 text-white uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-rose-900/20"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete Selected
+                  </button>
+                </div>
+              </div>
+            )}
             
             {/* Desktop View Table */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-dark-border bg-dark-depth-2/30">
+                    <th className="p-4 w-10">
+                      <input 
+                        type="checkbox"
+                        checked={filteredTransactions.length > 0 && selectedTxIds.length === filteredTransactions.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedTxIds(filteredTransactions.map(tx => tx.id));
+                          } else {
+                            setSelectedTxIds([]);
+                          }
+                        }}
+                        className="rounded border-dark-border bg-dark-depth-2 focus:ring-brand-500/80 cursor-pointer accent-brand-500"
+                      />
+                    </th>
                     <th className="p-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Date</th>
                     <th className="p-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Amount</th>
                     <th className="p-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Type</th>
@@ -898,7 +988,21 @@ export const Finance: React.FC = () => {
                 <tbody className="divide-y divide-dark-border/40 text-xs">
                   {filteredTransactions.length > 0 ? (
                     filteredTransactions.map((tx) => (
-                      <tr key={tx.id} className="hover:bg-dark-depth-2/20">
+                      <tr key={tx.id} className={`hover:bg-dark-depth-2/20 ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
+                        <td className="p-4 w-10">
+                          <input 
+                            type="checkbox"
+                            checked={selectedTxIds.includes(tx.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedTxIds(prev => [...prev, tx.id]);
+                              } else {
+                                setSelectedTxIds(prev => prev.filter(id => id !== tx.id));
+                              }
+                            }}
+                            className="rounded border-dark-border bg-dark-depth-2 focus:ring-brand-500/80 cursor-pointer accent-brand-500"
+                          />
+                        </td>
                         <td className="p-4 font-medium text-gray-300">
                           <div>
                             {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
@@ -954,7 +1058,7 @@ export const Finance: React.FC = () => {
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={() => handleDeleteTx(tx.id)}
+                              onClick={() => confirmDeleteTx(tx.id)}
                               className="p-1 rounded-lg hover:bg-rose-500/10 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
                               title="Delete"
                             >
@@ -966,8 +1070,8 @@ export const Finance: React.FC = () => {
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={8} className="p-8 text-center text-gray-500">
-                        No matching transactions found. Click "Sync Gmail" or "Add Cash Record" to begin.
+                      <td colSpan={9} className="p-8 text-center text-gray-500">
+                        No matching transactions found. Add a Cash Record or sync via SMS to begin.
                       </td>
                     </tr>
                   )}
@@ -979,13 +1083,27 @@ export const Finance: React.FC = () => {
             <div className="md:hidden divide-y divide-dark-border/40 text-xs">
               {filteredTransactions.length > 0 ? (
                 filteredTransactions.map((tx) => (
-                  <div key={tx.id} className="p-4 space-y-3 hover:bg-dark-depth-2/20 transition-all">
+                  <div key={tx.id} className={`p-4 space-y-3 hover:bg-dark-depth-2/20 transition-all ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
                     {/* Header: Date/Time + Actions */}
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-[10px] text-gray-500 font-medium">
-                        {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        <span className="inline-block mx-1.5 text-gray-700">•</span>
-                        {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      <div className="flex items-center gap-2 text-[10px] text-gray-500 font-medium">
+                        <input 
+                          type="checkbox"
+                          checked={selectedTxIds.includes(tx.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedTxIds(prev => [...prev, tx.id]);
+                            } else {
+                              setSelectedTxIds(prev => prev.filter(id => id !== tx.id));
+                            }
+                          }}
+                          className="rounded border-dark-border bg-dark-depth-2 focus:ring-brand-500/80 cursor-pointer accent-brand-500 w-3.5 h-3.5"
+                        />
+                        <span>
+                          {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          <span className="inline-block mx-1.5 text-gray-700">•</span>
+                          {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                        </span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <button
@@ -1007,7 +1125,7 @@ export const Finance: React.FC = () => {
                           <Edit2 className="w-3 h-3" />
                         </button>
                         <button
-                          onClick={() => handleDeleteTx(tx.id)}
+                          onClick={() => confirmDeleteTx(tx.id)}
                           className="p-1.5 rounded-lg bg-dark-depth-2 border border-dark-border/60 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
                           title="Delete"
                         >
@@ -1132,7 +1250,7 @@ export const Finance: React.FC = () => {
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => handleDeleteDebt(d.id)}
+                        onClick={() => confirmDeleteDebt(d.id)}
                         className="p-1 rounded-lg hover:bg-rose-500/10 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
                         title="Delete"
                       >
@@ -1440,6 +1558,91 @@ export const Finance: React.FC = () => {
       )}
 
       {/* ─── MODAL 4: EDIT GOAL TARGET ─── */}
+      {/* ─── MODAL 5: CONFIRM DELETE TRANSACTION ─── */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 p-6 relative flex flex-col items-center text-center">
+            
+            {/* Warning icon */}
+            <div className="p-3 rounded-full bg-rose-500/10 text-rose-400 mb-4 animate-pulse">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-sm font-black text-white uppercase tracking-wider mb-2">
+              {txIdToDelete === null ? 'Confirm Bulk Delete' : 'Confirm Delete'}
+            </h3>
+            
+            <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+              {txIdToDelete === null 
+                ? `Are you sure you want to delete the ${selectedTxIds.length} selected transactions? This action is permanent and cannot be undone.`
+                : 'Are you sure you want to delete this transaction from your ledger? This action is permanent and cannot be undone.'}
+            </p>
+
+            <div className="flex items-center gap-3 w-full">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setTxIdToDelete(null);
+                }}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl border border-dark-border bg-dark-depth-2 hover:bg-dark-depth-3 text-xs font-bold text-gray-400 hover:text-white transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeDelete}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:bg-rose-800/40 text-xs font-bold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                {deleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL 6: CONFIRM DELETE DEBT RECORD ─── */}
+      {showDebtDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 p-6 relative flex flex-col items-center text-center">
+            
+            {/* Warning icon */}
+            <div className="p-3 rounded-full bg-rose-500/10 text-rose-400 mb-4 animate-pulse">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <h3 className="text-sm font-black text-white uppercase tracking-wider mb-2">Confirm Delete</h3>
+            
+            <p className="text-xs text-gray-400 mb-6 leading-relaxed">
+              Are you sure you want to delete this debt ledger entry? This action is permanent and cannot be undone.
+            </p>
+
+            <div className="flex items-center gap-3 w-full">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDebtDeleteConfirm(false);
+                  setDebtIdToDelete(null);
+                }}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl border border-dark-border bg-dark-depth-2 hover:bg-dark-depth-3 text-xs font-bold text-gray-400 hover:text-white transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteDebt}
+                disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:bg-rose-800/40 text-xs font-bold text-white transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                {deleting ? 'Deleting...' : 'Yes, Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showGoalModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-dark-depth-1 border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
