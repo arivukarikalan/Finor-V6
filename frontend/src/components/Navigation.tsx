@@ -457,7 +457,7 @@ export const Navigation: React.FC<NavigationProps> = ({
       {/* 5. Gmail Sync Details Logs Modal Popup */}
       {showDetailsModal && syncDetails && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-[#0b0e14] border border-dark-border w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
+          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
             
             {/* Header */}
             <div className="px-6 py-4 border-b border-dark-border/60 flex items-center justify-between">
@@ -483,17 +483,17 @@ export const Navigation: React.FC<NavigationProps> = ({
               
               {/* Metrics Grid */}
               <div className="grid grid-cols-3 gap-3">
-                <div className="bg-[#121722] border border-dark-border/40 p-3.5 rounded-2xl">
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
                   <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">Emails Checked</span>
                   <span className="text-xl font-black text-white">{syncDetails.emailsFound || 0}</span>
                 </div>
-                <div className="bg-[#121722] border border-dark-border/40 p-3.5 rounded-2xl">
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
                   <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">Trades Extracted</span>
                   <span className="text-xl font-black text-white">
                     {syncDetails.details?.reduce((acc: number, val: any) => acc + (val.tradesFound || 0), 0) || 0}
                   </span>
                 </div>
-                <div className="bg-[#121722] border border-dark-border/40 p-3.5 rounded-2xl">
+                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
                   <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">New Trades Synced</span>
                   <span className="text-xl font-black text-emerald-400">{syncDetails.newTrades || 0}</span>
                 </div>
@@ -514,15 +514,15 @@ export const Navigation: React.FC<NavigationProps> = ({
                 <h4 className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Processed Emails Log</h4>
                 
                 {(!syncDetails.details || syncDetails.details.length === 0) ? (
-                  <div className="text-center py-6 bg-[#121722]/50 border border-dashed border-dark-border/40 rounded-2xl">
+                  <div className="text-center py-6 bg-dark-depth-2/50 border border-dashed border-dark-border/40 rounded-2xl">
                     <span className="text-xs text-gray-400">No emails matched the search parameters.</span>
                   </div>
                 ) : (
                   syncDetails.details.map((email: any, idx: number) => (
-                    <div key={idx} className="bg-[#121722]/40 border border-dark-border/40 rounded-2xl overflow-hidden">
+                    <div key={idx} className="bg-dark-depth-2/45 border border-dark-border/40 rounded-2xl overflow-hidden">
                       
                       {/* Email Header */}
-                      <div className="px-4 py-3 bg-[#121722]/80 border-b border-dark-border/40 flex items-center justify-between gap-4">
+                      <div className="px-4 py-3 bg-dark-depth-2/80 border-b border-dark-border/40 flex items-center justify-between gap-4">
                         <div className="min-w-0">
                           <span className="text-[11px] font-bold text-white block truncate">{email.subject}</span>
                           <span className="text-[9px] text-gray-400 mt-0.5 block">Trade Date: {email.tradeDate}</span>
@@ -594,7 +594,7 @@ export const Navigation: React.FC<NavigationProps> = ({
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-dark-border/60 flex items-center justify-end bg-[#0c1018]">
+            <div className="px-6 py-4 border-t border-dark-border/60 flex items-center justify-end bg-dark-depth-1">
               <button
                 onClick={() => setShowDetailsModal(false)}
                 className="px-5 py-2 rounded-2xl bg-brand-500 hover:bg-brand-600 text-xs text-white font-bold transition-all cursor-pointer"

@@ -192,6 +192,51 @@ export const Finance: React.FC = () => {
     .filter(t => t.type === 'INCOME' && t.date.startsWith(thisMonth))
     .reduce((sum, t) => sum + t.amount, 0);
 
+  // ─── Direct Ingestion SMS Expense Analytics & Insights ───
+  const allTimeExpenses = transactions
+    .filter(t => t.type === 'EXPENSE')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const allTimeIncome = transactions
+    .filter(t => t.type === 'INCOME')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  // Category wise breakdown
+  const categoryExpensesMap: { [key: string]: number } = {};
+  transactions
+    .filter(t => t.type === 'EXPENSE')
+    .forEach(t => {
+      const cat = t.category || 'Uncategorized';
+      categoryExpensesMap[cat] = (categoryExpensesMap[cat] || 0) + t.amount;
+    });
+
+  const categoryExpensesChartData = Object.keys(categoryExpensesMap).map(cat => ({
+    name: cat,
+    value: categoryExpensesMap[cat]
+  })).sort((a, b) => b.value - a.value);
+
+  // Investments total
+  const totalInvestments = transactions
+    .filter(t => t.type === 'EXPENSE' && (
+      t.category.toLowerCase().includes('investment') || 
+      t.category.toLowerCase().includes('mutual fund') || 
+      t.description.toLowerCase().includes('groww') || 
+      t.description.toLowerCase().includes('zerodha')
+    ))
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  // Savings rate
+  const savingsRate = allTimeIncome > 0
+    ? Math.max(0, ((allTimeIncome - allTimeExpenses) / allTimeIncome) * 100)
+    : 0;
+
+  // Average daily spend this month
+  const daysElapsed = new Date().getDate();
+  const avgDailySpend = monthlyExpenses / Math.max(1, daysElapsed);
+
+  // Top category
+  const topCategory = categoryExpensesChartData[0]?.name || 'None';
+
   // Filtered transactions for the ledger table
   const filteredTransactions = transactions.filter(tx => {
     const matchesSearch = tx.description.toLowerCase().includes(filterSearch.toLowerCase()) || 
@@ -671,8 +716,116 @@ export const Finance: React.FC = () => {
               </button>
             </div>
           </div>
-          {/* Personal Gmail Sync Config Setup Panel */}
+          {/* Expense Insights Dashboard */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* KPI 1: Monthly Expenses */}
+            <div className="glass-panel rounded-2xl p-5 border border-dark-border flex flex-col justify-between bg-dark-depth-2/10">
+              <div>
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">Monthly Expenses</span>
+                <span className="text-xl font-black text-white">{fmt(monthlyExpenses)}</span>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-2 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-brand-500 animate-pulse" />
+                <span>Avg: {fmt(avgDailySpend)} / day this month</span>
+              </div>
+            </div>
 
+            {/* KPI 2: Total Expenses & Income */}
+            <div className="glass-panel rounded-2xl p-5 border border-dark-border flex flex-col justify-between bg-dark-depth-2/10">
+              <div>
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">All-Time Expenses</span>
+                <span className="text-xl font-black text-white">{fmt(allTimeExpenses)}</span>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-2 flex items-center justify-between w-full">
+                <span>Income: {fmt(allTimeIncome)}</span>
+                <span className={`font-extrabold px-1.5 py-0.5 rounded text-[9px] ${savingsRate > 30 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                  Savings: {savingsRate.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+
+            {/* KPI 3: Investments */}
+            <div className="glass-panel rounded-2xl p-5 border border-dark-border flex flex-col justify-between bg-dark-depth-2/10">
+              <div>
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">Total Investments</span>
+                <span className="text-xl font-black text-emerald-400">{fmt(totalInvestments)}</span>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-2">
+                <span>Groww, Mutual Funds & Zerodha</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Expense Analytics Breakdown */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* Category Wise Breakdown */}
+            <div className="glass-panel rounded-2xl p-5 border border-dark-border bg-dark-depth-2/10">
+              <h3 className="text-xs font-extrabold text-white uppercase tracking-wider mb-4">Category-Wise Expenses</h3>
+              {categoryExpensesChartData.length > 0 ? (
+                <div className="space-y-3.5">
+                  {categoryExpensesChartData.slice(0, 5).map((item, index) => {
+                    const percentage = allTimeExpenses > 0 ? (item.value / allTimeExpenses) * 100 : 0;
+                    return (
+                      <div key={item.name} className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] font-bold">
+                          <span className="text-white">{item.name}</span>
+                          <span className="text-gray-400">{fmt(item.value)} ({percentage.toFixed(0)}%)</span>
+                        </div>
+                        <div className="w-full bg-dark-depth-3 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className="h-full bg-brand-500 rounded-full" 
+                            style={{ width: `${percentage}%`, opacity: 1 - index * 0.15 }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-xs text-gray-500">
+                  No expense records found. Synced bank SMS alerts will build this breakdown.
+                </div>
+              )}
+            </div>
+
+            {/* Financial Health Insights */}
+            <div className="glass-panel rounded-2xl p-5 border border-dark-border bg-dark-depth-2/10 flex flex-col justify-between">
+              <div>
+                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider mb-4 font-black">Financial Health & Insights</h3>
+                <div className="space-y-3 text-[11px] text-gray-400 font-medium">
+                  <div className="flex items-center justify-between border-b border-dark-border/40 pb-2">
+                    <span>Top Spending Category:</span>
+                    <span className="text-white font-extrabold">{topCategory}</span>
+                  </div>
+                  <div className="flex items-center justify-between border-b border-dark-border/40 pb-2">
+                    <span>Savings Rate Target:</span>
+                    <span className="text-white font-extrabold">{savingsRate.toFixed(1)}% / 50%</span>
+                  </div>
+                  <div className="flex items-center justify-between border-b border-dark-border/40 pb-2">
+                    <span>Avg. Weekly Burn Rate:</span>
+                    <span className="text-white font-extrabold">{fmt(avgDailySpend * 7)}</span>
+                  </div>
+                  <div className="flex items-center justify-between pb-1">
+                    <span>SMS Ingestion Stream:</span>
+                    <span className="text-emerald-400 font-extrabold flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      Active (Real-time)
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status banner */}
+              <div className="mt-4 p-2.5 rounded-xl bg-brand-500/10 border border-brand-500/20 text-[10px] text-brand-400 font-semibold flex items-center gap-2">
+                <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>
+                  {savingsRate >= 50 
+                    ? "Excellent saving habits! Your wealth goals are accumulating steadily."
+                    : "Try allocating more towards investments this week to hit your 50% savings goal."}
+                </span>
+              </div>
+            </div>
+          </div>
 
           {/* Transactions Table */}
           <div className="glass-panel rounded-3xl border border-dark-border overflow-hidden">
