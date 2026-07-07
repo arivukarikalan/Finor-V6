@@ -578,8 +578,10 @@ router.post('/sms-webhook', async (req, res) => {
     }
 
     const { sender, message, timestamp } = req.body;
-    if (!message) {
-      return res.status(400).json({ error: 'Missing raw message in request body.' });
+    
+    // Handle test connection requests
+    if (!message || message === 'TEST_CONNECTION' || req.body.test === true) {
+      return res.status(200).json({ success: true, message: 'Connection verified successfully.' });
     }
 
     // 1. Get userId dynamically
