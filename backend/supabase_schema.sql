@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS public.finance_transactions (
     category VARCHAR(50) NOT NULL,
     method VARCHAR(50) NOT NULL,
     description TEXT,
-    source VARCHAR(20) NOT NULL DEFAULT 'MANUAL' CHECK (source IN ('MANUAL', 'GMAIL')),
+    source VARCHAR(20) NOT NULL DEFAULT 'MANUAL' CHECK (source IN ('MANUAL', 'GMAIL', 'SMS')),
     external_ref_id VARCHAR(255) UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
