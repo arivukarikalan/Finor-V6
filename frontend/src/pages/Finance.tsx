@@ -64,6 +64,12 @@ export const Finance: React.FC = () => {
     silverPricePerGram: 0
   });
 
+  // Filter states
+  const [filterSearch, setFilterSearch] = useState('');
+  const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+  const [filterCategory, setFilterCategory] = useState('ALL');
+  const [filterMethod, setFilterMethod] = useState('ALL');
+
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -187,6 +193,16 @@ export const Finance: React.FC = () => {
     .filter(t => t.type === 'INCOME' && t.date.startsWith(thisMonth))
     .reduce((sum, t) => sum + t.amount, 0);
 
+  // Filtered transactions for the ledger table
+  const filteredTransactions = transactions.filter(tx => {
+    const matchesSearch = tx.description.toLowerCase().includes(filterSearch.toLowerCase()) || 
+                          tx.category.toLowerCase().includes(filterSearch.toLowerCase());
+    const matchesType = filterType === 'ALL' || tx.type === filterType;
+    const matchesCategory = filterCategory === 'ALL' || tx.category === filterCategory;
+    const matchesMethod = filterMethod === 'ALL' || tx.method === filterMethod;
+    return matchesSearch && matchesType && matchesCategory && matchesMethod;
+  });
+
   // Sync Gmail
   const handleGmailSync = async () => {
     setSyncing(true);
@@ -204,26 +220,52 @@ export const Finance: React.FC = () => {
   // Transaction Actions
   const handleSaveTx = async (e: React.FormEvent) => {
     e.preventDefault();
+    const tempId = txForm.id || `temp_${Date.now()}`;
+    const newTxObj: Transaction = {
+      id: tempId,
+      date: txForm.date ? new Date(txForm.date).toISOString() : new Date().toISOString(),
+      amount: parseFloat(txForm.amount),
+      type: txForm.type,
+      category: txForm.category,
+      method: txForm.method,
+      description: txForm.description,
+      source: 'MANUAL'
+    };
+
+    const rollback = [...transactions];
+
+    if (txForm.id) {
+      setTransactions(prev => prev.map(t => t.id === txForm.id ? newTxObj : t));
+    } else {
+      setTransactions(prev => [newTxObj, ...prev]);
+    }
+    setShowTxModal(false);
+    triggerToast('success', 'Transaction saved successfully.');
+
     try {
       await apiRequest('/finance/transaction', {
         method: 'POST',
         body: JSON.stringify(txForm)
       });
-      triggerToast('success', 'Transaction saved successfully.');
-      setShowTxModal(false);
       fetchDashboardData(true);
     } catch (err: any) {
+      setTransactions(rollback);
       triggerToast('error', err.message || 'Failed to save transaction.');
     }
   };
 
   const handleDeleteTx = async (id: string) => {
     if (!confirm('Are you sure you want to delete this transaction?')) return;
+    const rollback = [...transactions];
+
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    triggerToast('success', 'Transaction deleted.');
+
     try {
       await apiRequest(`/finance/transaction/${id}`, { method: 'DELETE' });
-      triggerToast('success', 'Transaction deleted.');
       fetchDashboardData(true);
     } catch (err: any) {
+      setTransactions(rollback);
       triggerToast('error', err.message || 'Failed to delete.');
     }
   };
@@ -231,15 +273,37 @@ export const Finance: React.FC = () => {
   // Debt Actions
   const handleSaveDebt = async (e: React.FormEvent) => {
     e.preventDefault();
+    const tempId = debtForm.id || `temp_${Date.now()}`;
+    const newAmt = parseFloat(debtForm.amount);
+    const newDebtObj: Debt = {
+      id: tempId,
+      person_name: debtForm.person_name,
+      type: debtForm.type,
+      amount: newAmt,
+      remaining_amount: newAmt,
+      date: debtForm.date ? new Date(debtForm.date).toISOString() : new Date().toISOString(),
+      notes: debtForm.notes,
+      status: 'ACTIVE'
+    };
+
+    const rollback = [...debts];
+
+    if (debtForm.id) {
+      setDebts(prev => prev.map(d => d.id === debtForm.id ? { ...d, ...newDebtObj } : d));
+    } else {
+      setDebts(prev => [newDebtObj, ...prev]);
+    }
+    setShowDebtModal(false);
+    triggerToast('success', 'Debt ledger entry saved.');
+
     try {
       await apiRequest('/finance/debt', {
         method: 'POST',
         body: JSON.stringify(debtForm)
       });
-      triggerToast('success', 'Debt ledger entry saved.');
-      setShowDebtModal(false);
       fetchDashboardData(true);
     } catch (err: any) {
+      setDebts(rollback);
       triggerToast('error', err.message || 'Failed to save debt.');
     }
   };
@@ -247,26 +311,65 @@ export const Finance: React.FC = () => {
   const handleRepay = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!showRepayModal) return;
+    const repayAmt = parseFloat(repayForm.amount);
+
+    const rollbackDebts = [...debts];
+    const rollbackTxs = [...transactions];
+
+    setDebts(prev => prev.map(d => {
+      if (d.id === showRepayModal.id) {
+        const newRemaining = Math.max(0, d.remaining_amount - repayAmt);
+        return {
+          ...d,
+          remaining_amount: newRemaining,
+          status: newRemaining === 0 ? 'SETTLED' as const : 'ACTIVE' as const
+        };
+      }
+      return d;
+    }));
+
+    const isLent = showRepayModal.type === 'LENT';
+    const txType = isLent ? 'INCOME' as const : 'EXPENSE' as const;
+    const newTxObj: Transaction = {
+      id: `temp_repay_${Date.now()}`,
+      date: repayForm.date ? new Date(repayForm.date).toISOString() : new Date().toISOString(),
+      amount: repayAmt,
+      type: txType,
+      category: 'Debt Repayment',
+      method: repayForm.method,
+      description: repayForm.description || (isLent ? `Repayment from ${showRepayModal.person_name}` : `Repaid to ${showRepayModal.person_name}`),
+      source: 'MANUAL'
+    };
+    setTransactions(prev => [newTxObj, ...prev]);
+
+    setShowRepayModal(null);
+    triggerToast('success', 'Repayment logged.');
+
     try {
       await apiRequest(`/finance/debt/${showRepayModal.id}/repay`, {
         method: 'POST',
         body: JSON.stringify(repayForm)
       });
-      triggerToast('success', 'Repayment logged.');
-      setShowRepayModal(null);
       fetchDashboardData(true);
     } catch (err: any) {
+      setDebts(rollbackDebts);
+      setTransactions(rollbackTxs);
       triggerToast('error', err.message || 'Failed to record repayment.');
     }
   };
 
   const handleDeleteDebt = async (id: string) => {
     if (!confirm('Delete this debt record?')) return;
+    const rollback = [...debts];
+
+    setDebts(prev => prev.filter(d => d.id !== id));
+    triggerToast('success', 'Debt record deleted.');
+
     try {
       await apiRequest(`/finance/debt/${id}`, { method: 'DELETE' });
-      triggerToast('success', 'Debt record deleted.');
       fetchDashboardData(true);
     } catch (err: any) {
+      setDebts(rollback);
       triggerToast('error', err.message || 'Failed to delete.');
     }
   };
@@ -274,15 +377,34 @@ export const Finance: React.FC = () => {
   // Goal Actions
   const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();
+    const rollback = [...goals];
+
+    const existingGoal = goals.find(g => g.asset_class === goalForm.asset_class);
+    const newGoalObj: Goal = {
+      id: existingGoal ? existingGoal.id : `temp_goal_${Date.now()}`,
+      asset_class: goalForm.asset_class as any,
+      current_value: parseFloat(goalForm.current_value) || 0,
+      target_value: parseFloat(goalForm.target_value) || 0,
+      gold_grams: parseFloat(goalForm.gold_grams) || 0,
+      silver_grams: parseFloat(goalForm.silver_grams) || 0
+    };
+
+    if (existingGoal) {
+      setGoals(prev => prev.map(g => g.asset_class === goalForm.asset_class ? newGoalObj : g));
+    } else {
+      setGoals(prev => [...prev, newGoalObj]);
+    }
+    setShowGoalModal(null);
+    triggerToast('success', 'Wealth goal updated.');
+
     try {
       await apiRequest('/finance/goals', {
         method: 'POST',
         body: JSON.stringify(goalForm)
       });
-      triggerToast('success', 'Wealth goal updated.');
-      setShowGoalModal(null);
       fetchDashboardData(true);
     } catch (err: any) {
+      setGoals(rollback);
       triggerToast('error', err.message || 'Failed to update goal.');
     }
   };
@@ -581,8 +703,55 @@ export const Finance: React.FC = () => {
 
           {/* Transactions Table */}
           <div className="glass-panel rounded-3xl border border-dark-border overflow-hidden">
-            <div className="p-5 border-b border-dark-border/60">
+            <div className="p-5 border-b border-dark-border/60 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Transaction Ledger</h3>
+              
+              {/* Filter controls row */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Search */}
+                <input
+                  type="text"
+                  placeholder="Search description..."
+                  value={filterSearch}
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 w-full sm:w-44 transition-all"
+                />
+
+                {/* Type Filter */}
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value as any)}
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer"
+                >
+                  <option value="ALL">All Types</option>
+                  <option value="EXPENSE">Expenses</option>
+                  <option value="INCOME">Income</option>
+                </select>
+
+                {/* Category Filter */}
+                <select
+                  value={filterCategory}
+                  onChange={(e) => setFilterCategory(e.target.value)}
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer"
+                >
+                  <option value="ALL">All Categories</option>
+                  {CATEGORIES.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+
+                {/* Method Filter */}
+                <select
+                  value={filterMethod}
+                  onChange={(e) => setFilterMethod(e.target.value)}
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer"
+                >
+                  <option value="ALL">All Methods</option>
+                  {METHODS.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             
             <div className="overflow-x-auto">
@@ -600,11 +769,16 @@ export const Finance: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-border/40 text-xs">
-                  {transactions.length > 0 ? (
-                    transactions.map((tx) => (
+                  {filteredTransactions.length > 0 ? (
+                    filteredTransactions.map((tx) => (
                       <tr key={tx.id} className="hover:bg-dark-depth-2/20">
                         <td className="p-4 font-medium text-gray-300">
-                          {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          <div>
+                            {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            <span className="text-[9px] text-gray-500 block mt-0.5">
+                              {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                            </span>
+                          </div>
                         </td>
                         <td className={`p-4 font-black ${tx.type === 'INCOME' ? 'text-emerald-400' : 'text-white'}`}>
                           {tx.type === 'INCOME' ? '+' : '-'} {fmt(tx.amount)}
@@ -666,7 +840,7 @@ export const Finance: React.FC = () => {
                   ) : (
                     <tr>
                       <td colSpan={8} className="p-8 text-center text-gray-500">
-                        No transactions recorded. Click "Sync Gmail" or "Add Cash Record" to begin.
+                        No matching transactions found. Click "Sync Gmail" or "Add Cash Record" to begin.
                       </td>
                     </tr>
                   )}
