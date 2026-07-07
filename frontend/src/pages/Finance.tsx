@@ -707,21 +707,21 @@ export const Finance: React.FC = () => {
               <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Transaction Ledger</h3>
               
               {/* Filter controls row */}
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto">
                 {/* Search */}
                 <input
                   type="text"
                   placeholder="Search description..."
                   value={filterSearch}
                   onChange={(e) => setFilterSearch(e.target.value)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 w-full sm:w-44 transition-all"
+                  className="col-span-2 bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 w-full sm:w-44 transition-all"
                 />
 
                 {/* Type Filter */}
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value as any)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer"
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer w-full sm:w-auto"
                 >
                   <option value="ALL">All Types</option>
                   <option value="EXPENSE">Expenses</option>
@@ -732,7 +732,7 @@ export const Finance: React.FC = () => {
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer"
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer w-full sm:w-auto"
                 >
                   <option value="ALL">All Categories</option>
                   {CATEGORIES.map(c => (
@@ -744,7 +744,7 @@ export const Finance: React.FC = () => {
                 <select
                   value={filterMethod}
                   onChange={(e) => setFilterMethod(e.target.value)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer"
+                  className="col-span-2 sm:col-span-1 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer w-full sm:w-auto"
                 >
                   <option value="ALL">All Methods</option>
                   {METHODS.map(m => (
@@ -754,7 +754,8 @@ export const Finance: React.FC = () => {
               </div>
             </div>
             
-            <div className="overflow-x-auto">
+            {/* Desktop View Table */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-dark-border bg-dark-depth-2/30">
@@ -846,6 +847,85 @@ export const Finance: React.FC = () => {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Mobile View List */}
+            <div className="md:hidden divide-y divide-dark-border/40 text-xs">
+              {filteredTransactions.length > 0 ? (
+                filteredTransactions.map((tx) => (
+                  <div key={tx.id} className="p-4 space-y-3 hover:bg-dark-depth-2/20 transition-all">
+                    {/* Header: Date/Time + Actions */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[10px] text-gray-500 font-medium">
+                        {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        <span className="inline-block mx-1.5 text-gray-700">•</span>
+                        {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => {
+                            setTxForm({
+                              id: tx.id,
+                              date: tx.date.split('T')[0],
+                              amount: tx.amount.toString(),
+                              type: tx.type,
+                              category: tx.category,
+                              method: tx.method,
+                              description: tx.description
+                            });
+                            setShowTxModal(true);
+                          }}
+                          className="p-1.5 rounded-lg bg-dark-depth-2 border border-dark-border/60 text-gray-400 hover:text-white transition-all cursor-pointer"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTx(tx.id)}
+                          className="p-1.5 rounded-lg bg-dark-depth-2 border border-dark-border/60 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Middle: Amount + Description */}
+                    <div className="flex items-start justify-between gap-3 pt-0.5">
+                      <div className="font-semibold text-gray-200 line-clamp-2 max-w-[70%]">
+                        {tx.description || 'No description'}
+                      </div>
+                      <div className={`font-black text-sm shrink-0 ${tx.type === 'INCOME' ? 'text-emerald-400' : 'text-white'}`}>
+                        {tx.type === 'INCOME' ? '+' : '-'} {fmt(tx.amount)}
+                      </div>
+                    </div>
+
+                    {/* Footer Badges */}
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold ${
+                        tx.type === 'INCOME' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                      }`}>
+                        {tx.type}
+                      </span>
+                      <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-semibold text-[9px] text-gray-300">
+                        {tx.category}
+                      </span>
+                      <span className="bg-dark-depth-2/40 px-2 py-0.5 rounded-lg border border-dark-border/20 text-[9px] text-gray-400">
+                        {tx.method}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded text-[8px] font-extrabold uppercase ${
+                        tx.source === 'GMAIL' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-700/20 text-gray-400'
+                      }`}>
+                        {tx.source}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="p-8 text-center text-gray-500">
+                  No matching transactions found. Click "Sync Gmail" or "Add Cash Record" to begin.
+                </div>
+              )}
             </div>
           </div>
         </div>
