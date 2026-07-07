@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Landmark, ArrowDownRight, RefreshCw, CheckCircle2, AlertCircle, Plus, Trash2, 
+  Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
   Edit2, UserMinus, UserPlus, Users, Sparkles, X
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
@@ -71,7 +71,6 @@ export const Finance: React.FC = () => {
   const [filterMethod, setFilterMethod] = useState('ALL');
 
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
   // Forms
@@ -203,19 +202,6 @@ export const Finance: React.FC = () => {
     return matchesSearch && matchesType && matchesCategory && matchesMethod;
   });
 
-  // Sync Gmail
-  const handleGmailSync = async () => {
-    setSyncing(true);
-    try {
-      const res = await apiRequest('/finance/sync-gmail', { method: 'POST' });
-      triggerToast('success', res.message || 'Sync completed successfully.');
-      fetchDashboardData(true);
-    } catch (err: any) {
-      triggerToast('error', err.message || 'Gmail sync failed.');
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   // Transaction Actions
   const handleSaveTx = async (e: React.FormEvent) => {
@@ -660,25 +646,12 @@ export const Finance: React.FC = () => {
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-brand-400" />
               <div>
-                <h4 className="text-xs font-bold text-white">Gmail Pull Ingestion</h4>
-                <p className="text-[9px] text-gray-400 mt-0.5">Click to search and parse forwarded bank alert and GPay emails in FinorVTrades@gmail.com inbox.</p>
+                <h4 className="text-xs font-bold text-white">Automated SMS Sync Ingestion</h4>
+                <p className="text-[9px] text-gray-400 mt-0.5">Transactions are automatically parsed and logged in real-time from your phone's SMS app.</p>
               </div>
             </div>
 
             <div className="flex items-center gap-2.5">
-              <button
-                onClick={handleGmailSync}
-                disabled={syncing}
-                className={`px-4 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer flex items-center gap-2 ${
-                  syncing 
-                    ? 'bg-dark-depth-3 border-dark-border text-gray-500 cursor-not-allowed'
-                    : 'bg-brand-500/10 border-brand-500/25 text-brand-400 hover:bg-brand-500/20'
-                }`}
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                {syncing ? 'Syncing...' : 'Sync Gmail'}
-              </button>
-
               <button
                 onClick={() => {
                   setTxForm({
