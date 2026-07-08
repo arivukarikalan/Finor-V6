@@ -13,6 +13,7 @@ import gmailRouter from './routes/gmail.js';
 import snapshotsRouter from './routes/snapshots.js';
 import exportRouter from './routes/export.js';
 import financeRouter from './routes/finance.js';
+import authRouter from './routes/auth.js';
 
 dotenv.config();
 
@@ -41,6 +42,7 @@ app.use('/api/gmail', gmailRouter);
 app.use('/api/snapshots', snapshotsRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/finance', financeRouter);
+app.use('/api/auth', authRouter);
 
 // API Health Check route
 app.get('/api/health', (req, res) => {

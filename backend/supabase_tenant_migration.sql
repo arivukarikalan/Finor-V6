@@ -8,6 +8,13 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT NOT NULL,
     role VARCHAR(20) DEFAULT 'USER' NOT NULL CHECK (role IN ('USER', 'SUPER_ADMIN')),
+    username TEXT,
+    country TEXT,
+    gender TEXT,
+    security_question TEXT,
+    security_answer TEXT,
+    temp_reset_key TEXT,
+    temp_reset_expiry TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 

@@ -23,7 +23,7 @@ import { useAuthStore } from '../context/authStore';
 import { supabase } from '../services/supabase';
 import { apiRequest } from '../services/api';
 
-export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'finance' | 'more' | 'admin';
+export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'finance' | 'more' | 'admin' | 'profile';
 
 interface NavigationProps {
   activeTab: TabId;
@@ -36,7 +36,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   setActiveTab, 
   children 
 }) => {
-  const { user, signOut, role } = useAuthStore();
+  const { user, signOut, role, profile } = useAuthStore();
   const [isOnline, setIsOnline] = React.useState(navigator.onLine);
   const [lastTradeDate, setLastTradeDate] = React.useState<string | null>(null);
   const [isSyncing, setIsSyncing] = React.useState(false);
@@ -243,19 +243,26 @@ export const Navigation: React.FC<NavigationProps> = ({
 
         {/* User profile card */}
         <div className="px-4 py-4 border-b border-dark-border">
-          <div className="flex items-center gap-3 p-2 rounded-xl bg-dark-depth-2/40 border border-dark-border/40">
-            <div className="w-8 h-8 rounded-full bg-brand-600/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
+          <button 
+            onClick={() => setActiveTab('profile')}
+            className={`w-full flex items-center gap-3 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+              activeTab === 'profile' 
+                ? 'bg-brand-500/10 border-brand-500/30' 
+                : 'bg-dark-depth-2/40 border-dark-border/40 hover:bg-dark-depth-3/60'
+            }`}
+          >
+            <div className="w-8 h-8 rounded-full bg-brand-600/10 border border-brand-500/20 flex items-center justify-center text-brand-400 shrink-0">
               <User className="w-4 h-4" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-semibold text-white truncate">
-                {user?.email?.split('@')[0]}
+                {profile?.username || user?.email?.split('@')[0]}
               </p>
-              <p className="text-[10px] text-gray-400 truncate">
-                Owner Account
+              <p className="text-[10px] text-gray-400 truncate uppercase tracking-wider font-extrabold">
+                {profile?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Client Profile'}
               </p>
             </div>
-          </div>
+          </button>
         </div>
 
         {/* Sidebar Nav Links */}

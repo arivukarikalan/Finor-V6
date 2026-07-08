@@ -1260,10 +1260,20 @@ export const More = ({
         {/* 2. Settings subtab */}
         {activeSubTab === 'settings' && (
           <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-6 max-w-xl mx-auto">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider border-b border-dark-border/40 pb-3 flex items-center gap-1.5">
-              <Settings className="w-4.5 h-4.5 text-brand-400" />
-              App Parameters
-            </h3>
+            <div className="flex justify-between items-center border-b border-dark-border/40 pb-3">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Settings className="w-4.5 h-4.5 text-brand-400" />
+                App Parameters
+              </h3>
+              {setActiveTab && (
+                <button
+                  onClick={() => setActiveTab('profile')}
+                  className="px-3 py-1.5 rounded-lg bg-brand-500/10 border border-brand-500/20 text-[10px] text-brand-400 font-extrabold uppercase hover:bg-brand-500/20 hover:text-white transition-all cursor-pointer"
+                >
+                  Edit Profile & Credentials
+                </button>
+              )}
+            </div>
 
             {loadingSettings ? (
               <div className="flex items-center justify-center py-10 gap-2 text-xs text-gray-500">

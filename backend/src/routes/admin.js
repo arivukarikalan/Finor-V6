@@ -1,6 +1,7 @@
 import express from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
+import { sendResetKeyEmail } from '../services/emailService.js';
 
 const router = express.Router();
 
@@ -237,6 +238,74 @@ router.patch('/tickets/:id/resolve', requireAuth, requireSuperAdmin, async (req,
     });
   } catch (err) {
     console.error('[AdminRoute] Resolve support ticket failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/admin/tickets/:id/generate-reset-key
+ * Generates an 8-character reset key valid for 2 hours, sends it to the user via Gmail SMTP,
+ * and updates the support ticket status to REVIEWING.
+ */
+router.post('/tickets/:id/generate-reset-key', requireAuth, requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // 1. Fetch support ticket with user profile email
+    const { data: ticket, error: ticketError } = await supabaseAdmin
+      .from('support_tickets')
+      .select('*, profiles:user_id(email)')
+      .eq('id', id)
+      .single();
+
+    if (ticketError || !ticket) {
+      return res.status(404).json({ error: 'Support ticket not found.' });
+    }
+
+    const userEmail = ticket.profiles?.email;
+    if (!userEmail) {
+      return res.status(400).json({ error: 'User email not found for this ticket.' });
+    }
+
+    // 2. Generate random reset key: RST-XXXXXX
+    const randomSuffix = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digits
+    const resetKey = `RST-${randomSuffix}`;
+    const expiry = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(); // 2 hours from now
+
+    // 3. Save reset key on the user's profile
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        temp_reset_key: resetKey,
+        temp_reset_expiry: expiry
+      })
+      .eq('id', ticket.user_id);
+
+    if (profileError) throw profileError;
+
+    // 4. Update support ticket status and record the action
+    const { data: updatedTicket, error: updateError } = await supabaseAdmin
+      .from('support_tickets')
+      .update({
+        status: 'REVIEWING',
+        admin_response: `Support key generated: ${resetKey} (Sent to user email. Valid for 2 hours)`
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+
+    // 5. Dispatch the key via Gmail SMTP
+    await sendResetKeyEmail(userEmail, resetKey);
+
+    res.json({
+      status: 'SUCCESS',
+      message: 'Reset key generated and sent to user email successfully.',
+      ticket: updatedTicket
+    });
+  } catch (err) {
+    console.error('[AdminRoute] Generate reset key failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
