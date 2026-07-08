@@ -600,10 +600,10 @@ export const Finance: React.FC = () => {
       </div>
 
       {/* Subtab Bar */}
-      <div className="flex border-b border-dark-border/60">
+      <div className="flex border-b border-dark-border/60 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full">
         <button
           onClick={() => setSubTab('wealth')}
-          className={`px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all ${
+          className={`px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
             subTab === 'wealth' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
           }`}
         >
@@ -611,7 +611,7 @@ export const Finance: React.FC = () => {
         </button>
         <button
           onClick={() => setSubTab('expenses')}
-          className={`px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all ${
+          className={`px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
             subTab === 'expenses' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
           }`}
         >
@@ -619,7 +619,7 @@ export const Finance: React.FC = () => {
         </button>
         <button
           onClick={() => setSubTab('debts')}
-          className={`px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all ${
+          className={`px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
             subTab === 'debts' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
           }`}
         >

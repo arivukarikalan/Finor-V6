@@ -1139,10 +1139,10 @@ export const Orders = () => {
             
             {/* List Header Selector Tabs */}
             <div className="flex border-b border-dark-border/40 bg-dark-depth-1/30 px-6 py-2 items-center justify-between flex-wrap gap-4">
-              <div className="flex gap-4">
+              <div className="flex gap-4 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full pb-1">
                 <button
                   onClick={() => setListTab('active')}
-                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer ${
+                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer shrink-0 ${
                     listTab === 'active' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
                   }`}
                 >
@@ -1151,7 +1151,7 @@ export const Orders = () => {
                 </button>
                 <button
                   onClick={() => setListTab('completed')}
-                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer ${
+                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer shrink-0 ${
                     listTab === 'completed' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
                   }`}
                 >
@@ -1160,7 +1160,7 @@ export const Orders = () => {
                 </button>
                 <button
                   onClick={() => setListTab('gtt')}
-                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer ${
+                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer shrink-0 ${
                     listTab === 'gtt' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
                   }`}
                 >
@@ -1169,7 +1169,7 @@ export const Orders = () => {
                 </button>
                 <button
                   onClick={() => setListTab('trades')}
-                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer ${
+                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer shrink-0 ${
                     listTab === 'trades' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
                   }`}
                 >
@@ -1418,9 +1418,9 @@ export const Orders = () => {
                   {listTab === 'trades' && (
                     <>
                       {getProcessedTrades().slice(0, displayLimit).map((t) => (
-                        <div key={`${t.id}_${t.isMerged ? 'merged' : 'split'}`} className="glass-panel rounded-2xl p-4 border border-dark-border flex items-center justify-between gap-4">
-                          <div>
-                            <div className="flex items-center gap-2">
+                        <div key={`${t.id}_${t.isMerged ? 'merged' : 'split'}`} className="glass-panel rounded-2xl p-4 border border-dark-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 transition-all">
+                          <div className="w-full">
+                            <div className="flex flex-wrap items-center gap-2">
                               <span className="font-extrabold text-sm text-white tracking-tight">{t.stock_symbol}</span>
                               <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
                                 t.trade_type === 'BUY' || t.trade_type === 'B'
@@ -1442,7 +1442,7 @@ export const Orders = () => {
                               Qty: <span className="text-white font-bold">{t.quantity}</span> shares <span className="text-gray-600">•</span> Price: <span className="text-white font-bold">₹{parseFloat(t.price).toFixed(2)}</span>
                             </p>
                           </div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-end sm:justify-start pt-2 sm:pt-0 border-t border-dark-border/40 sm:border-0 shrink-0">
                             <button
                               onClick={() => {
                                 const dateOnly = t.trade_date.split('T')[0];
