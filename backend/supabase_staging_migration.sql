@@ -118,7 +118,6 @@ BEGIN
                 WHERE id = rec.id;
                 processed_count := processed_count + 1;
             END IF;
-
         EXCEPTION WHEN OTHERS THEN
             UPDATE public.staging_transactions
             SET status = 'FAILED',
@@ -126,7 +125,7 @@ BEGIN
                 processed_at = NOW()
             WHERE id = rec.id;
             failed_count := failed_count + 1;
-        END LOOP;
+        END;
     END LOOP;
 
     RETURN jsonb_build_object(
@@ -226,7 +225,6 @@ BEGIN
                 WHERE id = rec.id;
                 processed_count := processed_count + 1;
             END IF;
-
         EXCEPTION WHEN OTHERS THEN
             UPDATE public.staging_trades
             SET status = 'FAILED',
@@ -234,7 +232,7 @@ BEGIN
                 processed_at = NOW()
             WHERE id = rec.id;
             failed_count := failed_count + 1;
-        END LOOP;
+        END;
     END LOOP;
 
     RETURN jsonb_build_object(
