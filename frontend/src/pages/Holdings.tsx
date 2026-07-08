@@ -83,9 +83,15 @@ export const Holdings = () => {
   const [savingSettings, setSavingSettings] = useState(false);
 
   // Search, Filter & Sort State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [performanceFilter, setPerformanceFilter] = useState<'all' | 'profit' | 'loss'>('all');
-  const [sortBy, setSortBy] = useState<'value' | 'return' | 'pl' | 'symbol'>('value');
+  const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem('finor_holdings_search_query') || '');
+  const [performanceFilter, setPerformanceFilter] = useState<'all' | 'profit' | 'loss'>(() => (sessionStorage.getItem('finor_holdings_performance_filter') as any) || 'all');
+  const [sortBy, setSortBy] = useState<'value' | 'return' | 'pl' | 'symbol'>(() => (sessionStorage.getItem('finor_holdings_sort_by') as any) || 'value');
+
+  useEffect(() => {
+    sessionStorage.setItem('finor_holdings_search_query', searchQuery);
+    sessionStorage.setItem('finor_holdings_performance_filter', performanceFilter);
+    sessionStorage.setItem('finor_holdings_sort_by', sortBy);
+  }, [searchQuery, performanceFilter, sortBy]);
   
   // CSV Import Modal State
   const [isImportOpen, setIsImportOpen] = useState(false);

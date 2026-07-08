@@ -3,6 +3,7 @@ import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
 import { recalculateHoldings } from './trades.js';
+import { priceCache } from '../services/priceCache.js';
 
 const router = express.Router();
 
@@ -140,15 +141,34 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
 
     const symbols = [...new Set(holdings.map(h => h.stock_symbol))];
 
-    // Fetch prices from Yahoo Finance
-    const ltpData = await fetchMultipleLTPs(symbols);
+    // 1. Fetch cached prices first
+    const cachedPrices = priceCache.getPrices(symbols);
+    
+    // 2. Identify missing tickers (cache miss)
+    const missingSymbols = symbols.filter(sym => !cachedPrices[sym.toUpperCase()]);
+    
+    let ltpData = { ...cachedPrices };
+
+    // 3. Fetch fresh prices for missing symbols from Yahoo Finance
+    if (missingSymbols.length > 0) {
+      console.log(`[PriceCache] Cache miss for symbols: ${missingSymbols.join(', ')}. Querying Yahoo Finance...`);
+      const freshLtpData = await fetchMultipleLTPs(missingSymbols);
+      
+      // Seed fresh prices to the local cache
+      priceCache.setPrices(freshLtpData);
+      
+      // Merge fresh data
+      Object.assign(ltpData, freshLtpData);
+    } else {
+      console.log(`[PriceCache] Cache hit for all symbols! No external requests made.`);
+    }
 
     const previousCloses = await getPreviousCloses();
     let cacheChanged = false;
 
     // Update prices in db
     const updatePromises = Object.entries(ltpData).map(async ([symbol, data]) => {
-      if (data.ltp !== null) {
+      if (data && data.ltp !== null && data.ltp !== undefined) {
         if (data.previousClose !== undefined && data.previousClose !== null) {
           previousCloses[symbol.toUpperCase()] = data.previousClose;
           cacheChanged = true;

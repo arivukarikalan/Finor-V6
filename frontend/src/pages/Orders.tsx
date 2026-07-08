@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiRequest } from '../services/api';
 import { 
   FileText, 
@@ -88,10 +88,17 @@ export const Orders = () => {
   const [editingTrade, setEditingTrade] = useState<any | null>(null);
 
   // Trade Ledger Filters State
-  const [tradeSearch, setTradeSearch] = useState('');
-  const [tradeActionFilter, setTradeActionFilter] = useState<'ALL' | 'BUY' | 'SELL'>('ALL');
-  const [tradeMergeMode, setTradeMergeMode] = useState<boolean>(true);
-  const [tradeLimitFilter, setTradeLimitFilter] = useState<'10' | '50' | '100' | 'ALL'>('10');
+  const [tradeSearch, setTradeSearch] = useState(() => sessionStorage.getItem('finor_trade_search') || '');
+  const [tradeActionFilter, setTradeActionFilter] = useState<'ALL' | 'BUY' | 'SELL'>(() => (sessionStorage.getItem('finor_trade_action_filter') as any) || 'ALL');
+  const [tradeMergeMode, setTradeMergeMode] = useState<boolean>(() => sessionStorage.getItem('finor_trade_merge_mode') !== 'false');
+  const [tradeLimitFilter, setTradeLimitFilter] = useState<'10' | '50' | '100' | 'ALL'>(() => (sessionStorage.getItem('finor_trade_limit_filter') as any) || '10');
+
+  useEffect(() => {
+    sessionStorage.setItem('finor_trade_search', tradeSearch);
+    sessionStorage.setItem('finor_trade_action_filter', tradeActionFilter);
+    sessionStorage.setItem('finor_trade_merge_mode', String(tradeMergeMode));
+    sessionStorage.setItem('finor_trade_limit_filter', tradeLimitFilter);
+  }, [tradeSearch, tradeActionFilter, tradeMergeMode, tradeLimitFilter]);
 
   // UI state
   const [listTab, setListTab] = useState<'active' | 'completed' | 'gtt' | 'trades'>('active');
@@ -99,6 +106,25 @@ export const Orders = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [submittingOrder, setSubmittingOrder] = useState(false);
+
+  // List Virtualization Windowing
+  const [displayLimit, setDisplayLimit] = useState(50);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  
+  const sentinelRef = useCallback((node: HTMLTableRowElement | HTMLDivElement | null) => {
+    if (loadingLists) return;
+    if (observerRef.current) observerRef.current.disconnect();
+    observerRef.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) {
+        setDisplayLimit(prev => prev + 50);
+      }
+    });
+    if (node) observerRef.current.observe(node);
+  }, [loadingLists]);
+
+  useEffect(() => {
+    setDisplayLimit(50);
+  }, [tradeSearch, tradeActionFilter, tradeMergeMode, tradeLimitFilter, listTab]);
 
   // Fetch session config and data lists
   const fetchConfig = async () => {
@@ -1389,52 +1415,61 @@ export const Orders = () => {
                   ))}
 
                   {/* Trade Ledger List */}
-                  {listTab === 'trades' && getProcessedTrades().map((t) => (
-                    <div key={`${t.id}_${t.isMerged ? 'merged' : 'split'}`} className="glass-panel rounded-2xl p-4 border border-dark-border flex items-center justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-sm text-white tracking-tight">{t.stock_symbol}</span>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
-                            t.trade_type === 'BUY' || t.trade_type === 'B'
-                              ? 'bg-emerald-500/10 border-emerald-500/10 text-emerald-500'
-                              : 'bg-rose-500/10 border-rose-500/10 text-rose-500'
-                          }`}>
-                            {t.trade_type}
-                          </span>
-                          <span className="text-[9px] text-gray-500 font-semibold uppercase">
-                            {new Date(t.trade_date).toLocaleDateString('en-IN')}
-                          </span>
-                          {t.isMerged && (
-                            <span className="text-[8px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
-                              Merged ({t.splitCount} trades)
-                            </span>
-                          )}
+                  {listTab === 'trades' && (
+                    <>
+                      {getProcessedTrades().slice(0, displayLimit).map((t) => (
+                        <div key={`${t.id}_${t.isMerged ? 'merged' : 'split'}`} className="glass-panel rounded-2xl p-4 border border-dark-border flex items-center justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-sm text-white tracking-tight">{t.stock_symbol}</span>
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                t.trade_type === 'BUY' || t.trade_type === 'B'
+                                  ? 'bg-emerald-500/10 border-emerald-500/10 text-emerald-500'
+                                  : 'bg-rose-500/10 border-rose-500/10 text-rose-500'
+                              }`}>
+                                {t.trade_type}
+                              </span>
+                              <span className="text-[9px] text-gray-500 font-semibold uppercase">
+                                {new Date(t.trade_date).toLocaleDateString('en-IN')}
+                              </span>
+                              {t.isMerged && (
+                                <span className="text-[8px] text-amber-400 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+                                  Merged ({t.splitCount} trades)
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-2 font-medium">
+                              Qty: <span className="text-white font-bold">{t.quantity}</span> shares <span className="text-gray-600">•</span> Price: <span className="text-white font-bold">₹{parseFloat(t.price).toFixed(2)}</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                const dateOnly = t.trade_date.split('T')[0];
+                                setEditingTrade({ ...t, trade_date: dateOnly });
+                              }}
+                              className="flex items-center gap-1 text-[10px] font-bold text-brand-400 hover:text-brand-300 bg-brand-500/10 border border-brand-500/20 hover:bg-brand-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTrade(t.originalIds)}
+                              className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete
+                            </button>
+                          </div>
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-2 font-medium">
-                          Qty: <span className="text-white font-bold">{t.quantity}</span> shares <span className="text-gray-600">•</span> Price: <span className="text-white font-bold">₹{parseFloat(t.price).toFixed(2)}</span>
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            const dateOnly = t.trade_date.split('T')[0];
-                            setEditingTrade({ ...t, trade_date: dateOnly });
-                          }}
-                          className="flex items-center gap-1 text-[10px] font-bold text-brand-400 hover:text-brand-300 bg-brand-500/10 border border-brand-500/20 hover:bg-brand-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteTrade(t.originalIds)}
-                          className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-400 bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                      ))}
+                      {getProcessedTrades().length > displayLimit && (
+                        <div ref={sentinelRef} className="p-4 text-center text-gray-500 font-bold animate-pulse text-[10px] tracking-wider uppercase">
+                          Loading more trades...
+                        </div>
+                      )}
+                    </>
+                  )}
 
                 </div>
               )}

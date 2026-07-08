@@ -98,27 +98,18 @@ function App() {
   return (
     <>
       <Navigation activeTab={activeTab} setActiveTab={setActiveTab}>
-        <div className={activeTab === 'dashboard' ? 'block w-full' : 'hidden'}>
-          <Dashboard setActiveTab={setActiveTab} />
-        </div>
-        <div className={activeTab === 'holdings' ? 'block w-full' : 'hidden'}>
-          <Holdings />
-        </div>
-        <div className={activeTab === 'orders' ? 'block w-full' : 'hidden'}>
-          <Orders />
-        </div>
-        <div className={activeTab === 'pnl' ? 'block w-full' : 'hidden'}>
-          <PnL />
-        </div>
-        <div className={activeTab === 'finance' ? 'block w-full' : 'hidden'}>
-          <Finance />
-        </div>
-
-        <div className={activeTab === 'ai-chat' ? 'block h-full' : 'hidden'}>
-          <More key="ai-chat-view" defaultSubTab="ai-chat" setActiveTab={setActiveTab} />
-        </div>
-        <div className={activeTab === 'more' ? 'block w-full' : 'hidden'}>
-          <More key="more-view" defaultSubTab="news" setActiveTab={setActiveTab} />
+        <div className="w-full transition-opacity duration-200 animate-in fade-in">
+          {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
+          {activeTab === 'holdings' && <Holdings />}
+          {activeTab === 'orders' && <Orders />}
+          {activeTab === 'pnl' && <PnL />}
+          {activeTab === 'finance' && <Finance />}
+          {activeTab === 'ai-chat' && (
+            <More key="ai-chat-view" defaultSubTab="ai-chat" setActiveTab={setActiveTab} />
+          )}
+          {activeTab === 'more' && (
+            <More key="more-view" defaultSubTab="news" setActiveTab={setActiveTab} />
+          )}
         </div>
       </Navigation>
       <ToastContainer />

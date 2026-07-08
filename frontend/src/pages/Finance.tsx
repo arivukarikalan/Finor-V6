@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
   Edit2, UserMinus, UserPlus, Users, Sparkles, X
@@ -65,13 +65,39 @@ export const Finance: React.FC = () => {
   });
 
   // Filter states
-  const [filterSearch, setFilterSearch] = useState('');
-  const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
-  const [filterCategory, setFilterCategory] = useState('ALL');
-  const [filterMethod, setFilterMethod] = useState('ALL');
+  const [filterSearch, setFilterSearch] = useState(() => sessionStorage.getItem('finor_filter_search') || '');
+  const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>(() => (sessionStorage.getItem('finor_filter_type') as any) || 'ALL');
+  const [filterCategory, setFilterCategory] = useState(() => sessionStorage.getItem('finor_filter_category') || 'ALL');
+  const [filterMethod, setFilterMethod] = useState(() => sessionStorage.getItem('finor_filter_method') || 'ALL');
+
+  useEffect(() => {
+    sessionStorage.setItem('finor_filter_search', filterSearch);
+    sessionStorage.setItem('finor_filter_type', filterType);
+    sessionStorage.setItem('finor_filter_category', filterCategory);
+    sessionStorage.setItem('finor_filter_method', filterMethod);
+  }, [filterSearch, filterType, filterCategory, filterMethod]);
 
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+
+  // List Virtualization Windowing
+  const [displayLimit, setDisplayLimit] = useState(50);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  
+  const sentinelRef = useCallback((node: HTMLTableRowElement | HTMLDivElement | null) => {
+    if (loading) return;
+    if (observerRef.current) observerRef.current.disconnect();
+    observerRef.current = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) {
+        setDisplayLimit(prev => prev + 50);
+      }
+    });
+    if (node) observerRef.current.observe(node);
+  }, [loading]);
+
+  useEffect(() => {
+    setDisplayLimit(50);
+  }, [filterSearch, filterType, filterCategory, filterMethod]);
 
   // Selection & Bulk Actions
   const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
@@ -987,87 +1013,96 @@ export const Finance: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-dark-border/40 text-xs">
                   {filteredTransactions.length > 0 ? (
-                    filteredTransactions.map((tx) => (
-                      <tr key={tx.id} className={`hover:bg-dark-depth-2/20 ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
-                        <td className="p-4 w-10">
-                          <input 
-                            type="checkbox"
-                            checked={selectedTxIds.includes(tx.id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedTxIds(prev => [...prev, tx.id]);
-                              } else {
-                                setSelectedTxIds(prev => prev.filter(id => id !== tx.id));
-                              }
-                            }}
-                            className="rounded border-dark-border bg-dark-depth-2 focus:ring-brand-500/80 cursor-pointer accent-brand-500"
-                          />
-                        </td>
-                        <td className="p-4 font-medium text-gray-300">
-                          <div>
-                            {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                            <span className="text-[9px] text-gray-500 block mt-0.5">
-                              {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                            </span>
-                          </div>
-                        </td>
-                        <td className={`p-4 font-black ${tx.type === 'INCOME' ? 'text-emerald-400' : 'text-white'}`}>
-                          {tx.type === 'INCOME' ? '+' : '-'} {fmt(tx.amount)}
-                        </td>
-                        <td className="p-4">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold ${
-                            tx.type === 'INCOME' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                          }`}>
-                            {tx.type}
-                          </span>
-                        </td>
-                        <td className="p-4">
-                          <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-semibold text-[10px] text-gray-300">
-                            {tx.category}
-                          </span>
-                        </td>
-                        <td className="p-4 text-gray-400 font-semibold">{tx.method}</td>
-                        <td className="p-4">
-                          <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
-                            tx.source === 'GMAIL' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-700/20 text-gray-400'
-                          }`}>
-                            {tx.source}
-                          </span>
-                        </td>
-                        <td className="p-4 text-gray-400 truncate max-w-xs" title={tx.description}>
-                          {tx.description || '-'}
-                        </td>
-                        <td className="p-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => {
-                                setTxForm({
-                                  id: tx.id,
-                                  date: tx.date.split('T')[0],
-                                  amount: tx.amount.toString(),
-                                  type: tx.type,
-                                  category: tx.category,
-                                  method: tx.method,
-                                  description: tx.description
-                                });
-                                setShowTxModal(true);
+                    <>
+                      {filteredTransactions.slice(0, displayLimit).map((tx) => (
+                        <tr key={tx.id} className={`hover:bg-dark-depth-2/20 ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
+                          <td className="p-4 w-10">
+                            <input 
+                              type="checkbox"
+                              checked={selectedTxIds.includes(tx.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedTxIds(prev => [...prev, tx.id]);
+                                } else {
+                                  setSelectedTxIds(prev => prev.filter(id => id !== tx.id));
+                                }
                               }}
-                              className="p-1 rounded-lg hover:bg-dark-depth-2 text-gray-400 hover:text-white transition-all cursor-pointer"
-                              title="Edit"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => confirmDeleteTx(tx.id)}
-                              className="p-1 rounded-lg hover:bg-rose-500/10 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                              className="rounded border-dark-border bg-dark-depth-2 focus:ring-brand-500/80 cursor-pointer accent-brand-500"
+                            />
+                          </td>
+                          <td className="p-4 font-medium text-gray-300">
+                            <div>
+                              {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              <span className="text-[9px] text-gray-500 block mt-0.5">
+                                {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                              </span>
+                            </div>
+                          </td>
+                          <td className={`p-4 font-black ${tx.type === 'INCOME' ? 'text-emerald-400' : 'text-white'}`}>
+                            {tx.type === 'INCOME' ? '+' : '-'} {fmt(tx.amount)}
+                          </td>
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold ${
+                              tx.type === 'INCOME' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                            }`}>
+                              {tx.type}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-semibold text-[10px] text-gray-300">
+                              {tx.category}
+                            </span>
+                          </td>
+                          <td className="p-4 text-gray-400 font-semibold">{tx.method}</td>
+                          <td className="p-4">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-extrabold uppercase ${
+                              tx.source === 'GMAIL' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-700/20 text-gray-400'
+                            }`}>
+                              {tx.source}
+                            </span>
+                          </td>
+                          <td className="p-4 text-gray-400 truncate max-w-xs" title={tx.description}>
+                            {tx.description || '-'}
+                          </td>
+                          <td className="p-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => {
+                                  setTxForm({
+                                    id: tx.id,
+                                    date: tx.date.split('T')[0],
+                                    amount: tx.amount.toString(),
+                                    type: tx.type,
+                                    category: tx.category,
+                                    method: tx.method,
+                                    description: tx.description
+                                  });
+                                  setShowTxModal(true);
+                                }}
+                                className="p-1 rounded-lg hover:bg-dark-depth-2 text-gray-400 hover:text-white transition-all cursor-pointer"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => confirmDeleteTx(tx.id)}
+                                className="p-1 rounded-lg hover:bg-rose-500/10 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredTransactions.length > displayLimit && (
+                        <tr ref={sentinelRef}>
+                          <td colSpan={9} className="p-4 text-center text-gray-500 font-bold animate-pulse text-[10px] tracking-wider uppercase">
+                            Loading more transactions...
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   ) : (
                     <tr>
                       <td colSpan={9} className="p-8 text-center text-gray-500">
@@ -1082,92 +1117,99 @@ export const Finance: React.FC = () => {
             {/* Mobile View List */}
             <div className="md:hidden divide-y divide-dark-border/40 text-xs">
               {filteredTransactions.length > 0 ? (
-                filteredTransactions.map((tx) => (
-                  <div key={tx.id} className={`p-4 space-y-3 hover:bg-dark-depth-2/20 transition-all ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
-                    {/* Header: Date/Time + Actions */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 text-[10px] text-gray-500 font-medium">
-                        <input 
-                          type="checkbox"
-                          checked={selectedTxIds.includes(tx.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedTxIds(prev => [...prev, tx.id]);
-                            } else {
-                              setSelectedTxIds(prev => prev.filter(id => id !== tx.id));
-                            }
-                          }}
-                          className="rounded border-dark-border bg-dark-depth-2 focus:ring-brand-500/80 cursor-pointer accent-brand-500 w-3.5 h-3.5"
-                        />
-                        <span>
-                          {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          <span className="inline-block mx-1.5 text-gray-700">•</span>
-                          {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                <>
+                  {filteredTransactions.slice(0, displayLimit).map((tx) => (
+                    <div key={tx.id} className={`p-4 space-y-3 hover:bg-dark-depth-2/20 transition-all ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
+                      {/* Header: Date/Time + Actions */}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 text-[10px] text-gray-500 font-medium">
+                          <input 
+                            type="checkbox"
+                            checked={selectedTxIds.includes(tx.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedTxIds(prev => [...prev, tx.id]);
+                              } else {
+                                setSelectedTxIds(prev => prev.filter(id => id !== tx.id));
+                              }
+                            }}
+                            className="rounded border-dark-border bg-dark-depth-2 focus:ring-brand-500/80 cursor-pointer accent-brand-500 w-3.5 h-3.5"
+                          />
+                          <span>
+                            {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            <span className="inline-block mx-1.5 text-gray-700">•</span>
+                            {new Date(tx.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => {
+                              setTxForm({
+                                id: tx.id,
+                                date: tx.date.split('T')[0],
+                                amount: tx.amount.toString(),
+                                type: tx.type,
+                                category: tx.category,
+                                method: tx.method,
+                                description: tx.description
+                              });
+                              setShowTxModal(true);
+                            }}
+                            className="p-1.5 rounded-lg bg-dark-depth-2 border border-dark-border/60 text-gray-400 hover:text-white transition-all cursor-pointer"
+                            title="Edit"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => confirmDeleteTx(tx.id)}
+                            className="p-1.5 rounded-lg bg-dark-depth-2 border border-dark-border/60 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Middle: Amount + Description */}
+                      <div className="flex items-start justify-between gap-3 pt-0.5">
+                        <div className="font-semibold text-gray-200 line-clamp-2 max-w-[70%]">
+                          {tx.description || 'No description'}
+                        </div>
+                        <div className={`font-black text-sm shrink-0 ${tx.type === 'INCOME' ? 'text-emerald-400' : 'text-white'}`}>
+                          {tx.type === 'INCOME' ? '+' : '-'} {fmt(tx.amount)}
+                        </div>
+                      </div>
+
+                      {/* Footer Badges */}
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold ${
+                          tx.type === 'INCOME' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        }`}>
+                          {tx.type}
+                        </span>
+                        <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-semibold text-[9px] text-gray-300">
+                          {tx.category}
+                        </span>
+                        <span className="bg-dark-depth-2/40 px-2 py-0.5 rounded-lg border border-dark-border/20 text-[9px] text-gray-400">
+                          {tx.method}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[8px] font-extrabold uppercase ${
+                          tx.source === 'GMAIL' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-700/20 text-gray-400'
+                        }`}>
+                          {tx.source}
                         </span>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => {
-                            setTxForm({
-                              id: tx.id,
-                              date: tx.date.split('T')[0],
-                              amount: tx.amount.toString(),
-                              type: tx.type,
-                              category: tx.category,
-                              method: tx.method,
-                              description: tx.description
-                            });
-                            setShowTxModal(true);
-                          }}
-                          className="p-1.5 rounded-lg bg-dark-depth-2 border border-dark-border/60 text-gray-400 hover:text-white transition-all cursor-pointer"
-                          title="Edit"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={() => confirmDeleteTx(tx.id)}
-                          className="p-1.5 rounded-lg bg-dark-depth-2 border border-dark-border/60 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
-                          title="Delete"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
                     </div>
-
-                    {/* Middle: Amount + Description */}
-                    <div className="flex items-start justify-between gap-3 pt-0.5">
-                      <div className="font-semibold text-gray-200 line-clamp-2 max-w-[70%]">
-                        {tx.description || 'No description'}
-                      </div>
-                      <div className={`font-black text-sm shrink-0 ${tx.type === 'INCOME' ? 'text-emerald-400' : 'text-white'}`}>
-                        {tx.type === 'INCOME' ? '+' : '-'} {fmt(tx.amount)}
-                      </div>
+                  ))}
+                  {filteredTransactions.length > displayLimit && (
+                    <div ref={sentinelRef} className="p-4 text-center text-gray-500 font-bold animate-pulse text-[10px] tracking-wider uppercase">
+                      Loading more transactions...
                     </div>
-
-                    {/* Footer Badges */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold ${
-                        tx.type === 'INCOME' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                      }`}>
-                        {tx.type}
-                      </span>
-                      <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-semibold text-[9px] text-gray-300">
-                        {tx.category}
-                      </span>
-                      <span className="bg-dark-depth-2/40 px-2 py-0.5 rounded-lg border border-dark-border/20 text-[9px] text-gray-400">
-                        {tx.method}
-                      </span>
-                      <span className={`px-2 py-0.5 rounded text-[8px] font-extrabold uppercase ${
-                        tx.source === 'GMAIL' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-slate-700/20 text-gray-400'
-                      }`}>
-                        {tx.source}
-                      </span>
-                    </div>
-                  </div>
-                ))
+                  )}
+                </>
               ) : (
                 <div className="p-8 text-center text-gray-500">
-                  No matching transactions found. Click "Sync Gmail" or "Add Cash Record" to begin.
+                  No matching transactions found. Add a Cash Record or sync via SMS to begin.
                 </div>
               )}
             </div>
