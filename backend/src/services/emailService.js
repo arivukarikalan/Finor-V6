@@ -10,11 +10,15 @@ const gmailPassword = process.env.GMAIL_APP_PASSWORD;
 // Create SMTP transporter
 const getTransporter = () => {
   return nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // TLS
     auth: {
       user: gmailUser,
       pass: gmailPassword
-    }
+    },
+    // Force IPv4 only (Render does not support IPv6 routing)
+    family: 4
   });
 };
 
