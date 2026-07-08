@@ -112,4 +112,38 @@ router.post('/clear-cache', requireAuth, async (req, res) => {
   }
 });
 
+// ─── POST /api/admin/reconcile ────────────────────────────────────────────────
+router.post('/reconcile', async (req, res) => {
+  try {
+    const cronSecret = req.headers['x-cron-secret'];
+    const expectedSecret = process.env.CRON_SECRET_KEY;
+
+    if (!expectedSecret) {
+      console.warn('[AdminRoute] CRON_SECRET_KEY is not defined in server environment variables.');
+    }
+
+    if (!cronSecret || cronSecret !== expectedSecret) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or missing x-cron-secret header.' });
+    }
+
+    // Call PostgreSQL RPC reconcile functions
+    const { data: txResult, error: txError } = await supabase.rpc('reconcile_staging_transactions');
+    if (txError) throw txError;
+
+    const { data: tradeResult, error: tradeError } = await supabase.rpc('reconcile_staging_trades');
+    if (tradeError) throw tradeError;
+
+    res.json({
+      success: true,
+      message: 'Reconciliation executed successfully.',
+      transactions: txResult || { processed: 0, duplicates: 0, failed: 0 },
+      trades: tradeResult || { processed: 0, duplicates: 0, failed: 0 }
+    });
+
+  } catch (err) {
+    console.error('[AdminRoute] Staging reconciliation failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

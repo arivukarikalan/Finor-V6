@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { google } from 'googleapis';
@@ -527,6 +528,72 @@ router.post('/sms-webhook', async (req, res) => {
 
   } catch (err) {
     console.error('[SMSWebhookRoute] Ingestion failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/finance/import-staging ──────────────────────────────────────────
+router.post('/import-staging', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { transactions } = req.body;
+
+    if (!transactions || !Array.isArray(transactions)) {
+      return res.status(400).json({ error: 'Missing or invalid transaction data array.' });
+    }
+
+    if (transactions.length === 0) {
+      return res.json({ message: 'No transactions to import.', count: 0 });
+    }
+
+    // Map input objects to staging schema: user_id, raw_data, raw_data_hash
+    const stagingPayload = transactions.map(tx => {
+      // Calculate a unique composite hash for early deduplication check if not supplied
+      const txDate = tx.date || new Date().toISOString();
+      const txAmount = parseFloat(tx.amount || 0).toFixed(2);
+      const txType = (tx.type || 'EXPENSE').toUpperCase();
+      const txDesc = tx.description || '';
+      
+      const dateStr = new Date(txDate).toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).split('/').reverse().join('-'); // YYYY-MM-DD format
+      
+      const defaultHash = crypto
+        .createHash('md5')
+        .update(`${userId}_${dateStr}_${txType}_${txAmount}_${txDesc}`)
+        .digest('hex');
+
+      return {
+        user_id: userId,
+        raw_data: tx,
+        raw_data_hash: tx.raw_data_hash || defaultHash,
+        status: 'PENDING'
+      };
+    });
+
+    const { data, error } = await supabase
+      .from('staging_transactions')
+      .insert(stagingPayload)
+      .select('id');
+
+    if (error) {
+      // If error is unique constraint violation (duplicate payload raw_data_hash)
+      if (error.code === '23505') {
+        return res.status(409).json({ error: 'Duplicate records detected. Some or all payloads have already been staged.' });
+      }
+      throw error;
+    }
+
+    res.json({
+      message: `Successfully staged ${stagingPayload.length} transactions.`,
+      count: stagingPayload.length
+    });
+
+  } catch (err) {
+    console.error('[FinanceRoute] Import staging failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
