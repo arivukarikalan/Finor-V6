@@ -16,13 +16,14 @@ import {
   AlertCircle,
   X,
   Menu,
-  Landmark
+  Landmark,
+  ShieldAlert
 } from 'lucide-react';
 import { useAuthStore } from '../context/authStore';
 import { supabase } from '../services/supabase';
 import { apiRequest } from '../services/api';
 
-export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'finance' | 'more';
+export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'finance' | 'more' | 'admin';
 
 interface NavigationProps {
   activeTab: TabId;
@@ -35,7 +36,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   setActiveTab, 
   children 
 }) => {
-  const { user, signOut } = useAuthStore();
+  const { user, signOut, role } = useAuthStore();
   const [isOnline, setIsOnline] = React.useState(navigator.onLine);
   const [lastTradeDate, setLastTradeDate] = React.useState<string | null>(null);
   const [isSyncing, setIsSyncing] = React.useState(false);
@@ -195,6 +196,10 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'ai-chat' as TabId, label: 'AI Assistant', icon: Brain },
     { id: 'more' as TabId, label: 'More', icon: Grid },
   ];
+
+  if (role === 'SUPER_ADMIN') {
+    navigationItems.push({ id: 'admin' as TabId, label: 'Admin Portal', icon: ShieldAlert });
+  }
 
   return (
     <div className="h-[100dvh] md:h-auto md:min-h-screen bg-dark-depth-0 text-white flex flex-col md:flex-row overflow-hidden md:overflow-visible">

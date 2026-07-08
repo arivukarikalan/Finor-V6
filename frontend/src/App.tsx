@@ -9,6 +9,7 @@ import { PnL } from './pages/PnL';
 import { Orders } from './pages/Orders';
 import { More } from './pages/More';
 import { Finance } from './pages/Finance';
+import { AdminPortal } from './pages/AdminPortal';
 import { Loader2 } from 'lucide-react';
 import { ToastContainer } from './components/ToastContainer';
 import { useToastStore } from './context/toastStore';
@@ -110,6 +111,7 @@ function App() {
           {activeTab === 'more' && (
             <More key="more-view" defaultSubTab="news" setActiveTab={setActiveTab} />
           )}
+          {activeTab === 'admin' && <AdminPortal />}
         </div>
       </Navigation>
       <ToastContainer />

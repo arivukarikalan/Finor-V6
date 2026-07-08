@@ -1,8 +1,28 @@
 import express from 'express';
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = express.Router();
+
+// Middleware to verify if the authenticated user has the SUPER_ADMIN role
+async function requireSuperAdmin(req, res, next) {
+  try {
+    const { data: profile, error } = await supabaseAdmin
+      .from('profiles')
+      .select('role')
+      .eq('id', req.user.id)
+      .single();
+
+    if (error || !profile || profile.role !== 'SUPER_ADMIN') {
+      return res.status(403).json({ error: 'Forbidden: Super Admin access required.' });
+    }
+
+    next();
+  } catch (err) {
+    console.error('[AdminMiddleware] Role validation failed:', err.message);
+    return res.status(500).json({ error: 'Internal role validation error.' });
+  }
+}
 
 /**
  * GET /api/admin/settings
@@ -142,6 +162,81 @@ router.post('/reconcile', async (req, res) => {
 
   } catch (err) {
     console.error('[AdminRoute] Staging reconciliation failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/admin/tickets
+ * Returns a list of all support tickets with user email profiles (SUPER_ADMIN only)
+ */
+router.get('/tickets', requireAuth, requireSuperAdmin, async (req, res) => {
+  try {
+    const { data: tickets, error } = await supabaseAdmin
+      .from('support_tickets')
+      .select('*, profiles:user_id(email)')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    res.json(tickets);
+  } catch (err) {
+    console.error('[AdminRoute] Fetch support tickets failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/admin/users-count
+ * Returns the total users metric (SUPER_ADMIN only)
+ */
+router.get('/users-count', requireAuth, requireSuperAdmin, async (req, res) => {
+  try {
+    const { count, error } = await supabaseAdmin
+      .from('profiles')
+      .select('*', { count: 'exact', head: true });
+
+    if (error) throw error;
+
+    res.json({ totalUsers: count || 0 });
+  } catch (err) {
+    console.error('[AdminRoute] Fetch users count failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/admin/tickets/:id/resolve
+ * Responds to and resolves a ticket (SUPER_ADMIN only)
+ */
+router.patch('/tickets/:id/resolve', requireAuth, requireSuperAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { admin_response } = req.body;
+
+    if (!admin_response) {
+      return res.status(400).json({ error: 'Admin response is required.' });
+    }
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('support_tickets')
+      .update({
+        admin_response,
+        status: 'RESOLVED'
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      status: 'SUCCESS',
+      message: 'Support ticket resolved successfully.',
+      ticket: updated
+    });
+  } catch (err) {
+    console.error('[AdminRoute] Resolve support ticket failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
