@@ -69,8 +69,10 @@ router.post('/signup', async (req, res) => {
 
     if (profileError) throw profileError;
 
-    // Send Welcome Email containing the password
-    await sendWelcomeEmail(email, username, randomPassword);
+    // Send Welcome Email containing the password (non-blocking)
+    sendWelcomeEmail(email, username, randomPassword).catch(err => {
+      console.error('[AuthRoute] Welcome email dispatch failed:', err.message);
+    });
 
     res.json({
       success: true,

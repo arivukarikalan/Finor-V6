@@ -296,8 +296,10 @@ router.post('/tickets/:id/generate-reset-key', requireAuth, requireSuperAdmin, a
 
     if (updateError) throw updateError;
 
-    // 5. Dispatch the key via Gmail SMTP
-    await sendResetKeyEmail(userEmail, resetKey);
+    // 5. Dispatch the key via Gmail SMTP (non-blocking)
+    sendResetKeyEmail(userEmail, resetKey).catch(err => {
+      console.error('[AdminRoute] Reset key email dispatch failed:', err.message);
+    });
 
     res.json({
       status: 'SUCCESS',
