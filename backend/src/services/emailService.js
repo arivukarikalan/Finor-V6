@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Default values, user can customize this via environment variables or settings
-const gmailUser = process.env.GMAIL_USER || 'arivukarikalan7@gmail.com';
+const gmailUser = process.env.GMAIL_USER || 'finorvtrades@gmail.com';
 const gmailPassword = process.env.GMAIL_APP_PASSWORD;
 
 // Create SMTP transporter
