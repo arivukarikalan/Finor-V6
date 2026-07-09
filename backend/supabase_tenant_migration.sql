@@ -57,7 +57,7 @@ CREATE TRIGGER on_auth_user_created
 -- 3. Support Tickets Table
 CREATE TABLE IF NOT EXISTS public.support_tickets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
     subject TEXT NOT NULL,
     description TEXT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'REVIEWING', 'RESOLVED')),
