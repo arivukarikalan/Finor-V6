@@ -24,13 +24,19 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "profiles_owner_policy" ON public.profiles
     FOR ALL USING (auth.uid() = id);
 
-CREATE POLICY "profiles_admin_policy" ON public.profiles
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM public.profiles p
-            WHERE p.id = auth.uid() AND p.role = 'SUPER_ADMIN'
-        )
+-- Create security definer function to avoid recursive RLS policy checks
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS boolean AS $$
+BEGIN
+    RETURN EXISTS (
+        SELECT 1 FROM public.profiles
+        WHERE id = auth.uid() AND role = 'SUPER_ADMIN'
     );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE POLICY "profiles_admin_policy" ON public.profiles
+    FOR SELECT USING (public.is_admin());
 
 -- 2. Trigger on User Signup to auto-populate profiles
 CREATE OR REPLACE FUNCTION public.handle_new_user()
