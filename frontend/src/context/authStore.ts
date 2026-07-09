@@ -41,6 +41,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         .maybeSingle();
 
       if (!error && profileData) {
+        // Self-heal: If this is the master email, force SUPER_ADMIN role in database if not set
+        if (user.email === 'arivukarikalan7@gmail.com' && profileData.role !== 'SUPER_ADMIN') {
+          console.log('[authStore] Elevating master user to SUPER_ADMIN role in database...');
+          const { data: updatedProfile, error: updateError } = await supabase
+            .from('profiles')
+            .update({ role: 'SUPER_ADMIN' })
+            .eq('id', user.id)
+            .select()
+            .maybeSingle();
+
+          if (!updateError && updatedProfile) {
+            set({
+              profile: updatedProfile,
+              role: 'SUPER_ADMIN'
+            });
+            return;
+          }
+        }
+
         set({
           profile: profileData,
           role: profileData.role || 'USER'
