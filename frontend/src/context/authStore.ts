@@ -45,6 +45,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           profile: profileData,
           role: profileData.role || 'USER'
         });
+      } else if (!profileData) {
+        // Automatically create a profile row if missing (e.g. registered before trigger existed)
+        const userEmail = user.email || '';
+        const defaultRole = userEmail === 'arivukarikalan7@gmail.com' ? 'SUPER_ADMIN' : 'USER';
+        console.log(`[authStore] Profile missing for ${userEmail}. Creating default profile with role ${defaultRole}...`);
+        
+        const { data: newProfile, error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            id: user.id,
+            email: userEmail,
+            role: defaultRole,
+            username: user.user_metadata?.username || userEmail.split('@')[0] || 'User',
+            gender: 'Male',
+            country: 'India'
+          })
+          .select()
+          .maybeSingle();
+
+        if (!insertError && newProfile) {
+          set({
+            profile: newProfile,
+            role: newProfile.role || 'USER'
+          });
+        } else if (insertError) {
+          console.error('[authStore] Failed to insert missing profile:', insertError.message);
+        }
       }
     } catch (e) {
       console.error('Error fetching profile:', e);

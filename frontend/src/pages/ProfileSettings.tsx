@@ -19,6 +19,10 @@ export const ProfileSettings = () => {
   const [updatingPassword, setUpdatingPassword] = useState(false);
 
   useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
+
+  useEffect(() => {
     if (profile) {
       setUsername(profile.username || '');
       setCountry(profile.country || '');
