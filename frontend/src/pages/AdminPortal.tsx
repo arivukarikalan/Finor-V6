@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '../services/api';
-import { Loader2, Users, Landmark, AlertCircle, MessageSquare, Check, RefreshCw } from 'lucide-react';
+import { Loader2, Users, Landmark, AlertCircle, MessageSquare, Check, RefreshCw, Lock } from 'lucide-react';
 
 interface SupportTicket {
   id: string;
@@ -20,6 +20,7 @@ export const AdminPortal = () => {
   const [totalUsers, setTotalUsers] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [generatingKey, setGeneratingKey] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -74,6 +75,26 @@ export const AdminPortal = () => {
       setError(err.message || 'Failed to submit response.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleGenerateKey = async () => {
+    if (!selectedTicket) return;
+    setGeneratingKey(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res: any = await apiRequest(`/admin/tickets/${selectedTicket.id}/generate-reset-key`, {
+        method: 'POST'
+      });
+      setSuccess(res.message || 'Reset key generated and emailed successfully!');
+      setSelectedTicket(null);
+      await fetchData();
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Failed to generate reset key.');
+    } finally {
+      setGeneratingKey(false);
     }
   };
 
@@ -258,23 +279,44 @@ export const AdminPortal = () => {
                 </div>
 
                 {selectedTicket.status !== 'RESOLVED' ? (
-                  <button
-                    type="submit"
-                    disabled={submitting || !adminResponseText.trim()}
-                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-brand-700 text-white font-bold text-xs uppercase tracking-wider hover:from-brand-500 hover:to-brand-600 focus:outline-none active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Submitting...
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        Acknowledge & Resolve
-                      </>
-                    )}
-                  </button>
+                  <div className="space-y-3">
+                    <button
+                      type="submit"
+                      disabled={submitting || generatingKey || !adminResponseText.trim()}
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-brand-700 text-white font-bold text-xs uppercase tracking-wider hover:from-brand-500 hover:to-brand-600 focus:outline-none active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          Acknowledge & Resolve
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleGenerateKey}
+                      disabled={generatingKey || submitting}
+                      className="w-full py-2.5 px-4 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold text-xs uppercase tracking-wider focus:outline-none active:scale-[0.98] transition-all disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      {generatingKey ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Generating Key...
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3.5 h-3.5" />
+                          Generate & Send Recovery Key
+                        </>
+                      )}
+                    </button>
+                  </div>
                 ) : (
                   <div className="p-3 text-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold uppercase tracking-wider">
                     Ticket Already Resolved
