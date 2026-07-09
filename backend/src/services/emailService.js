@@ -10,6 +10,12 @@ const gmailPassword = process.env.GMAIL_APP_PASSWORD
   ? process.env.GMAIL_APP_PASSWORD.replace(/\s+/g, '') 
   : undefined;
 
+console.log('=== EMAIL SERVICE CONFIGURATION ===');
+console.log('[EmailService] Default Sender Email:', gmailUser);
+console.log('[EmailService] GMAIL_APP_PASSWORD Present:', !!gmailPassword);
+console.log('[EmailService] BREVO_API_KEY Present:', !!process.env.BREVO_API_KEY);
+console.log('====================================');
+
 // Create SMTP transporter
 const getTransporter = () => {
   return nodemailer.createTransport({
@@ -33,8 +39,59 @@ const getTransporter = () => {
  * Sends a welcome email containing the auto-generated password
  */
 export async function sendWelcomeEmail(toEmail, username, tempPassword) {
+  const brevoApiKey = process.env.BREVO_API_KEY;
+
+  // Option A: Use Brevo HTTP REST API (Bypasses Render SMTP port blocking completely)
+  if (brevoApiKey) {
+    try {
+      console.log(`[EmailService] Attempting to send welcome email via Brevo REST API to ${toEmail}...`);
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': brevoApiKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: 'Finor Wealth', email: gmailUser },
+          to: [{ email: toEmail, name: username }],
+          subject: 'Welcome to Finor Wealth Platform! 🚀',
+          htmlContent: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <h1 style="color: #4f46e5; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">FINOR WEALTH</h1>
+                <p style="color: #64748b; font-size: 12px; margin: 5px 0 0 0;">Zero-Trust Wealth Management Platform</p>
+              </div>
+              <p>Hi <strong>${username}</strong>,</p>
+              <p>Your multi-tenant account has been successfully created. Welcome onboard!</p>
+              <p>Here are your temporary login credentials. Please log in and change your password in your profile settings immediately.</p>
+              <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin: 20px 0;">
+                <p style="margin: 0; font-size: 14px;"><strong>Email:</strong> ${toEmail}</p>
+                <p style="margin: 5px 0 0 0; font-size: 14px;"><strong>Temporary Password:</strong> <code style="background-color: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-family: monospace;">${tempPassword}</code></p>
+              </div>
+              <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #cbd5e1; padding-top: 15px; margin-top: 20px;">
+                This email was sent automatically. Please do not reply directly to this message.
+              </p>
+            </div>
+          `
+        })
+      });
+
+      if (response.ok) {
+        console.log(`[EmailService] Welcome email sent successfully via Brevo REST API to ${toEmail}`);
+        return;
+      } else {
+        const errData = await response.json();
+        console.error('[EmailService] Brevo API failed:', errData);
+      }
+    } catch (err) {
+      console.error('[EmailService] Brevo REST API error:', err.message);
+    }
+  }
+
+  // Option B: Fallback to standard SMTP (May fail on Render due to firewall blocks)
   if (!gmailPassword) {
-    console.warn('[EmailService] Missing GMAIL_APP_PASSWORD in environment. Welcome email print fallback:', tempPassword);
+    console.warn('[EmailService] Missing GMAIL_APP_PASSWORD and BREVO_API_KEY. Welcome email print fallback:', tempPassword);
     return;
   }
 
@@ -65,9 +122,9 @@ export async function sendWelcomeEmail(toEmail, username, tempPassword) {
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`[EmailService] Welcome email sent successfully to ${toEmail}`);
+    console.log(`[EmailService] Welcome email sent successfully via SMTP to ${toEmail}`);
   } catch (err) {
-    console.error('[EmailService] Failed to send welcome email:', err.message);
+    console.error('[EmailService] Failed to send welcome email via SMTP:', err.message);
   }
 }
 
@@ -75,8 +132,61 @@ export async function sendWelcomeEmail(toEmail, username, tempPassword) {
  * Sends a password reset key containing the 2-hour admin generated reset token
  */
 export async function sendResetKeyEmail(toEmail, resetKey) {
+  const brevoApiKey = process.env.BREVO_API_KEY;
+
+  // Option A: Use Brevo HTTP REST API (Bypasses Render SMTP port blocking completely)
+  if (brevoApiKey) {
+    try {
+      console.log(`[EmailService] Attempting to send reset key email via Brevo REST API to ${toEmail}...`);
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': brevoApiKey,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: 'Finor Security', email: gmailUser },
+          to: [{ email: toEmail }],
+          subject: 'Your Password Reset Key - Action Required 🔑',
+          htmlContent: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff; color: #1e293b;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <h1 style="color: #ef4444; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">SECURITY CHALLENGE</h1>
+                <p style="color: #64748b; font-size: 12px; margin: 5px 0 0 0;">Finor Password Reset Utility</p>
+              </div>
+              <p>Hello,</p>
+              <p>The Super Admin has generated a temporary password reset key for your account.</p>
+              <p>This key is valid for <strong>exactly 2 hours</strong> from generation. Enter this key on the login screen to set a new password.</p>
+              <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #cbd5e1; margin: 20px 0; text-align: center;">
+                <p style="margin: 0; font-size: 20px; letter-spacing: 0.1em; font-family: monospace; font-weight: bold; color: #1e293b;">
+                  ${resetKey}
+                </p>
+              </div>
+              <p>If you did not request this key, please contact support immediately.</p>
+              <p style="font-size: 11px; color: #94a3b8; border-top: 1px solid #cbd5e1; padding-top: 15px; margin-top: 20px;">
+                This security key expires 2 hours after generation.
+              </p>
+            </div>
+          `
+        })
+      });
+
+      if (response.ok) {
+        console.log(`[EmailService] Reset key email sent successfully via Brevo REST API to ${toEmail}`);
+        return;
+      } else {
+        const errData = await response.json();
+        console.error('[EmailService] Brevo API failed:', errData);
+      }
+    } catch (err) {
+      console.error('[EmailService] Brevo REST API error:', err.message);
+    }
+  }
+
+  // Option B: Fallback to standard SMTP (May fail on Render due to firewall blocks)
   if (!gmailPassword) {
-    console.warn('[EmailService] Missing GMAIL_APP_PASSWORD in environment. Reset key print fallback:', resetKey);
+    console.warn('[EmailService] Missing GMAIL_APP_PASSWORD and BREVO_API_KEY. Reset key print fallback:', resetKey);
     return;
   }
 
@@ -109,8 +219,8 @@ export async function sendResetKeyEmail(toEmail, resetKey) {
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`[EmailService] Reset key email sent successfully to ${toEmail}`);
+    console.log(`[EmailService] Reset key email sent successfully via SMTP to ${toEmail}`);
   } catch (err) {
-    console.error('[EmailService] Failed to send reset key email:', err.message);
+    console.error('[EmailService] Failed to send reset key email via SMTP:', err.message);
   }
 }
