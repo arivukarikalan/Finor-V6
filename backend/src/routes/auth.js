@@ -29,6 +29,8 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'All signup fields are required.' });
     }
 
+    console.log(`[AuthRoute] signup request received for email: ${email}, username: ${username}`);
+
     // Check if user already exists
     const { data: existingUser } = await supabaseAdmin
       .from('profiles')
@@ -37,6 +39,7 @@ router.post('/signup', async (req, res) => {
       .maybeSingle();
 
     if (existingUser) {
+      console.warn(`[AuthRoute] signup aborted: user with email ${email} already exists.`);
       return res.status(400).json({ error: 'A user with this email address already exists.' });
     }
 
@@ -50,10 +53,12 @@ router.post('/signup', async (req, res) => {
     });
 
     if (authError || !authData.user) {
+      console.error('[AuthRoute] Auth user creation failed:', authError);
       throw authError || new Error('Failed to create auth user record.');
     }
 
     const userId = authData.user.id;
+    console.log(`[AuthRoute] Auth user created successfully. ID: ${userId}`);
 
     // Update profiles table with signup details
     const { error: profileError } = await supabaseAdmin
@@ -67,9 +72,15 @@ router.post('/signup', async (req, res) => {
       })
       .eq('id', userId);
 
-    if (profileError) throw profileError;
+    if (profileError) {
+      console.error('[AuthRoute] Profile metadata update failed:', profileError);
+      throw profileError;
+    }
+
+    console.log(`[AuthRoute] Profile metadata updated successfully for ID: ${userId}`);
 
     // Send Welcome Email containing the password (non-blocking)
+    console.log(`[AuthRoute] Dispatching welcome email to ${email} (pass: ${randomPassword})...`);
     sendWelcomeEmail(email, username, randomPassword).catch(err => {
       console.error('[AuthRoute] Welcome email dispatch failed:', err.message);
     });
@@ -79,7 +90,7 @@ router.post('/signup', async (req, res) => {
       message: 'Account created successfully. Temporary password has been sent to your email.'
     });
   } catch (err) {
-    console.error('[AuthRoute] Signup failed:', err.message);
+    console.error('[AuthRoute] Signup catch block error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
