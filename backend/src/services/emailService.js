@@ -5,20 +5,27 @@ dotenv.config();
 
 // Default values, user can customize this via environment variables or settings
 const gmailUser = process.env.GMAIL_USER || 'finorvtrades@gmail.com';
-const gmailPassword = process.env.GMAIL_APP_PASSWORD;
+// Defensively strip spaces (Google App Passwords are shown as "xxxx xxxx xxxx xxxx" with spaces)
+const gmailPassword = process.env.GMAIL_APP_PASSWORD 
+  ? process.env.GMAIL_APP_PASSWORD.replace(/\s+/g, '') 
+  : undefined;
 
 // Create SMTP transporter
 const getTransporter = () => {
   return nodemailer.createTransport({
     host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // TLS
+    port: 465,
+    secure: true, // Port 465 requires secure: true
     auth: {
       user: gmailUser,
       pass: gmailPassword
     },
     // Force IPv4 only (Render does not support IPv6 routing)
-    family: 4
+    family: 4,
+    // Set explicit connection timeouts
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
   });
 };
 
