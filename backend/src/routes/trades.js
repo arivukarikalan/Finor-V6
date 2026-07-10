@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import pkg from 'kiteconnect';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
@@ -249,39 +250,62 @@ router.post('/upload', requireAuth, express.text({ type: 'text/csv', limit: '2mb
       return `${t.stock_symbol}_${dateStr}_${t.trade_type}_${t.quantity}_${priceStr}`;
     };
 
-    const existingKeys = new Set(existingTrades.map(getTradeKey));
-    const processedKeys = new Set();
-    const newTrades = [];
+    const getTradeHash = (t) => {
+      const d = new Date(t.trade_date);
+      const tzOffset = 5.5 * 60 * 60 * 1000;
+      const localTime = d.getTime() + (d.getTimezoneOffset() * 60 * 1000) + tzOffset;
+      const localDate = new Date(localTime);
+      const year = localDate.getFullYear();
+      const month = String(localDate.getMonth() + 1).padStart(2, '0');
+      const day = String(localDate.getDate()).padStart(2, '0');
+      const dateStr = `${year}-${month}-${day}`;
+      const priceStr = parseFloat(t.price).toFixed(2);
+      return crypto
+        .createHash('md5')
+        .update(`${req.user.id}_${t.stock_symbol}_${dateStr}_${t.trade_type}_${t.quantity}_${priceStr}`)
+        .digest('hex');
+    };
 
-    // Filter out duplicates (both database-level duplicates and same-batch CSV duplicates)
-    for (const t of parsedTrades) {
-      const key = getTradeKey(t);
-      if (!existingKeys.has(key) && !processedKeys.has(key)) {
-        processedKeys.add(key);
-        newTrades.push({
-          ...t,
-          user_id: req.user.id
-        });
+    const stagingPayloads = parsedTrades.map(t => ({
+      user_id: req.user.id,
+      raw_data: {
+        stock_symbol: t.stock_symbol,
+        trade_date: t.trade_date,
+        trade_type: t.trade_type,
+        quantity: t.quantity,
+        price: t.price,
+        order_id: t.order_id || null
+      },
+      raw_data_hash: getTradeHash(t),
+      status: 'PENDING'
+    }));
+
+    let stagedCount = 0;
+    for (const payload of stagingPayloads) {
+      const { error: insErr } = await supabase
+        .from('staging_trades')
+        .insert(payload);
+      if (!insErr) {
+        stagedCount++;
+      } else if (insErr.code !== '23505') {
+        throw insErr;
       }
     }
 
-    if (newTrades.length === 0) {
+    if (stagedCount === 0) {
       return res.json({ message: 'All trades in the CSV have already been imported.', count: 0 });
     }
 
-    // Bulk insert new trades
-    const { error: insertError } = await supabase
-      .from('trades')
-      .insert(newTrades);
-
-    if (insertError) throw insertError;
+    // Immediately trigger reconciliation
+    const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+    if (rErr) throw rErr;
 
     // Recalculate holdings
     await recalculateHoldings(req.user.id);
 
     res.json({
-      message: `Successfully imported ${newTrades.length} new trades and updated holdings.`,
-      count: newTrades.length
+      message: `Successfully imported ${stagedCount} new trades and updated holdings.`,
+      count: stagedCount
     });
   } catch (err) {
     console.error('[TradesRoute] Upload failed:', err.message);
@@ -498,31 +522,37 @@ router.post('/sync-kite', requireAuth, async (req, res) => {
     // In our database, we store the Zerodha trade_id in the order_id column.
     const existingOrderIds = new Set(existingTrades.map(t => t.order_id).filter(Boolean));
 
-    const newTrades = [];
+    const stagingPayloads = [];
     for (const t of tradesArray) {
       const tradeId = String(t.trade_id || '');
-      // If we already have this trade, skip it
       if (existingOrderIds.has(tradeId)) {
         continue;
       }
 
-      // Format timestamp: Zerodha exchange_timestamp is typically 'YYYY-MM-DD HH:mm:ss'
       let tradeDateStr = t.exchange_timestamp || t.fill_timestamp || new Date().toISOString();
       const tradeDate = new Date(tradeDateStr);
 
-      newTrades.push({
+      const defaultHash = crypto
+        .createHash('md5')
+        .update(`kite_sync_${req.user.id}_${tradeId}`)
+        .digest('hex');
+
+      stagingPayloads.push({
         user_id: req.user.id,
-        stock_symbol: (t.tradingsymbol || '').toUpperCase(),
-        stock_name: (t.tradingsymbol || '').toUpperCase(),
-        trade_type: (t.transaction_type || 'BUY').toUpperCase(),
-        quantity: parseInt(t.quantity || 0, 10),
-        price: parseFloat(parseFloat(t.average_price || t.price || 0).toFixed(2)),
-        trade_date: tradeDate.toISOString(),
-        order_id: tradeId
+        raw_data: {
+          stock_symbol: (t.tradingsymbol || '').toUpperCase(),
+          trade_date: tradeDate.toISOString(),
+          trade_type: (t.transaction_type || 'BUY').toUpperCase(),
+          quantity: parseInt(t.quantity || 0, 10),
+          price: parseFloat(parseFloat(t.average_price || t.price || 0).toFixed(2)),
+          order_id: tradeId
+        },
+        raw_data_hash: defaultHash,
+        status: 'PENDING'
       });
     }
 
-    if (newTrades.length === 0) {
+    if (stagingPayloads.length === 0) {
       return res.json({
         status: 'SUCCESS',
         message: 'All of today\'s Zerodha trades are already synchronized.',
@@ -530,20 +560,31 @@ router.post('/sync-kite', requireAuth, async (req, res) => {
       });
     }
 
-    // Insert new trades
-    const { error: insertError } = await supabase
-      .from('trades')
-      .insert(newTrades);
+    let stagedCount = 0;
+    for (const payload of stagingPayloads) {
+      const { error: insErr } = await supabase
+        .from('staging_trades')
+        .insert(payload);
+      if (!insErr) {
+        stagedCount++;
+      } else if (insErr.code !== '23505') {
+        throw insErr;
+      }
+    }
 
-    if (insertError) throw insertError;
+    if (stagedCount > 0) {
+      // Immediately trigger reconciliation
+      const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+      if (rErr) throw rErr;
 
-    // Recalculate holdings
-    await recalculateHoldings(req.user.id);
+      // Recalculate holdings
+      await recalculateHoldings(req.user.id);
+    }
 
     return res.json({
       status: 'SUCCESS',
-      message: `Successfully synchronized ${newTrades.length} new trades from Zerodha.`,
-      count: newTrades.length
+      message: `Successfully synchronized ${stagedCount} new trades from Zerodha.`,
+      count: stagedCount
     });
 
   } catch (err) {
@@ -611,21 +652,36 @@ router.post('/postback', async (req, res) => {
       return res.status(400).json({ error: 'Invalid order parameters in payload.' });
     }
 
-    // Insert trade
-    const { error: insertError } = await supabase
-      .from('trades')
-      .insert({
-        user_id: user_id,
+    const defaultHash = crypto
+      .createHash('md5')
+      .update(`postback_${user_id}_${orderId}`)
+      .digest('hex');
+
+    const stagingPayload = {
+      user_id: user_id,
+      raw_data: {
         stock_symbol: symbol,
-        stock_name: symbol,
+        trade_date: tradeDate.toISOString(),
         trade_type: tradeType,
         quantity: quantity,
         price: price,
-        trade_date: tradeDate.toISOString(),
         order_id: orderId
-      });
+      },
+      raw_data_hash: defaultHash,
+      status: 'PENDING'
+    };
 
-    if (insertError) throw insertError;
+    const { error: insertError } = await supabase
+      .from('staging_trades')
+      .insert(stagingPayload);
+
+    if (insertError && insertError.code !== '23505') {
+      throw insertError;
+    }
+
+    // Immediately trigger reconciliation
+    const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+    if (rErr) throw rErr;
 
     // Recalculate holdings
     await recalculateHoldings(user_id);

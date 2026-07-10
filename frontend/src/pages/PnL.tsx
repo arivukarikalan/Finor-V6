@@ -103,6 +103,22 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
     );
   }
 
+  const [avgPriceMode, setAvgPriceMode] = useState<'FIFO' | 'WEIGHTED'>(() => (sessionStorage.getItem('finor_pnl_avg_price_mode') as any) || 'FIFO');
+
+  useEffect(() => {
+    sessionStorage.setItem('finor_pnl_avg_price_mode', avgPriceMode);
+  }, [avgPriceMode]);
+
+  const getHoldingActiveAvgPrice = (h: any) => {
+    if (avgPriceMode === 'WEIGHTED') {
+      const parts = h.stock_name.split('|');
+      if (parts[1]) {
+        return parseFloat(parts[1]);
+      }
+    }
+    return h.average_buy_price;
+  };
+
   const formatCurrency = (val: number) => {
     return val.toLocaleString('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 });
   };
@@ -203,19 +219,41 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
           </div>
 
           {/* Selected Snapshot Viewer */}
-          {selectedSnapshot && (
-            <div className="border border-amber-500/20 bg-amber-500/[0.02] rounded-3xl p-6 relative overflow-hidden space-y-6">
+          {selectedSnapshot && (() => {
+            const activeValue = selectedSnapshot.holdings_state.reduce((sum: number, h: any) => sum + (h.ltp * h.quantity), 0);
+            const activeInvested = selectedSnapshot.holdings_state.reduce((sum: number, h: any) => sum + (getHoldingActiveAvgPrice(h) * h.quantity), 0);
+            const activePL = activeValue - activeInvested;
+
+            return (
+              <div className="border border-amber-500/20 bg-amber-500/[0.02] rounded-3xl p-6 relative overflow-hidden space-y-6">
               {/* Gold light effect */}
               <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
               
               {/* Badge Header */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-dark-border/45 pb-4">
+                <div className="flex flex-wrap items-center gap-3">
                   <span className="relative flex h-2 w-2">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                   </span>
                   <span className="text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 tracking-wider">TIME MACHINE ACTIVE</span>
+                  
+                  {/* Mode Toggle */}
+                  <div className="flex rounded-lg bg-dark-depth-2 border border-dark-border/60 p-0.5 ml-1">
+                    {(['FIFO', 'WEIGHTED'] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setAvgPriceMode(mode)}
+                        className={`px-2.5 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                          avgPriceMode === mode
+                            ? 'bg-amber-500 text-black'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {mode === 'FIFO' ? 'FIFO' : 'Weighted'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <span className="text-xs font-bold text-gray-400">
                   Snapshot Date: {new Date(selectedSnapshot.snapshot_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
@@ -226,16 +264,16 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
                   <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Portfolio Value</span>
-                  <span className="text-lg font-black text-white">{formatCurrency(Number(selectedSnapshot.total_value))}</span>
+                  <span className="text-lg font-black text-white">{formatCurrency(activeValue)}</span>
                 </div>
                 <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
                   <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Invested Capital</span>
-                  <span className="text-lg font-black text-gray-300">{formatCurrency(Number(selectedSnapshot.total_invested))}</span>
+                  <span className="text-lg font-black text-gray-300">{formatCurrency(activeInvested)}</span>
                 </div>
                 <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl">
                   <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Snapshot Returns</span>
-                  <span className={`text-lg font-black ${selectedSnapshot.weekly_pnl >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
-                    {selectedSnapshot.weekly_pnl >= 0 ? '+' : ''}{formatCurrency(Number(selectedSnapshot.weekly_pnl))}
+                  <span className={`text-lg font-black ${activePL >= 0 ? 'text-emerald-500 dark:text-emerald-400' : 'text-rose-500 dark:text-rose-400'}`}>
+                    {activePL >= 0 ? '+' : ''}{formatCurrency(activePL)}
                   </span>
                 </div>
               </div>
@@ -253,24 +291,63 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
                         <tr className="text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-dark-border/30 pb-2">
                           <th className="pb-2 font-bold">Company</th>
                           <th className="pb-2 font-bold">Quantity</th>
-                          <th className="pb-2 font-bold">Avg Price</th>
+                          <th className="pb-2 font-bold">Avg Price & Return %</th>
                           <th className="pb-2 font-bold">Snapshot LTP</th>
-                          <th className="pb-2 font-bold text-right">Current Value</th>
+                          <th className="pb-2 font-bold text-right">Current Value & P&L</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-dark-border/20">
                         {selectedSnapshot.holdings_state.map((h: any, idx: number) => {
                           const value = h.quantity * h.ltp;
+                          const parts = h.stock_name.split('|');
+                          const wtdPrice = parts[1] ? parseFloat(parts[1]) : h.average_buy_price;
+                          
+                          const fifoPL = value - (h.average_buy_price * h.quantity);
+                          const fifoROI = h.average_buy_price > 0 ? (fifoPL / (h.average_buy_price * h.quantity)) * 100 : 0;
+                          
+                          const wtdPL = value - (wtdPrice * h.quantity);
+                          const wtdROI = wtdPrice > 0 ? (wtdPL / (wtdPrice * h.quantity)) * 100 : 0;
+
                           return (
                             <tr key={idx} className="hover:bg-dark-depth-2/30 transition-colors">
                               <td className="py-2.5">
                                 <span className="font-extrabold text-white block">{h.stock_symbol}</span>
-                                <span className="text-[9px] text-gray-500 block mt-0.5">{h.stock_name.split('|')[0]}</span>
+                                <span className="text-[9px] text-gray-500 block mt-0.5">{parts[0]}</span>
                               </td>
                               <td className="py-2.5 text-white font-semibold">{h.quantity}</td>
-                              <td className="py-2.5 text-gray-300">₹{h.average_buy_price.toFixed(2)}</td>
+                              <td className="py-2.5">
+                                <div className="space-y-0.5 text-[10px]">
+                                  <div>
+                                    <span className="text-gray-500">FIFO:</span> <span className="text-gray-300">₹{h.average_buy_price.toFixed(2)}</span>
+                                    <span className={`ml-1 font-bold ${fifoPL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                      ({fifoROI.toFixed(1)}%)
+                                    </span>
+                                  </div>
+                                  {parts[1] && (
+                                    <div>
+                                      <span className="text-gray-500">Wtd:</span> <span className="text-gray-300">₹{wtdPrice.toFixed(2)}</span>
+                                      <span className={`ml-1 font-bold ${wtdPL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                        ({wtdROI.toFixed(1)}%)
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
                               <td className="py-2.5 text-gray-300">₹{h.ltp.toFixed(2)}</td>
-                              <td className="py-2.5 text-right font-bold text-white">₹{value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                              <td className="py-2.5 text-right">
+                                <span className="font-bold text-white block">₹{value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                <div className="text-[10px] mt-0.5">
+                                  {avgPriceMode === 'FIFO' ? (
+                                    <span className={`font-bold ${fifoPL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                      {fifoPL >= 0 ? '+' : ''}₹{fifoPL.toFixed(2)}
+                                    </span>
+                                  ) : (
+                                    <span className={`font-bold ${wtdPL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                      {wtdPL >= 0 ? '+' : ''}₹{wtdPL.toFixed(2)}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
                             </tr>
                           );
                         })}
@@ -281,7 +358,8 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
               </div>
 
             </div>
-          )}
+            );
+          })()}
 
         </div>
       )}

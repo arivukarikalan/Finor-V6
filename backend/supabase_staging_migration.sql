@@ -96,7 +96,11 @@ BEGIN
               AND date(date AT TIME ZONE 'Asia/Kolkata') = date(tx_date AT TIME ZONE 'Asia/Kolkata')
               AND type = tx_type
               AND amount = tx_amount
-              AND (description = tx_desc OR (external_ref_id IS NOT NULL AND external_ref_id = comp_hash))
+              AND (
+                description = tx_desc 
+                OR trim(regexp_replace(description, '\s*\([A-Za-z0-9-]+\)\s*', ' ', 'g')) = trim(regexp_replace(tx_desc, '\s*\([A-Za-z0-9-]+\)\s*', ' ', 'g'))
+                OR (external_ref_id IS NOT NULL AND external_ref_id = comp_hash)
+              )
             LIMIT 1;
 
             IF existing_id IS NOT NULL THEN

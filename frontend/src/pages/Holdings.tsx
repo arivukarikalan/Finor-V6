@@ -82,17 +82,22 @@ export const Holdings = () => {
   const [editTag, setEditTag] = useState<'TRADING' | 'CORE_HOLD'>('TRADING');
   const [savingSettings, setSavingSettings] = useState(false);
 
-  // Search, Filter & Sort State
-  const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem('finor_holdings_search_query') || '');
-  const [performanceFilter, setPerformanceFilter] = useState<'all' | 'profit' | 'loss'>(() => (sessionStorage.getItem('finor_holdings_performance_filter') as any) || 'all');
-  const [sortBy, setSortBy] = useState<'value' | 'return' | 'pl' | 'symbol'>(() => (sessionStorage.getItem('finor_holdings_sort_by') as any) || 'value');
+  const [avgPriceMode, setAvgPriceMode] = useState<'FIFO' | 'WEIGHTED'>(() => (sessionStorage.getItem('finor_holdings_avg_price_mode') as any) || 'FIFO');
 
   useEffect(() => {
-    sessionStorage.setItem('finor_holdings_search_query', searchQuery);
-    sessionStorage.setItem('finor_holdings_performance_filter', performanceFilter);
-    sessionStorage.setItem('finor_holdings_sort_by', sortBy);
-  }, [searchQuery, performanceFilter, sortBy]);
-  
+    sessionStorage.setItem('finor_holdings_avg_price_mode', avgPriceMode);
+  }, [avgPriceMode]);
+
+  const getActiveAvgPrice = (h: Holding) => {
+    if (avgPriceMode === 'WEIGHTED') {
+      const [_, weightedAvgStr] = h.stock_name.split('|');
+      if (weightedAvgStr) {
+        return parseFloat(weightedAvgStr);
+      }
+    }
+    return h.average_buy_price;
+  };
+
   // CSV Import Modal State
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -102,6 +107,17 @@ export const Holdings = () => {
   const [csvPreview, setCsvPreview] = useState<string>('');
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<{ message: string; count: number } | null>(null);
+  // Search, Filter & Sort State (re-declared below helper to keep settings separate)
+  const [searchQuery, setSearchQuery] = useState(() => sessionStorage.getItem('finor_holdings_search_query') || '');
+  const [performanceFilter, setPerformanceFilter] = useState<'all' | 'profit' | 'loss'>(() => (sessionStorage.getItem('finor_holdings_performance_filter') as any) || 'all');
+  const [sortBy, setSortBy] = useState<'value' | 'return' | 'pl' | 'symbol'>(() => (sessionStorage.getItem('finor_holdings_sort_by') as any) || 'value');
+
+  useEffect(() => {
+    sessionStorage.setItem('finor_holdings_search_query', searchQuery);
+    sessionStorage.setItem('finor_holdings_performance_filter', performanceFilter);
+    sessionStorage.setItem('finor_holdings_sort_by', sortBy);
+  }, [searchQuery, performanceFilter, sortBy]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [activeSubTab, setActiveSubTab] = useState<'holdings' | 'simulator'>('holdings');
@@ -558,8 +574,8 @@ export const Holdings = () => {
   };
 
   // Financial Calculations
-  const totalInvested = holdings.reduce((sum, h) => sum + (h.average_buy_price * h.quantity), 0);
-  const totalValue = holdings.reduce((sum, h) => sum + ((h.ltp || h.average_buy_price) * h.quantity), 0);
+  const totalInvested = holdings.reduce((sum, h) => sum + (getActiveAvgPrice(h) * h.quantity), 0);
+  const totalValue = holdings.reduce((sum, h) => sum + ((h.ltp || getActiveAvgPrice(h)) * h.quantity), 0);
   const totalPL = totalValue - totalInvested;
   const totalROI = totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
 
@@ -569,22 +585,22 @@ export const Holdings = () => {
       const matchesSearch = h.stock_symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
                             h.stock_name.toLowerCase().includes(searchQuery.toLowerCase());
       
-      const currentLTP = h.ltp || h.average_buy_price;
-      const pl = (currentLTP - h.average_buy_price) * h.quantity;
+      const currentLTP = h.ltp || getActiveAvgPrice(h);
+      const pl = (currentLTP - getActiveAvgPrice(h)) * h.quantity;
       
       if (performanceFilter === 'profit') return matchesSearch && pl >= 0;
       if (performanceFilter === 'loss') return matchesSearch && pl < 0;
       return matchesSearch;
     })
     .sort((a, b) => {
-      const aLTP = a.ltp || a.average_buy_price;
-      const bLTP = b.ltp || b.average_buy_price;
+      const aLTP = a.ltp || getActiveAvgPrice(a);
+      const bLTP = b.ltp || getActiveAvgPrice(b);
       
       const aVal = aLTP * a.quantity;
       const bVal = bLTP * b.quantity;
       
-      const aCost = a.average_buy_price * a.quantity;
-      const bCost = b.average_buy_price * b.quantity;
+      const aCost = getActiveAvgPrice(a) * a.quantity;
+      const bCost = getActiveAvgPrice(b) * b.quantity;
       
       const aPL = aVal - aCost;
       const bPL = bVal - bCost;
@@ -1067,14 +1083,16 @@ export const Holdings = () => {
     const activeHolding = holdings.find(h => h.stock_symbol.toUpperCase() === activeDetailSymbol.toUpperCase());
     const settings = activeHolding ? (stockSettings[activeHolding.stock_symbol] || { stoploss_price: null, position_tag: 'TRADING' }) : null;
     const isCoreHold = settings?.position_tag === 'CORE_HOLD';
-    const holdingDays = activeHolding ? getHoldingDays(activeHolding.stock_symbol) : 0;
-    const [stockNameOnly, weightedAvgStr] = activeHolding ? activeHolding.stock_name.split('|') : [activeDetailSymbol, null];
-    const currentLTP = activeHolding ? (activeHolding.ltp || activeHolding.average_buy_price) : 0;
-    const investedVal = activeHolding ? (activeHolding.average_buy_price * activeHolding.quantity) : 0;
+    const activeAvgPrice = activeHolding ? getActiveAvgPrice(activeHolding) : 0;
+    const currentLTP = activeHolding ? (activeHolding.ltp || activeAvgPrice) : 0;
+    const investedVal = activeHolding ? (activeAvgPrice * activeHolding.quantity) : 0;
     const currentVal = activeHolding ? (currentLTP * activeHolding.quantity) : 0;
     const pl = currentVal - investedVal;
     const roi = investedVal > 0 ? (pl / investedVal) * 100 : 0;
     const isProfit = pl >= 0;
+
+    const holdingDays = activeHolding ? getHoldingDays(activeHolding.stock_symbol) : 0;
+    const [stockNameOnly, weightedAvgStr] = activeHolding ? activeHolding.stock_name.split('|') : [activeDetailSymbol, null];
 
     return (
       <div className="space-y-6 pt-6 md:pt-0 animate-in fade-in duration-300">
@@ -1777,6 +1795,23 @@ export const Holdings = () => {
         {/* Filters & Sorting buttons */}
         <div className="flex flex-wrap items-center gap-3">
           
+          {/* Average Mode filter */}
+          <div className="flex rounded-xl bg-dark-depth-2 border border-dark-border p-1">
+            {(['FIFO', 'WEIGHTED'] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setAvgPriceMode(mode)}
+                className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                  avgPriceMode === mode
+                    ? 'bg-brand-600 text-white'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {mode === 'FIFO' ? 'FIFO (Break-Even)' : 'Weighted (Broker)'}
+              </button>
+            ))}
+          </div>
+
           {/* Performance filter */}
           <div className="flex rounded-xl bg-dark-depth-2 border border-dark-border p-1">
             {(['all', 'profit', 'loss'] as const).map((filter) => (
@@ -1856,8 +1891,9 @@ export const Holdings = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredHoldings.map((h) => {
-            const currentLTP = h.ltp || h.average_buy_price;
-            const investedVal = h.average_buy_price * h.quantity;
+            const activeAvgPrice = getActiveAvgPrice(h);
+            const currentLTP = h.ltp || activeAvgPrice;
+            const investedVal = activeAvgPrice * h.quantity;
             const currentVal = currentLTP * h.quantity;
             const pl = currentVal - investedVal;
             const roi = investedVal > 0 ? (pl / investedVal) * 100 : 0;
@@ -1937,13 +1973,23 @@ export const Holdings = () => {
                     <span className="text-sm font-bold text-white">{h.quantity}</span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-gray-500 block">Avg. Price (FIFO)</span>
-                    <span className="text-sm font-bold text-white">₹{h.average_buy_price.toFixed(2)}</span>
-                    {weightedAvgStr && (
-                      <span className="text-[9px] text-gray-400 block mt-0.5 font-medium">
-                        Weighted: ₹{parseFloat(weightedAvgStr).toFixed(2)}
-                      </span>
-                    )}
+                    <span className="text-[10px] text-gray-500 block">Avg Price & Return %</span>
+                    <div className="space-y-0.5 mt-0.5 text-[11px]">
+                      <div>
+                        <span className="text-gray-500">FIFO:</span> <span className="font-bold text-white">₹{h.average_buy_price.toFixed(2)}</span>
+                        <span className={`ml-1 font-bold ${currentLTP - h.average_buy_price >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          ({((currentLTP - h.average_buy_price) / h.average_buy_price * 100).toFixed(1)}%)
+                        </span>
+                      </div>
+                      {weightedAvgStr && (
+                        <div>
+                          <span className="text-gray-500">Wtd:</span> <span className="font-bold text-white">₹{parseFloat(weightedAvgStr).toFixed(2)}</span>
+                          <span className={`ml-1 font-bold ${currentLTP - parseFloat(weightedAvgStr) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            ({((currentLTP - parseFloat(weightedAvgStr)) / parseFloat(weightedAvgStr) * 100).toFixed(1)}%)
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <span className="text-[10px] text-gray-500 block">Current LTP</span>

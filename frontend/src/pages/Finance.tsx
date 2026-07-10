@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
-  Edit2, UserMinus, UserPlus, Users, Sparkles, X
+  Edit2, UserMinus, UserPlus, Users, Sparkles, X, Link2
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
@@ -44,7 +44,23 @@ interface AutoValuations {
   silverPricePerGram: number;
 }
 
-const CATEGORIES = ['Food', 'Travel', 'Shopping', 'Investments', 'Bills/Utilities', 'Rent', 'Salary/Income', 'Debt Repayment', 'Uncategorized'];
+const CATEGORIES = [
+  'Food', 
+  'Food (Breakfast)', 
+  'Food (Lunch)', 
+  'Food (Dinner)', 
+  'Food (Snacks)', 
+  'Travel', 
+  'Shopping', 
+  'Investments', 
+  'Bills/Utilities', 
+  'Rent', 
+  'Salary/Income', 
+  'Debt Repayment', 
+  'Lent/Friends', 
+  'Payment Link',
+  'Uncategorized'
+];
 const METHODS = ['UPI', 'Cash', 'Credit Card', 'Bank Transfer', 'Debit Card'];
 
 const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4'];
@@ -54,6 +70,33 @@ export const Finance: React.FC = () => {
   
   // Dashboard states
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [activeQuickMapTxId, setActiveQuickMapTxId] = useState<string | null>(null);
+
+  const handleQuickMapCategory = async (tx: Transaction, newCat: string) => {
+    setActiveQuickMapTxId(null);
+    try {
+      const payload = {
+        id: tx.id,
+        date: tx.date,
+        amount: tx.amount,
+        type: tx.type,
+        category: newCat,
+        method: tx.method,
+        description: tx.description,
+        source: tx.source
+      };
+      
+      await apiRequest('/finance/transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, category: newCat } : t));
+    } catch (err: any) {
+      console.error('Failed to quick map category:', err);
+    }
+  };
   const [debts, setDebts] = useState<Debt[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
 
@@ -218,10 +261,17 @@ export const Finance: React.FC = () => {
   const totalAssets = Object.values(assetValues).reduce((sum, v) => sum + v, 0) + netLentDebts;
   const netWorth = totalAssets - netBorrowedDebts;
 
+  // Exclude Investments and Lent/Friends from standard consumption expenses
+  const isConsumptionExpense = (t: Transaction) => {
+    return t.type === 'EXPENSE' && 
+           t.category !== 'Investments' && 
+           t.category !== 'Lent/Friends';
+  };
+
   // Monthly metrics
   const thisMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
   const monthlyExpenses = transactions
-    .filter(t => t.type === 'EXPENSE' && t.date.startsWith(thisMonth))
+    .filter(t => isConsumptionExpense(t) && t.date.startsWith(thisMonth))
     .reduce((sum, t) => sum + t.amount, 0);
 
   const monthlyIncome = transactions
@@ -230,17 +280,17 @@ export const Finance: React.FC = () => {
 
   // ─── Direct Ingestion SMS Expense Analytics & Insights ───
   const allTimeExpenses = transactions
-    .filter(t => t.type === 'EXPENSE')
+    .filter(isConsumptionExpense)
     .reduce((sum, t) => sum + t.amount, 0);
 
   const allTimeIncome = transactions
     .filter(t => t.type === 'INCOME')
     .reduce((sum, t) => sum + t.amount, 0);
 
-  // Category wise breakdown
+  // Category wise breakdown (only consumption expenses)
   const categoryExpensesMap: { [key: string]: number } = {};
   transactions
-    .filter(t => t.type === 'EXPENSE')
+    .filter(isConsumptionExpense)
     .forEach(t => {
       const cat = t.category || 'Uncategorized';
       categoryExpensesMap[cat] = (categoryExpensesMap[cat] || 0) + t.amount;
@@ -250,6 +300,25 @@ export const Finance: React.FC = () => {
     name: cat,
     value: categoryExpensesMap[cat]
   })).sort((a, b) => b.value - a.value);
+
+  // Lent/Friends outstanding insights
+  const totalLent = transactions
+    .filter(t => t.category === 'Lent/Friends' && t.type === 'EXPENSE')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const totalRepaid = transactions
+    .filter(t => t.category === 'Lent/Friends' && t.type === 'INCOME')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const outstandingLent = Math.max(0, totalLent - totalRepaid);
+
+  // Food Subcategories Breakdown
+  const foodBreakfast = transactions.filter(t => t.category === 'Food (Breakfast)' && t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+  const foodLunch = transactions.filter(t => t.category === 'Food (Lunch)' && t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+  const foodDinner = transactions.filter(t => t.category === 'Food (Dinner)' && t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+  const foodSnacks = transactions.filter(t => t.category === 'Food (Snacks)' && t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+  const foodGeneral = transactions.filter(t => t.category === 'Food' && t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+  const totalFoodExpenses = foodBreakfast + foodLunch + foodDinner + foodSnacks + foodGeneral;
 
   // Investments total
   const totalInvestments = transactions
@@ -882,6 +951,28 @@ export const Finance: React.FC = () => {
                     <span>Avg. Weekly Burn Rate:</span>
                     <span className="text-white font-extrabold">{fmt(avgDailySpend * 7)}</span>
                   </div>
+                  
+                  {/* Lent to Friends Metrics */}
+                  <div className="flex items-center justify-between border-b border-dark-border/40 pb-2">
+                    <span>Outstanding Lent (Friends):</span>
+                    <span className={`font-extrabold ${outstandingLent > 0 ? 'text-amber-400' : 'text-gray-500'}`}>
+                      {fmt(outstandingLent)}
+                    </span>
+                  </div>
+
+                  {/* Food split insight if available */}
+                  {totalFoodExpenses > 0 && (
+                    <div className="border-b border-dark-border/40 pb-2">
+                      <span className="block mb-1 text-gray-500">Food Splits (Meals vs Snacks):</span>
+                      <div className="grid grid-cols-2 gap-1.5 text-[9px] text-gray-400 font-semibold leading-tight mt-1 bg-dark-depth-2/40 p-1.5 rounded-lg border border-dark-border/20">
+                        <div>Breakfast: <span className="text-white font-bold">{fmt(foodBreakfast)}</span></div>
+                        <div>Lunch: <span className="text-white font-bold">{fmt(foodLunch)}</span></div>
+                        <div>Dinner: <span className="text-white font-bold">{fmt(foodDinner)}</span></div>
+                        <div>Snacks: <span className="text-white font-bold">{fmt(foodSnacks)}</span></div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between pb-1">
                     <span>SMS Ingestion Stream:</span>
                     <span className="text-emerald-400 font-extrabold flex items-center gap-1">
@@ -1048,10 +1139,45 @@ export const Finance: React.FC = () => {
                               {tx.type}
                             </span>
                           </td>
-                          <td className="p-4">
-                            <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-semibold text-[10px] text-gray-300">
-                              {tx.category}
-                            </span>
+                          <td className="p-4 relative">
+                            <div className="flex items-center gap-1.5">
+                              <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-semibold text-[10px] text-gray-300">
+                                {tx.category}
+                              </span>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveQuickMapTxId(activeQuickMapTxId === tx.id ? null : tx.id);
+                                }}
+                                className="text-gray-500 hover:text-brand-400 transition-colors p-0.5 rounded hover:bg-dark-depth-2 cursor-pointer"
+                                title="Quick Link/Map Category"
+                              >
+                                <Link2 className="w-3 h-3" />
+                              </button>
+                              
+                              {/* Quick Category popover */}
+                              {activeQuickMapTxId === tx.id && (
+                                <div className="absolute left-0 mt-6 z-50 w-44 bg-[#141416] border border-dark-border rounded-xl shadow-2xl p-1.5">
+                                  <div className="text-[9px] font-bold text-gray-500 px-2 py-1 uppercase tracking-wider border-b border-dark-border/40 mb-1">
+                                    Quick Map Category
+                                  </div>
+                                  <div className="max-h-48 overflow-y-auto space-y-0.5">
+                                    {CATEGORIES.map((cat) => (
+                                      <button
+                                        key={cat}
+                                        onClick={async (e) => {
+                                          e.stopPropagation();
+                                          await handleQuickMapCategory(tx, cat);
+                                        }}
+                                        className="w-full text-left px-2 py-1.5 text-[10px] font-semibold rounded-lg hover:bg-brand-500/10 hover:text-brand-400 text-gray-300 transition-all cursor-pointer"
+                                      >
+                                        {cat}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           </td>
                           <td className="p-4 text-gray-400 font-semibold">{tx.method}</td>
                           <td className="p-4">
@@ -1187,9 +1313,43 @@ export const Finance: React.FC = () => {
                         }`}>
                           {tx.type}
                         </span>
-                        <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-semibold text-[9px] text-gray-300">
-                          {tx.category}
-                        </span>
+                        <div className="relative inline-block">
+                          <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-semibold text-[9px] text-gray-300">
+                            {tx.category}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveQuickMapTxId(activeQuickMapTxId === tx.id ? null : tx.id);
+                            }}
+                            className="text-gray-500 hover:text-brand-400 transition-colors p-0.5 rounded hover:bg-dark-depth-2 cursor-pointer ml-1 inline-block align-middle"
+                            title="Quick Link/Map Category"
+                          >
+                            <Link2 className="w-3 h-3" />
+                          </button>
+                          
+                          {activeQuickMapTxId === tx.id && (
+                            <div className="absolute left-0 mt-6 z-50 w-40 bg-[#141416] border border-dark-border rounded-xl shadow-2xl p-1.5">
+                              <div className="text-[8px] font-bold text-gray-500 px-2 py-1 uppercase tracking-wider border-b border-dark-border/40 mb-1">
+                                Quick Map Category
+                              </div>
+                              <div className="max-h-40 overflow-y-auto space-y-0.5">
+                                {CATEGORIES.map((cat) => (
+                                  <button
+                                    key={cat}
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      await handleQuickMapCategory(tx, cat);
+                                    }}
+                                    className="w-full text-left px-2 py-1 text-[9px] font-semibold rounded-lg hover:bg-brand-500/10 hover:text-brand-400 text-gray-300 transition-all cursor-pointer"
+                                  >
+                                    {cat}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                         <span className="bg-dark-depth-2/40 px-2 py-0.5 rounded-lg border border-dark-border/20 text-[9px] text-gray-400">
                           {tx.method}
                         </span>

@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import { google } from 'googleapis';
 import { createRequire } from 'module';
 import { supabase } from '../config/supabase.js';
@@ -475,33 +476,52 @@ router.post('/sync', requireAuth, async (req, res) => {
         const tradeLogs = [];
 
         for (const trade of parsedTrades) {
-          const { data: existing } = await supabase
-            .from('trades').select('id')
-            .eq('user_id', userId)
-            .eq('stock_symbol', trade.stock_symbol)
-            .eq('trade_type', trade.trade_type)
-            .eq('quantity', trade.quantity)
-            .eq('price', trade.price)
-            .eq('trade_date', trade.trade_date)
-            .maybeSingle();
+          const txDateStr = new Date(trade.trade_date).toLocaleDateString('en-IN', {
+            timeZone: 'Asia/Kolkata',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+          }).split('/').reverse().join('-');
+          const amountStr = parseFloat(trade.price || 0).toFixed(2);
 
-          if (!existing) {
-            await supabase.from('trades').insert({
-              user_id: userId,
+          const defaultHash = crypto
+            .createHash('md5')
+            .update(`${userId}_${trade.stock_symbol}_${txDateStr}_${trade.trade_type}_${trade.quantity}_${amountStr}`)
+            .digest('hex');
+
+          const stagingPayload = {
+            user_id: userId,
+            raw_data: {
               stock_symbol: trade.stock_symbol,
-              stock_name: trade.stock_symbol,
+              trade_date: trade.trade_date,
               trade_type: trade.trade_type,
               quantity: trade.quantity,
               price: trade.price,
-              trade_date: trade.trade_date,
-              order_id: `GMAIL_${msg.id}_${trade.stock_symbol}`,
-              created_at: new Date().toISOString()
-            });
+              order_id: `GMAIL_${msg.id}_${trade.stock_symbol}`
+            },
+            raw_data_hash: defaultHash,
+            status: 'PENDING'
+          };
+
+          const { error: insertError } = await supabase
+            .from('staging_trades')
+            .insert(stagingPayload);
+
+          if (!insertError) {
             emailNewTrades++;
-            tradeLogs.push({ ...trade, status: 'Synced' });
-          } else {
+            tradeLogs.push({ ...trade, status: 'Synced (Staged)' });
+          } else if (insertError.code === '23505') {
             tradeLogs.push({ ...trade, status: 'Duplicate' });
+          } else {
+            console.error('[GmailIngestion] Staging insert error:', insertError.message);
+            tradeLogs.push({ ...trade, status: 'Failed', error: insertError.message });
           }
+        }
+
+        // Reconcile and import newly staged trades immediately
+        if (emailNewTrades > 0) {
+          const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+          if (rErr) console.error('[GmailIngestion] Immediate reconciliation failed:', rErr.message);
         }
 
         // Mark email as processed

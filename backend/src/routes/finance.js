@@ -14,7 +14,17 @@ function autoCategorize(description) {
   const desc = (description || '').toLowerCase();
   
   if (desc.includes('zomato') || desc.includes('swiggy') || desc.includes('food') || desc.includes('restaurant') || desc.includes('eat') || desc.includes('cafe') || desc.includes('dominos') || desc.includes('pizza') || desc.includes('dhaba') || desc.includes('bakery')) {
+    if (desc.includes('breakfast')) return 'Food (Breakfast)';
+    if (desc.includes('lunch')) return 'Food (Lunch)';
+    if (desc.includes('dinner')) return 'Food (Dinner)';
+    if (desc.includes('snacks') || desc.includes('tea') || desc.includes('coffee') || desc.includes('snack') || desc.includes('chai')) return 'Food (Snacks)';
     return 'Food';
+  }
+  if (desc.includes('lent') || desc.includes('friends') || desc.includes('borrowed') || desc.includes('splitwise') || desc.includes('friend') || desc.includes('lent to')) {
+    return 'Lent/Friends';
+  }
+  if (desc.includes('payment link') || desc.includes('paylink') || desc.includes('razorpay.me') || desc.includes('instamojo')) {
+    return 'Payment Link';
   }
   if (desc.includes('uber') || desc.includes('ola') || desc.includes('petrol') || desc.includes('metro') || desc.includes('irctc') || desc.includes('flight') || desc.includes('taxi') || desc.includes('rapido') || desc.includes('fuel') || desc.includes('indian oil') || desc.includes('hpcl') || desc.includes('bpcl')) {
     return 'Travel';
@@ -160,14 +170,52 @@ router.post('/transaction', requireAuth, async (req, res) => {
       if (error) throw error;
       result = data;
     } else {
-      // Insert
-      const { data, error } = await supabase
+      // Insert via staging
+      const txDateObj = new Date(payload.date);
+      const dateStr = txDateObj.toLocaleDateString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).split('/').reverse().join('-');
+      const amountStr = parseFloat(payload.amount || 0).toFixed(2);
+
+      const defaultHash = crypto
+        .createHash('md5')
+        .update(`${userId}_${dateStr}_${payload.type}_${amountStr}_${payload.description || ''}`)
+        .digest('hex');
+
+      const stagingPayload = {
+        user_id: userId,
+        raw_data: payload,
+        raw_data_hash: defaultHash,
+        status: 'PENDING'
+      };
+
+      const { error: insertError } = await supabase
+        .from('staging_transactions')
+        .insert(stagingPayload);
+
+      if (insertError && insertError.code !== '23505') {
+        throw insertError;
+      }
+
+      // Immediately reconcile
+      const { error: reconcileError } = await supabase.rpc('reconcile_staging_transactions');
+      if (reconcileError) {
+        console.error('[FinanceRoute] Immediate manual reconciliation failed:', reconcileError.message);
+      }
+
+      // Fetch back the reconciled transaction
+      const { data: insertedTx, error: fetchError } = await supabase
         .from('finance_transactions')
-        .insert(payload)
-        .select()
+        .select('*')
+        .eq('user_id', userId)
+        .eq('external_ref_id', defaultHash)
         .maybeSingle();
-      if (error) throw error;
-      result = data;
+
+      if (fetchError) throw fetchError;
+      result = insertedTx || payload;
     }
 
     res.json({ message: 'Transaction saved successfully.', transaction: result });
@@ -501,10 +549,23 @@ router.post('/sms-webhook', async (req, res) => {
     const category = autoCategorize(description);
     const txDate = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
 
-    const { data: insertedTx, error: insertError } = await supabase
-      .from('finance_transactions')
-      .insert({
-        user_id: userId,
+    const txDateObj = new Date(txDate);
+    const dateStr = txDateObj.toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).split('/').reverse().join('-');
+    const amountStr = parseFloat(amount || 0).toFixed(2);
+
+    const defaultHash = crypto
+      .createHash('md5')
+      .update(`${userId}_${dateStr}_${type}_${amountStr}_${description}`)
+      .digest('hex');
+
+    const stagingPayload = {
+      user_id: userId,
+      raw_data: {
         date: txDate,
         amount,
         type,
@@ -512,18 +573,37 @@ router.post('/sms-webhook', async (req, res) => {
         method: 'UPI',
         description,
         source: 'SMS'
-      })
-      .select()
-      .maybeSingle();
+      },
+      raw_data_hash: defaultHash,
+      status: 'PENDING'
+    };
 
-    if (insertError) {
+    const { error: insertError } = await supabase
+      .from('staging_transactions')
+      .insert(stagingPayload);
+
+    if (insertError && insertError.code !== '23505') {
       throw insertError;
     }
+
+    // Immediately trigger reconciliation
+    const { error: reconcileError } = await supabase.rpc('reconcile_staging_transactions');
+    if (reconcileError) {
+      console.error('[SMSWebhookRoute] Immediate reconciliation failed:', reconcileError.message);
+    }
+
+    // Retrieve the processed transaction by its external_ref_id
+    const { data: insertedTx } = await supabase
+      .from('finance_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('external_ref_id', defaultHash)
+      .maybeSingle();
 
     res.status(201).json({
       success: true,
       message: 'Transaction successfully processed and logged from SMS webhook.',
-      transaction: insertedTx
+      transaction: insertedTx || { amount, type, category, date: txDate, description, source: 'SMS' }
     });
 
   } catch (err) {
