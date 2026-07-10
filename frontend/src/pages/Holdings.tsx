@@ -23,7 +23,9 @@ import {
   PieChart,
   History,
   Loader2,
-  Calendar
+  Calendar,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface Holding {
@@ -87,6 +89,16 @@ export const Holdings = () => {
   useEffect(() => {
     sessionStorage.setItem('finor_holdings_avg_price_mode', avgPriceMode);
   }, [avgPriceMode]);
+
+  const [expandedSymbols, setExpandedSymbols] = useState<Record<string, boolean>>({});
+
+  const toggleExpandSymbol = (symbol: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedSymbols(prev => ({
+      ...prev,
+      [symbol]: !prev[symbol]
+    }));
+  };
 
   const getActiveAvgPrice = (h: Holding) => {
     if (avgPriceMode === 'WEIGHTED') {
@@ -1966,140 +1978,149 @@ export const Holdings = () => {
                   </div>
                 )}
 
-                {/* Metrics Grid */}
-                <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                {/* Simplified Metrics Grid */}
+                <div className="grid grid-cols-2 gap-3 text-xs">
                   <div>
-                    <span className="text-[10px] text-gray-500 block">Quantity</span>
-                    <span className="text-sm font-bold text-white">{h.quantity}</span>
+                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Quantity & LTP</span>
+                    <span className="text-xs font-extrabold text-white mt-1 block">
+                      {h.quantity} @ <LtpPriceText value={currentLTP} />
+                    </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-gray-500 block">Avg Price & Return %</span>
-                    <div className="space-y-0.5 mt-0.5 text-[11px]">
+                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Current Value</span>
+                    <span className="text-xs font-extrabold text-white mt-1 block">
+                      ₹{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Collapsible details container */}
+                {expandedSymbols[h.stock_symbol] && (
+                  <div className="mt-4 pt-3.5 border-t border-dark-border/40 space-y-4 animate-in fade-in duration-200">
+                    <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
                       <div>
-                        <span className="text-gray-500">FIFO:</span> <span className="font-bold text-white">₹{h.average_buy_price.toFixed(2)}</span>
-                        <span className={`ml-1 font-bold ${currentLTP - h.average_buy_price >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                          ({((currentLTP - h.average_buy_price) / h.average_buy_price * 100).toFixed(1)}%)
-                        </span>
-                      </div>
-                      {weightedAvgStr && (
-                        <div>
-                          <span className="text-gray-500">Wtd:</span> <span className="font-bold text-white">₹{parseFloat(weightedAvgStr).toFixed(2)}</span>
-                          <span className={`ml-1 font-bold ${currentLTP - parseFloat(weightedAvgStr) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            ({((currentLTP - parseFloat(weightedAvgStr)) / parseFloat(weightedAvgStr) * 100).toFixed(1)}%)
-                          </span>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Avg Price & Return %</span>
+                        <div className="space-y-0.5 mt-1 text-[11px] leading-tight">
+                          <div>
+                            <span className="text-gray-500">FIFO:</span> <span className="font-bold text-white">₹{h.average_buy_price.toFixed(2)}</span>
+                            <span className={`ml-1 font-bold ${currentLTP - h.average_buy_price >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              ({((currentLTP - h.average_buy_price) / h.average_buy_price * 100).toFixed(1)}%)
+                            </span>
+                          </div>
+                          {weightedAvgStr && (
+                            <div>
+                              <span className="text-gray-500">Wtd:</span> <span className="font-bold text-white">₹{parseFloat(weightedAvgStr).toFixed(2)}</span>
+                              <span className={`ml-1 font-bold ${currentLTP - parseFloat(weightedAvgStr) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                ({((currentLTP - parseFloat(weightedAvgStr)) / parseFloat(weightedAvgStr) * 100).toFixed(1)}%)
+                              </span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 block">Current LTP</span>
-                    <span className="text-sm font-bold text-white">
-                      <LtpPriceText value={currentLTP} />
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 block">Stop-Loss Price</span>
-                    <span className="text-sm font-bold text-white">
-                      {settings.stoploss_price !== null ? `₹${settings.stoploss_price.toFixed(2)}` : 'Not Set'}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 block">Holding Period</span>
-                    <span className="text-sm font-bold text-white">{holdingDays} Days</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-gray-500 block">Position Type</span>
-                    <span className={`text-xs font-bold ${isCoreHold ? 'text-amber-500 font-extrabold' : 'text-gray-300'}`}>
-                      {isCoreHold ? 'Core Hold' : 'Trading Position'}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Target Progress Bar & GTT Trigger Suggestions */}
-                {(() => {
-                  const targetPct = isCoreHold ? 20 : 10;
-                  const progress = Math.max(0, Math.min(100, roi > 0 ? (roi / targetPct) * 100 : 0));
-                  const isNearTarget = roi > 0 && (targetPct - roi) <= 1.5;
-                  const targetValue = h.average_buy_price * (1 + targetPct / 100);
-
-                  return (
-                    <div className="mt-4 pt-3.5 border-t border-dark-border/40 space-y-2 select-none">
-                      <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-gray-500 font-bold uppercase tracking-wider">Profit Target Progress</span>
-                        <span className={`font-black ${isNearTarget ? 'text-indigo-400 animate-pulse' : 'text-gray-300'}`}>
-                          {roi > 0 ? roi.toFixed(1) : '0.0'}% / {targetPct}%
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Stop-Loss Price</span>
+                        <span className="text-xs font-bold text-white mt-1 block">
+                          {settings.stoploss_price !== null ? `₹${settings.stoploss_price.toFixed(2)}` : 'Not Set'}
                         </span>
                       </div>
-                      
-                      {/* Bar indicator */}
-                      <div className="w-full bg-dark-depth-3/60 rounded-full h-1.5 border border-dark-border/40 overflow-hidden relative">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            isNearTarget 
-                              ? 'bg-indigo-500 shadow-md shadow-indigo-500/20' 
-                              : roi >= targetPct 
-                              ? 'bg-emerald-500 shadow-md shadow-emerald-500/20' 
-                              : 'bg-brand-500'
-                          }`}
-                          style={{ width: `${progress}%` }}
-                        />
+                      <div>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Holding Period</span>
+                        <span className="text-xs font-bold text-white mt-1 block">{holdingDays} Days</span>
                       </div>
-
-                      {/* GTT Sell Suggestion Trigger */}
-                      {isNearTarget && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            window.dispatchEvent(new CustomEvent('finor-switch-tab', {
-                              detail: {
-                                tab: 'orders',
-                                symbol: h.stock_symbol,
-                                action: 'SELL',
-                                quantity: h.quantity,
-                                price: targetValue.toFixed(2)
-                              }
-                            }));
-                          }}
-                          className="w-full py-1.5 px-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 text-[9px] font-extrabold text-indigo-400 hover:text-indigo-300 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                        >
-                          <Sparkles className="w-3 h-3 text-indigo-400 animate-pulse" />
-                          Target Near! Click to Prefill Sell GTT at ₹{targetValue.toFixed(2)}
-                        </button>
-                      )}
+                      <div>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Position Type</span>
+                        <span className={`text-[11px] font-bold mt-1 block ${isCoreHold ? 'text-amber-500 font-extrabold' : 'text-gray-300'}`}>
+                          {isCoreHold ? 'Core Hold' : 'Trading Position'}
+                        </span>
+                      </div>
                     </div>
-                  );
-                })()}
 
-                {/* Bottom Section: Total Current Value and absolute PNL */}
-                <div className="pt-2.5 flex items-center justify-between">
-                  <div>
-                    <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Current Value</span>
-                    <span className="text-base font-extrabold text-white block mt-0.5">
-                      ₹{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    <span className="text-[9px] text-gray-500 uppercase font-bold tracking-wider">Net P&L</span>
-                    <span className={`text-sm font-bold block mt-0.5 ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
-                      {isProfit ? '+' : ''}₹{pl.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
-                    </span>
-                  </div>
-                </div>
+                    {(() => {
+                      const targetPct = isCoreHold ? 20 : 10;
+                      const progress = Math.max(0, Math.min(100, roi > 0 ? (roi / targetPct) * 100 : 0));
+                      const isNearTarget = roi > 0 && (targetPct - roi) <= 1.5;
+                      const targetValue = activeAvgPrice * (1 + targetPct / 100);
 
-                {/* AI Mode Toggle Button */}
+                      return (
+                        <div className="space-y-2 select-none">
+                          <div className="flex items-center justify-between text-[10px]">
+                            <span className="text-gray-500 font-bold uppercase tracking-wider">Target Progress</span>
+                            <span className={`font-black ${isNearTarget ? 'text-indigo-400 animate-pulse' : 'text-gray-300'}`}>
+                              {roi > 0 ? roi.toFixed(1) : '0.0'}% / {targetPct}%
+                            </span>
+                          </div>
+                          
+                          <div className="w-full bg-dark-depth-3/60 rounded-full h-1.5 border border-dark-border/40 overflow-hidden relative">
+                            <div 
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isNearTarget 
+                                  ? 'bg-indigo-500 shadow-md shadow-indigo-500/20' 
+                                  : roi >= targetPct 
+                                  ? 'bg-emerald-500 shadow-md shadow-emerald-500/20' 
+                                  : 'bg-brand-500'
+                              }`}
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+
+                          {isNearTarget && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                window.dispatchEvent(new CustomEvent('finor-switch-tab', {
+                                  detail: {
+                                    tab: 'orders',
+                                    symbol: h.stock_symbol,
+                                    action: 'SELL',
+                                    quantity: h.quantity,
+                                    price: targetValue.toFixed(2)
+                                  }
+                                }));
+                              }}
+                              className="w-full py-1.5 px-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 text-[9px] font-extrabold text-indigo-400 hover:text-indigo-300 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                            >
+                              <Sparkles className="w-3 h-3 text-indigo-400 animate-pulse" />
+                              Target Near! Click to Sell GTT at ₹{targetValue.toFixed(2)}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* AI Conviction Audit Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedAiStock({
+                          stock: h,
+                          roi,
+                          holdingDays
+                        });
+                      }}
+                      className="w-full py-2 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-[9px] font-extrabold uppercase tracking-wider flex items-center justify-center gap-1 text-gray-300 hover:text-white transition-all cursor-pointer select-none"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-brand-400" />
+                      AI Conviction Audit
+                    </button>
+                  </div>
+                )}
+
+                {/* Toggle details trigger */}
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedAiStock({
-                      stock: h,
-                      roi,
-                      holdingDays
-                    });
-                  }}
-                  className="mt-4 w-full py-2.5 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-[10px] font-extrabold uppercase tracking-wider flex items-center justify-center gap-1.5 text-gray-300 hover:text-white transition-all cursor-pointer select-none"
+                  onClick={(e) => toggleExpandSymbol(h.stock_symbol, e)}
+                  className="mt-4 w-full py-1.5 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-[9px] font-extrabold uppercase tracking-wider text-gray-400 hover:text-white flex items-center justify-center gap-1 transition-all cursor-pointer select-none"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-brand-400" />
-                  AI Conviction Audit
+                  {expandedSymbols[h.stock_symbol] ? (
+                    <>
+                      <span>Hide Details</span>
+                      <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+                    </>
+                  ) : (
+                    <>
+                      <span>Show Details</span>
+                      <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                    </>
+                  )}
                 </button>
 
               </div>

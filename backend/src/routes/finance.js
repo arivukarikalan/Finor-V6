@@ -144,7 +144,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
 router.post('/transaction', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { id, date, amount, type, category, method, description, source } = req.body;
+    const { id, date, amount, type, category, method, description, source, linked_tx_id } = req.body;
 
     const payload = {
       user_id: userId,
@@ -154,7 +154,8 @@ router.post('/transaction', requireAuth, async (req, res) => {
       category: category || 'Uncategorized',
       method: method || 'Cash',
       description,
-      source: source || 'MANUAL'
+      source: source || 'MANUAL',
+      linked_tx_id: linked_tx_id || null
     };
 
     let result;
