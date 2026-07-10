@@ -1638,27 +1638,29 @@ export const More = ({
               isSidebarOpen ? 'fixed left-0 top-0 bottom-0 translate-x-0' : 'fixed -translate-x-full md:translate-x-0'
             }`}>
               {/* Sidebar Header */}
-              <div className="p-4 border-b border-dark-border/40 flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-gray-500">
-                  Chat History
-                </span>
-                
+              <div className="p-3 border-b border-dark-border/30 flex-shrink-0">
                 <button
                   type="button"
                   onClick={handleNewChat}
-                  className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center justify-center ${
+                  className={`w-full py-2.5 px-4 rounded-full border transition-all cursor-pointer flex items-center justify-center gap-2.5 text-xs font-bold ${
                     isLightMode 
-                      ? 'border-slate-250 hover:bg-slate-100 text-slate-700 bg-white' 
-                      : 'border-dark-border hover:bg-dark-depth-3 text-gray-300'
+                      ? 'border-slate-250 hover:bg-slate-100 text-slate-700 bg-white hover:shadow-sm' 
+                      : 'border-dark-border bg-dark-depth-3/30 hover:bg-dark-depth-3 text-white'
                   }`}
                   title="New Chat"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-4 h-4 text-brand-400" />
+                  <span>New Chat</span>
                 </button>
               </div>
 
+              {/* Recent section label */}
+              <span className="text-[9px] font-black text-gray-500 px-3.5 pt-3.5 pb-1 uppercase tracking-widest block select-none">
+                Recent
+              </span>
+
               {/* Chat Sessions List */}
-              <div className="flex-1 overflow-y-auto p-2 space-y-1 scrollbar-thin">
+              <div className="flex-1 overflow-y-auto p-2 pt-1 space-y-1 scrollbar-thin">
                 {chats.length === 0 ? (
                   <div className="text-center py-12 px-4 flex flex-col items-center justify-center space-y-3 select-none">
                     <div className={`p-3 rounded-full border ${
@@ -1956,36 +1958,36 @@ export const More = ({
                         return (
                           <div key={idx} className="w-full">
                             {msg.role === 'user' ? (
-                              <div className="flex justify-end w-full py-2">
-                                <div className="max-w-[85%] md:max-w-[70%] bg-neutral-800/80 border border-neutral-700/30 text-white rounded-3xl px-5 py-3 text-xs select-text leading-relaxed whitespace-pre-wrap shadow-md">
-                                  <p className="select-text font-semibold text-gray-100 tracking-wide">{msg.content}</p>
-                                  <span className="text-[8px] text-gray-500 mt-1.5 block text-right font-medium">
-                                    {time}
-                                  </span>
+                              <div className="flex justify-end w-full py-2.5">
+                                <div className="max-w-[70%] bg-neutral-800/60 border border-neutral-700/20 text-white rounded-3xl px-5 py-3 text-sm select-text leading-relaxed whitespace-pre-wrap shadow-sm">
+                                  <p className="select-text font-medium text-slate-100 tracking-wide">{msg.content}</p>
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex justify-start w-full py-4 items-start gap-4">
-                                {/* Avatar */}
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md shrink-0 select-none ${
-                                  isLightMode 
-                                    ? 'bg-indigo-50 border border-indigo-100 text-indigo-600' 
-                                    : 'bg-brand-500/10 border border-brand-500/20 text-brand-400 shadow-brand-500/5'
-                                }`}>
-                                  <Brain className="w-4.5 h-4.5" />
+                              <div className="flex justify-start w-full py-5 items-start gap-4 border-b border-dark-border/10">
+                                {/* Avatar Sparkle Logo */}
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg shrink-0 select-none bg-gradient-to-tr from-blue-600 via-indigo-500 to-purple-500 border border-white/10 text-white`}>
+                                  <Sparkles className="w-4.5 h-4.5 animate-pulse" />
                                 </div>
                                 
                                 {/* Message Content Container (No bubble, no card background!) */}
-                                <div className="flex-1 space-y-3 min-w-0 select-text">
-                                  {msg.engine && (
-                                    <div className={`text-[9px] font-black uppercase tracking-widest ${
-                                      isLightMode ? 'text-indigo-650' : 'text-brand-400'
-                                    }`}>
-                                      Finor AI Coach ({msg.engine})
-                                    </div>
-                                  )}
+                                <div className="flex-1 space-y-2.5 min-w-0 select-text">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-black text-white tracking-wide">
+                                      Finor AI Coach
+                                    </span>
+                                    {msg.engine && (
+                                      <span className={`text-[8.5px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${
+                                        isLightMode ? 'bg-indigo-50 text-indigo-650' : 'bg-brand-500/10 text-brand-400'
+                                      }`}>
+                                        {msg.engine}
+                                      </span>
+                                    )}
+                                  </div>
                                   
-                                  <div className={`text-[13px] leading-relaxed select-text font-medium text-gray-150`}>
+                                  <div className={`text-sm md:text-[14.5px] leading-7 select-text text-slate-205 font-medium ${
+                                    isLightMode ? 'text-slate-800' : 'text-slate-200'
+                                  }`}>
                                     <MarkdownView text={msg.content} isLightMode={isLightMode} />
                                   </div>
                                   
@@ -1998,7 +2000,7 @@ export const More = ({
                                     />
                                   )}
                                   
-                                  <div className="flex items-center justify-between pt-1 select-none gap-4">
+                                  <div className="flex items-center justify-between pt-2 select-none gap-4">
                                     <div className="flex items-center gap-1.5">
                                       <MessageActions 
                                         msg={msg}
@@ -2009,17 +2011,15 @@ export const More = ({
                                         isLightMode={isLightMode}
                                       />
                                     </div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2.5">
                                       {msg.responseTime !== undefined && (
-                                        <span className={`text-[8px] font-black flex items-center gap-0.5 ${
+                                        <span className={`text-[8.5px] font-black flex items-center gap-0.5 ${
                                           isLightMode ? 'text-indigo-650' : 'text-brand-400'
                                         }`}>
                                           ⚡ {msg.responseTime.toFixed(1)}s
                                         </span>
                                       )}
-                                      <span className={`text-[8px] font-medium ${
-                                        isLightMode ? 'text-slate-400' : 'text-gray-500'
-                                      }`}>
+                                      <span className={`text-[8px] font-bold text-gray-500`}>
                                         {time}
                                       </span>
                                     </div>
@@ -2032,23 +2032,19 @@ export const More = ({
                       })}
 
                       {sendingChat && (
-                        <div className="flex justify-start w-full py-4 items-start gap-4">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md shrink-0 select-none ${
-                            isLightMode 
-                              ? 'bg-indigo-50 border border-indigo-100 text-indigo-600' 
-                              : 'bg-brand-500/10 border border-brand-500/20 text-brand-400 shadow-brand-500/5'
-                          }`}>
-                            <Brain className="w-4.5 h-4.5 animate-pulse" />
+                        <div className="flex justify-start w-full py-5 items-start gap-4">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg shrink-0 select-none bg-gradient-to-tr from-blue-600 via-indigo-500 to-purple-500 border border-white/10 text-white`}>
+                            <Sparkles className="w-4.5 h-4.5 animate-spin" />
                           </div>
-                          <div className="flex-1 space-y-3 min-w-0">
-                            <div className={`text-[9px] font-black uppercase tracking-widest ${
-                              isLightMode ? 'text-indigo-650' : 'text-brand-400'
-                            }`}>
-                              Finor AI is thinking...
+                          <div className="flex-1 space-y-2.5 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-black text-white tracking-wide">
+                                Finor AI Coach
+                              </span>
                             </div>
                             
                             <div className="flex items-center gap-2.5 text-xs text-gray-400 font-semibold select-none">
-                              <Loader2 className="w-4.5 h-4.5 text-brand-500 animate-spin shrink-0" />
+                              <Loader2 className="w-4 h-4 text-brand-500 animate-spin shrink-0" />
                               <span>{getThinkingText(thinkingStep)}</span>
                             </div>
                           </div>
