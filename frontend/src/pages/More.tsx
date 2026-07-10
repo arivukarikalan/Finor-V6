@@ -1017,6 +1017,65 @@ export const More = ({
     link.click();
   };
 
+  const renderInputForm = (isCenter = false) => {
+    return (
+      <form 
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSendChat();
+        }}
+        className={`relative border rounded-3xl flex items-center px-4 py-2.5 shadow-inner gap-3 w-full transition-all ${
+          isLightMode 
+            ? 'bg-white border-slate-200 text-slate-805' 
+            : 'bg-dark-depth-2/65 border-dark-border/80 text-white focus-within:border-brand-500/50'
+        } ${isCenter ? 'max-w-2xl mx-auto shadow-2xl' : ''}`}
+      >
+        <button 
+          type="button" 
+          className={`w-7 h-7 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+            isLightMode 
+              ? 'bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-850 hover:bg-slate-200' 
+              : 'bg-dark-depth-3 border-dark-border/60 text-gray-400 hover:text-white'
+          }`}
+        >
+          <Plus className="w-4 h-4" />
+        </button>
+
+        <input
+          type="text"
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+          disabled={sendingChat || usageRemaining === 0}
+          placeholder={usageRemaining === 0 ? "Daily query limit reached (100/100)" : "Ask anything about your portfolio..."}
+          className={`flex-1 bg-transparent border-0 text-xs focus:outline-none focus:ring-0 p-0 ${
+            isLightMode ? 'text-slate-800 placeholder-slate-450' : 'text-white placeholder-gray-500'
+          }`}
+        />
+
+        <button 
+          type="button" 
+          className={`w-7 h-7 flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+            isLightMode ? 'text-slate-400 hover:text-slate-750' : 'text-gray-500 hover:text-white'
+          }`}
+        >
+          <Mic className="w-4 h-4" />
+        </button>
+
+        <button
+          type="submit"
+          disabled={sendingChat || !chatInput.trim() || usageRemaining === 0}
+          className={`w-7 h-7 rounded-full disabled:opacity-40 flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+            isLightMode 
+              ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' 
+              : 'bg-brand-500 hover:bg-brand-400 text-white'
+          }`}
+        >
+          <Send className="w-3.5 h-3.5" />
+        </button>
+      </form>
+    );
+  };
+
   const handleDeleteChat = (chatId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const updated = chats.filter(c => c.id !== chatId);
@@ -1842,33 +1901,26 @@ export const More = ({
                   }`}
                 >
                   {messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center py-10 space-y-8 select-none animate-fadeIn max-w-2xl mx-auto w-full">
-                      {/* Glow & Brain Container */}
-                      <div className="relative">
-                        {/* Pulsing visual glow */}
-                        <div className="absolute inset-0 bg-brand-500/20 blur-2xl rounded-full scale-150 animate-pulse pointer-events-none" />
-                        <div className={`relative w-16 h-16 rounded-2xl flex items-center justify-center mx-auto shadow-2xl transition-all duration-500 hover:scale-110 ${
-                          isLightMode 
-                            ? 'bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-indigo-100/10' 
-                            : 'bg-dark-depth-2 border border-brand-500/30 text-brand-400 shadow-brand-500/20'
-                        }`}>
-                          <Brain className="w-8 h-8" />
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <h4 className={`text-base font-extrabold uppercase tracking-widest bg-gradient-to-r from-brand-200 to-brand-500 bg-clip-text text-transparent`}>
-                          Ask Your Portfolio Assistant
+                    <div className="flex flex-col items-center justify-center h-full text-center py-6 space-y-10 select-none animate-fadeIn max-w-3xl mx-auto w-full">
+                      {/* Welcome Section */}
+                      <div className="space-y-4">
+                        <h4 className="text-4xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-brand-100 via-indigo-300 to-brand-400 bg-clip-text text-transparent py-2">
+                          Ready when you are
                         </h4>
-                        <p className={`text-xs max-w-md mt-1.5 leading-relaxed mx-auto ${
+                        <p className={`text-xs max-w-md leading-relaxed mx-auto ${
                           isLightMode ? 'text-slate-500' : 'text-gray-400'
                         }`}>
-                          Analyze holdings, evaluate discipline rules, check recent trade matches, or ask strategy questions. Fully injected with your live database context.
+                          Ask your portfolio coach anything about holdings, trade matches, discipline rules, or broker operations.
                         </p>
+                      </div>
+
+                      {/* Gemini Center Input Box */}
+                      <div className="w-full max-w-2xl px-4">
+                        {renderInputForm(true)}
                       </div>
                       
                       {/* Quick Suggestions grid */}
-                      <div className="w-full max-w-xl space-y-3.5 pt-2">
+                      <div className="w-full max-w-2xl space-y-3.5 pt-4">
                         <span className="text-[9px] font-black text-gray-500 tracking-widest uppercase block mb-1">
                           Quick Analysis Suggestions
                         </span>
@@ -1898,51 +1950,42 @@ export const More = ({
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-4 max-w-3xl mx-auto w-full">
+                    <div className="space-y-6 max-w-3xl mx-auto w-full py-4">
                       {messages.map((msg, idx) => {
                         const time = msg.timestamp || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
                         return (
                           <div key={idx} className="w-full">
                             {msg.role === 'user' ? (
-                              <div className="flex justify-end w-full py-1">
-                                <div className="max-w-[88%] md:max-w-[80%] bg-gradient-to-r from-indigo-500 to-blue-600 text-white rounded-2xl rounded-tr-none px-3.5 py-2.5 md:px-4 md:py-3 text-xs select-text leading-relaxed whitespace-pre-wrap shadow-md shadow-indigo-500/10">
-                                  <p className="select-text font-bold text-white tracking-wide">{msg.content}</p>
-                                  <span className="text-[8px] text-indigo-100/80 mt-1.5 block text-right font-medium">
+                              <div className="flex justify-end w-full py-2">
+                                <div className="max-w-[85%] md:max-w-[70%] bg-neutral-800/80 border border-neutral-700/30 text-white rounded-3xl px-5 py-3 text-xs select-text leading-relaxed whitespace-pre-wrap shadow-md">
+                                  <p className="select-text font-semibold text-gray-100 tracking-wide">{msg.content}</p>
+                                  <span className="text-[8px] text-gray-500 mt-1.5 block text-right font-medium">
                                     {time}
                                   </span>
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex justify-start w-full py-1">
-                                <div className={`group max-w-[94%] md:max-w-[85%] border rounded-2xl rounded-tl-none px-3 py-2.5 md:px-4 md:py-3 shadow-md select-text ${
+                              <div className="flex justify-start w-full py-4 items-start gap-4">
+                                {/* Avatar */}
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md shrink-0 select-none ${
                                   isLightMode 
-                                    ? 'bg-slate-50 border-slate-200/80 text-slate-800 shadow-slate-100' 
-                                    : 'bg-dark-depth-2 border-[#2d3748] text-gray-200 shadow-[#080b11]/30'
+                                    ? 'bg-indigo-50 border border-indigo-100 text-indigo-600' 
+                                    : 'bg-brand-500/10 border border-brand-500/20 text-brand-400 shadow-brand-500/5'
                                 }`}>
-                                  <div className="flex items-center gap-2 select-none mb-2 pb-1.5 border-b border-dashed border-slate-200 dark:border-[#2d3748]/55">
-                                    <div className={`w-5.5 h-5.5 rounded-full flex items-center justify-center shadow-sm shrink-0 select-none ${
-                                      isLightMode 
-                                        ? 'bg-slate-100 border border-slate-200 text-slate-600' 
-                                        : 'bg-brand-500/10 border border-brand-500/20 text-brand-400'
+                                  <Brain className="w-4.5 h-4.5" />
+                                </div>
+                                
+                                {/* Message Content Container (No bubble, no card background!) */}
+                                <div className="flex-1 space-y-3 min-w-0 select-text">
+                                  {msg.engine && (
+                                    <div className={`text-[9px] font-black uppercase tracking-widest ${
+                                      isLightMode ? 'text-indigo-650' : 'text-brand-400'
                                     }`}>
-                                      <Brain className="w-3 h-3" />
+                                      Finor AI Coach ({msg.engine})
                                     </div>
-                                    
-                                    <span className={`text-[9px] font-black uppercase tracking-widest block ${
-                                      isLightMode ? 'text-slate-500' : 'text-gray-400'
-                                    }`}>
-                                      Finor AI
-                                    </span>
-                                    {msg.engine && (
-                                      <span className={`text-[8px] font-extrabold tracking-wider uppercase ${
-                                        isLightMode ? 'text-slate-400' : 'text-gray-500'
-                                      }`}>
-                                        ({msg.engine})
-                                      </span>
-                                    )}
-                                  </div>
+                                  )}
                                   
-                                  <div className="text-xs leading-relaxed font-medium select-text">
+                                  <div className={`text-[13px] leading-relaxed select-text font-medium text-gray-150`}>
                                     <MarkdownView text={msg.content} isLightMode={isLightMode} />
                                   </div>
                                   
@@ -1955,28 +1998,31 @@ export const More = ({
                                     />
                                   )}
                                   
-                                  <MessageActions 
-                                    msg={msg}
-                                    msgIdx={idx}
-                                    activeChatId={activeChatId || ''}
-                                    feedback={feedback}
-                                    onFeedback={handleFeedback}
-                                    isLightMode={isLightMode}
-                                  />
-                                  
-                                  <div className="flex items-center justify-between mt-2 select-none gap-4">
-                                    <span className={`text-[8px] font-medium ${
-                                      isLightMode ? 'text-slate-400' : 'text-gray-500'
-                                    }`}>
-                                      {time}
-                                    </span>
-                                    {msg.responseTime !== undefined && (
-                                      <span className={`text-[8px] font-black flex items-center gap-0.5 ${
-                                        isLightMode ? 'text-indigo-650' : 'text-brand-400'
+                                  <div className="flex items-center justify-between pt-1 select-none gap-4">
+                                    <div className="flex items-center gap-1.5">
+                                      <MessageActions 
+                                        msg={msg}
+                                        msgIdx={idx}
+                                        activeChatId={activeChatId || ''}
+                                        feedback={feedback}
+                                        onFeedback={handleFeedback}
+                                        isLightMode={isLightMode}
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      {msg.responseTime !== undefined && (
+                                        <span className={`text-[8px] font-black flex items-center gap-0.5 ${
+                                          isLightMode ? 'text-indigo-650' : 'text-brand-400'
+                                        }`}>
+                                          ⚡ {msg.responseTime.toFixed(1)}s
+                                        </span>
+                                      )}
+                                      <span className={`text-[8px] font-medium ${
+                                        isLightMode ? 'text-slate-400' : 'text-gray-500'
                                       }`}>
-                                        ⚡ {msg.responseTime.toFixed(1)}s
+                                        {time}
                                       </span>
-                                    )}
+                                    </div>
                                   </div>
                                 </div>
                               </div>
@@ -1986,31 +2032,24 @@ export const More = ({
                       })}
 
                       {sendingChat && (
-                        <div className="flex justify-start w-full py-1">
-                          <div className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2 select-none">
-                              <div className={`w-5.5 h-5.5 rounded-full flex items-center justify-center shadow-sm shrink-0 select-none ${
-                                isLightMode 
-                                  ? 'bg-slate-100 border border-slate-200 text-slate-600' 
-                                  : 'bg-brand-500/10 border border-brand-500/20 text-brand-400'
-                              }`}>
-                                <Brain className="w-3 h-3 animate-spin" />
-                              </div>
-                              <span className={`text-[9px] font-black uppercase tracking-widest block ${
-                                isLightMode ? 'text-slate-500' : 'text-gray-400'
-                              }`}>
-                                Finor AI is thinking...
-                              </span>
+                        <div className="flex justify-start w-full py-4 items-start gap-4">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-md shrink-0 select-none ${
+                            isLightMode 
+                              ? 'bg-indigo-50 border border-indigo-100 text-indigo-600' 
+                              : 'bg-brand-500/10 border border-brand-500/20 text-brand-400 shadow-brand-500/5'
+                          }`}>
+                            <Brain className="w-4.5 h-4.5 animate-pulse" />
+                          </div>
+                          <div className="flex-1 space-y-3 min-w-0">
+                            <div className={`text-[9px] font-black uppercase tracking-widest ${
+                              isLightMode ? 'text-indigo-650' : 'text-brand-400'
+                            }`}>
+                              Finor AI is thinking...
                             </div>
                             
-                            {/* Thinking sequential step card */}
-                            <div className={`p-4 rounded-xl border flex items-center gap-3 animate-pulse max-w-sm ${
-                              isLightMode 
-                                ? 'bg-slate-50 border-slate-200 text-slate-700 shadow-sm' 
-                                : 'bg-dark-depth-2 border-[#2d3748] text-gray-200'
-                            }`}>
-                              <Loader2 className="w-4 h-4 text-brand-500 animate-spin shrink-0" />
-                              <span className="text-xs font-semibold">{getThinkingText(thinkingStep)}</span>
+                            <div className="flex items-center gap-2.5 text-xs text-gray-400 font-semibold select-none">
+                              <Loader2 className="w-4.5 h-4.5 text-brand-500 animate-spin shrink-0" />
+                              <span>{getThinkingText(thinkingStep)}</span>
                             </div>
                           </div>
                         </div>
@@ -2044,97 +2083,46 @@ export const More = ({
                 )}
               </div>
 
-              {/* Bottom Sticky Input Area */}
-              <div 
-                className={`w-full shrink-0 px-4 py-3 border-t transition-all z-20 ${
-                  isLightMode 
-                    ? 'bg-white border-slate-200 text-slate-805' 
-                    : 'bg-dark-depth-1 border-[#2d3748] text-white'
-                }`}
-              >
-                <div className="max-w-3xl mx-auto w-full flex flex-col gap-2">
-                  {/* Prompt chips */}
-                  <div className="flex items-center gap-2 overflow-x-auto md:overflow-x-visible md:flex-wrap md:justify-center pb-1.5 md:pb-0 scrollbar-hidden select-none -mx-2 px-2 mask-gradient whitespace-nowrap">
-                    {promptChips.map((chip) => (
-                      <button
-                        key={chip.label}
-                        type="button"
-                        onClick={() => setChatInput(chip.text)}
-                        disabled={sendingChat || usageRemaining === 0}
-                        className={`px-3 py-1.5 border rounded-full text-[10px] font-bold whitespace-nowrap cursor-pointer transition-all shrink-0 ${
-                          isLightMode 
-                            ? 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:border-indigo-500/40 shadow-sm' 
-                            : 'bg-dark-depth-2 hover:bg-dark-depth-3 border-dark-border text-gray-300 hover:border-brand-500/40'
-                        }`}
-                      >
-                        {chip.label}
-                      </button>
-                    ))}
+              {/* Bottom Sticky Input Area (Only visible when messages are present) */}
+              {messages.length > 0 && (
+                <div 
+                  className={`w-full shrink-0 px-4 py-3 border-t transition-all z-20 ${
+                    isLightMode 
+                      ? 'bg-white border-slate-200 text-slate-805' 
+                      : 'bg-dark-depth-1 border-[#2d3748] text-white'
+                  }`}
+                >
+                  <div className="max-w-3xl mx-auto w-full flex flex-col gap-2">
+                    {/* Prompt chips */}
+                    <div className="flex items-center gap-2 overflow-x-auto md:overflow-x-visible md:flex-wrap md:justify-center pb-1.5 md:pb-0 scrollbar-hidden select-none -mx-2 px-2 mask-gradient whitespace-nowrap">
+                      {promptChips.map((chip) => (
+                        <button
+                          key={chip.label}
+                          type="button"
+                          onClick={() => setChatInput(chip.text)}
+                          disabled={sendingChat || usageRemaining === 0}
+                          className={`px-3 py-1.5 border rounded-full text-[10px] font-bold whitespace-nowrap cursor-pointer transition-all shrink-0 ${
+                            isLightMode 
+                              ? 'bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:border-indigo-500/40 shadow-sm' 
+                              : 'bg-dark-depth-2 hover:bg-dark-depth-3 border-dark-border text-gray-300 hover:border-brand-500/40'
+                          }`}
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Form helper call */}
+                    {renderInputForm(false)}
+                    
+                    <p className={`text-[8.5px] text-center mt-1 select-none font-medium tracking-wide ${
+                      isLightMode ? 'text-slate-450' : 'text-gray-500'
+                    }`}>
+                      Finor AI Coach can make mistakes. Verify critical trade details before taking actions.
+                    </p>
                   </div>
-
-                  {/* Form */}
-                  <form 
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      handleSendChat();
-                    }}
-                    className={`relative border rounded-3xl flex items-center px-4 py-2.5 shadow-inner gap-3 w-full ${
-                      isLightMode 
-                        ? 'bg-white border-slate-200 text-slate-805' 
-                        : 'bg-dark-depth-2/65 border-dark-border/80 text-white'
-                    }`}
-                  >
-                    <button 
-                      type="button" 
-                      className={`w-7 h-7 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-                        isLightMode 
-                          ? 'bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-850 hover:bg-slate-200' 
-                          : 'bg-dark-depth-3 border-dark-border/60 text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-
-                    <input
-                      type="text"
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      disabled={sendingChat || usageRemaining === 0}
-                      placeholder={usageRemaining === 0 ? "Daily query limit reached (100/100)" : "Ask anything about your portfolio..."}
-                      className={`flex-1 bg-transparent border-0 text-xs focus:outline-none focus:ring-0 p-0 ${
-                        isLightMode ? 'text-slate-800 placeholder-slate-450' : 'text-white placeholder-gray-500'
-                      }`}
-                    />
-
-                    <button 
-                      type="button" 
-                      className={`w-7 h-7 flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-                        isLightMode ? 'text-slate-400 hover:text-slate-700' : 'text-gray-500 hover:text-white'
-                      }`}
-                    >
-                      <Mic className="w-4 h-4" />
-                    </button>
-
-                    <button
-                      type="submit"
-                      disabled={sendingChat || !chatInput.trim() || usageRemaining === 0}
-                      className={`w-7 h-7 rounded-full disabled:opacity-40 flex items-center justify-center transition-all cursor-pointer shrink-0 ${
-                        isLightMode 
-                          ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' 
-                          : 'bg-brand-500 hover:bg-brand-400 text-dark-depth-0 text-white'
-                      }`}
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                    </button>
-                  </form>
-                  
-                  <p className={`text-[8.5px] text-center mt-1 select-none font-medium tracking-wide ${
-                    isLightMode ? 'text-slate-450' : 'text-gray-500'
-                  }`}>
-                    Finor AI Coach can make mistakes. Verify critical trade details before taking actions.
-                  </p>
                 </div>
-              </div>
+              )}
 
             </div>
           </div>
