@@ -254,7 +254,7 @@ const MarkdownView = ({ text, isLightMode }: { text: string; isLightMode: boolea
   return (
     <div 
       onClick={handleLinkClick}
-      className={`markdown-body select-text text-xs leading-[1.6] ${isLightMode ? 'text-slate-800' : 'text-gray-200'}`}
+      className={`markdown-body select-text text-sm leading-7 ${isLightMode ? 'text-slate-800' : 'text-slate-200'}`}
       dangerouslySetInnerHTML={{ __html: parsedHtml }} 
     />
   );
