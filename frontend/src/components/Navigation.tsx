@@ -448,24 +448,43 @@ export const Navigation: React.FC<NavigationProps> = ({
 
       {/* 4. Mobile Bottom Navigation (sm and down) */}
       <nav className="fixed bottom-0 left-0 right-0 w-full md:hidden h-16 bg-dark-depth-1/95 backdrop-blur-md border-t border-dark-border flex items-center justify-around z-50 px-2 pb-safe shadow-2xl flex-shrink-0">
-        {navigationItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className="flex flex-col items-center justify-center flex-1 h-full py-1 cursor-pointer"
-            >
-              <div className={`p-1 rounded-lg transition-colors ${isActive ? 'text-brand-400 bg-brand-500/10' : 'text-gray-400'}`}>
-                <Icon className="w-5 h-5" />
-              </div>
-              <span className={`text-[9px] font-bold mt-1 transition-colors ${isActive ? 'text-brand-400' : 'text-gray-400'}`}>
-                {item.label}
-              </span>
-            </button>
-          );
-        })}
+        {(() => {
+          const mobileBottomItems = [
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+            { id: 'holdings', label: 'Holdings', icon: Briefcase },
+            { id: 'pnl', label: 'P&L', icon: BarChart3 },
+            { id: 'finance', label: 'Finance', icon: Landmark },
+            { id: 'menu', label: 'Menu', icon: Menu },
+          ];
+
+          return mobileBottomItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = item.id === 'menu'
+              ? ['orders', 'ai-chat', 'admin', 'profile'].includes(activeTab)
+              : activeTab === item.id;
+
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  if (item.id === 'menu') {
+                    setIsMobileMenuOpen(true);
+                  } else {
+                    setActiveTab(item.id as any);
+                  }
+                }}
+                className="flex flex-col items-center justify-center flex-1 h-full py-1 cursor-pointer"
+              >
+                <div className={`p-1 rounded-lg transition-colors ${isActive ? 'text-brand-400 bg-brand-500/10' : 'text-gray-400'}`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <span className={`text-[9px] font-bold mt-1 transition-colors ${isActive ? 'text-brand-400' : 'text-gray-400'}`}>
+                  {item.label}
+                </span>
+              </button>
+            );
+          });
+        })()}
       </nav>
 
       {/* 5. Gmail Sync Details Logs Modal Popup */}
