@@ -18,8 +18,15 @@ import { useToastStore } from './context/toastStore';
 import { SystemLogger } from './utils/logger';
 
 function App() {
-  const { user, loading, initialize } = useAuthStore();
+  const { user, loading, initialize, role } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+
+  // Enforce client-side authorization: redirect non-admin away from admin tab
+  useEffect(() => {
+    if (activeTab === 'admin' && role !== 'SUPER_ADMIN') {
+      setActiveTab('dashboard');
+    }
+  }, [activeTab, role]);
 
   useEffect(() => {
     initialize();
@@ -112,7 +119,7 @@ function App() {
           {activeTab === 'more' && (
             <More key="more-view" defaultSubTab="news" setActiveTab={setActiveTab} />
           )}
-          {activeTab === 'admin' && <AdminPortal />}
+          {activeTab === 'admin' && role === 'SUPER_ADMIN' && <AdminPortal />}
           {activeTab === 'profile' && <ProfileSettings />}
         </div>
       </Navigation>

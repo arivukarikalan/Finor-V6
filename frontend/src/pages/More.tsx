@@ -31,7 +31,10 @@ import {
   Copy,
   Check,
   Search,
-  Download
+  Download,
+  LineChart,
+  TrendingUp,
+  Coins
 } from 'lucide-react';
 import { marked } from 'marked';
 
@@ -1840,47 +1843,58 @@ export const More = ({
                 >
                   {messages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center py-10 space-y-8 select-none animate-fadeIn max-w-2xl mx-auto w-full">
-                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto shadow-lg ${
-                        isLightMode 
-                          ? 'bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-indigo-100/10' 
-                          : 'bg-brand-500/10 border border-brand-500/20 text-brand-400 shadow-brand-500/5'
-                      }`}>
-                        <Brain className="w-7 h-7" />
-                      </div>
-                      <div className="space-y-2">
-                        <h4 className={`text-sm font-black uppercase tracking-wider ${
-                          isLightMode ? 'text-slate-900' : 'text-white'
+                      {/* Glow & Brain Container */}
+                      <div className="relative">
+                        {/* Pulsing visual glow */}
+                        <div className="absolute inset-0 bg-brand-500/20 blur-2xl rounded-full scale-150 animate-pulse pointer-events-none" />
+                        <div className={`relative w-16 h-16 rounded-2xl flex items-center justify-center mx-auto shadow-2xl transition-all duration-500 hover:scale-110 ${
+                          isLightMode 
+                            ? 'bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-indigo-100/10' 
+                            : 'bg-dark-depth-2 border border-brand-500/30 text-brand-400 shadow-brand-500/20'
                         }`}>
+                          <Brain className="w-8 h-8" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className={`text-base font-extrabold uppercase tracking-widest bg-gradient-to-r from-brand-200 to-brand-500 bg-clip-text text-transparent`}>
                           Ask Your Portfolio Assistant
                         </h4>
-                        <p className={`text-[10px] max-w-sm mt-1.5 leading-relaxed mx-auto ${
+                        <p className={`text-xs max-w-md mt-1.5 leading-relaxed mx-auto ${
                           isLightMode ? 'text-slate-500' : 'text-gray-400'
                         }`}>
                           Analyze holdings, evaluate discipline rules, check recent trade matches, or ask strategy questions. Fully injected with your live database context.
                         </p>
                       </div>
                       
-                      {/* Default prompt suggestions */}
-                      <div className="flex flex-col sm:flex-row flex-wrap justify-center items-center gap-2 max-w-xl w-full pt-4 mx-auto select-none">
-                        {[
-                          'Analyse my portfolio',
-                          'Which stock is my best performer?',
-                          'Should I book profit on any stock?'
-                        ].map((prompt) => (
-                          <button
-                            key={prompt}
-                            type="button"
-                            onClick={() => handleSendChat(prompt)}
-                            disabled={sendingChat || usageRemaining === 0}
-                            className={`px-4 py-2 border rounded-full text-xs font-semibold cursor-pointer transition-all duration-300 disabled:opacity-40 shadow-sm ${
-                              isLightMode 
-                                ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:border-indigo-500/40' 
-                                : 'bg-dark-depth-2 hover:bg-dark-depth-3 border-dark-border/85 hover:border-brand-500/40 text-gray-300'
-                            }`}
-                          >
-                            {prompt}
-                          </button>
-                        ))}
+                      {/* Quick Suggestions grid */}
+                      <div className="w-full max-w-xl space-y-3.5 pt-2">
+                        <span className="text-[9px] font-black text-gray-500 tracking-widest uppercase block mb-1">
+                          Quick Analysis Suggestions
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
+                          {[
+                            { text: 'Analyse my portfolio', desc: 'Full holdings review', icon: LineChart, color: 'from-blue-500/10 to-indigo-500/10 border-indigo-500/20 text-indigo-400 hover:border-indigo-500/40 shadow-indigo-500/5' },
+                            { text: 'Which stock is my best performer?', desc: 'Highest ROI assets', icon: TrendingUp, color: 'from-emerald-500/10 to-teal-500/10 border-emerald-500/20 text-emerald-400 hover:border-emerald-500/40 shadow-emerald-500/5' },
+                            { text: 'Should I book profit on any stock?', desc: 'Unrealized gains checks', icon: Coins, color: 'from-amber-500/10 to-orange-500/10 border-amber-500/20 text-amber-400 hover:border-amber-500/40 shadow-amber-500/5' }
+                          ].map((item) => (
+                            <button
+                              key={item.text}
+                              type="button"
+                              onClick={() => handleSendChat(item.text)}
+                              disabled={sendingChat || usageRemaining === 0}
+                              className={`flex flex-col items-center justify-center text-center p-5 border rounded-2xl bg-gradient-to-br cursor-pointer transition-all duration-300 disabled:opacity-40 shadow-md hover:scale-[1.03] group ${
+                                isLightMode 
+                                  ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:border-indigo-500/40' 
+                                  : `${item.color} bg-dark-depth-2/80`
+                              }`}
+                            >
+                              <item.icon className="w-5 h-5 mb-2 group-hover:scale-110 transition-transform" />
+                              <span className="text-xs font-bold leading-snug text-white group-hover:text-brand-300 transition-colors">{item.text}</span>
+                              <span className="text-[9px] text-gray-500 mt-1.5 font-bold uppercase tracking-wider">{item.desc}</span>
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   ) : (
