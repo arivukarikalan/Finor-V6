@@ -31,10 +31,7 @@ import {
   Copy,
   Check,
   Search,
-  Download,
-  LineChart,
-  TrendingUp,
-  Coins
+  Download
 } from 'lucide-react';
 import { marked } from 'marked';
 
@@ -490,7 +487,7 @@ export const More = ({
   defaultSubTab?: SubTabId; 
   setActiveTab?: (tab: any) => void;
 }) => {
-  const { signOut } = useAuthStore();
+  const { signOut, user, profile } = useAuthStore();
   const [activeSubTab, setActiveSubTab] = useState<SubTabId>(defaultSubTab);
   const [logsList, setLogsList] = useState<LogEntry[]>([]);
   const [logSearch, setLogSearch] = useState('');
@@ -663,6 +660,10 @@ export const More = ({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  const rawName = profile?.username || user?.email?.split('@')[0] || '';
+  const displayName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : '';
+  const greetingText = displayName ? `What's the vibe, ${displayName}?` : "What's the vibe?";
 
   const promptChips = [
     { label: '📊 Portfolio Analysis', text: 'Analyse my portfolio and show holdings summary' },
@@ -1903,52 +1904,17 @@ export const More = ({
                   }`}
                 >
                   {messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center py-6 space-y-10 select-none animate-fadeIn max-w-3xl mx-auto w-full">
+                    <div className="flex flex-col items-center justify-center h-full text-center py-10 space-y-7 select-none animate-fadeIn max-w-3xl mx-auto w-full">
                       {/* Welcome Section */}
-                      <div className="space-y-4">
-                        <h4 className="text-4xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-brand-100 via-indigo-300 to-brand-400 bg-clip-text text-transparent py-2">
-                          Ready when you are
+                      <div>
+                        <h4 className="text-4xl sm:text-5xl font-medium tracking-tight text-slate-100 font-display py-2">
+                          {greetingText}
                         </h4>
-                        <p className={`text-xs max-w-md leading-relaxed mx-auto ${
-                          isLightMode ? 'text-slate-500' : 'text-gray-400'
-                        }`}>
-                          Ask your portfolio coach anything about holdings, trade matches, discipline rules, or broker operations.
-                        </p>
                       </div>
 
                       {/* Gemini Center Input Box */}
-                      <div className="w-full max-w-2xl px-4">
+                      <div className="w-full max-w-2xl px-4 pt-1">
                         {renderInputForm(true)}
-                      </div>
-                      
-                      {/* Quick Suggestions grid */}
-                      <div className="w-full max-w-2xl space-y-3.5 pt-4">
-                        <span className="text-[9px] font-black text-gray-500 tracking-widest uppercase block mb-1">
-                          Quick Analysis Suggestions
-                        </span>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
-                          {[
-                            { text: 'Analyse my portfolio', desc: 'Full holdings review', icon: LineChart, color: 'from-blue-500/10 to-indigo-500/10 border-indigo-500/20 text-indigo-400 hover:border-indigo-500/40 shadow-indigo-500/5' },
-                            { text: 'Which stock is my best performer?', desc: 'Highest ROI assets', icon: TrendingUp, color: 'from-emerald-500/10 to-teal-500/10 border-emerald-500/20 text-emerald-400 hover:border-emerald-500/40 shadow-emerald-500/5' },
-                            { text: 'Should I book profit on any stock?', desc: 'Unrealized gains checks', icon: Coins, color: 'from-amber-500/10 to-orange-500/10 border-amber-500/20 text-amber-400 hover:border-amber-500/40 shadow-amber-500/5' }
-                          ].map((item) => (
-                            <button
-                              key={item.text}
-                              type="button"
-                              onClick={() => handleSendChat(item.text)}
-                              disabled={sendingChat || usageRemaining === 0}
-                              className={`flex flex-col items-center justify-center text-center p-5 border rounded-2xl bg-gradient-to-br cursor-pointer transition-all duration-300 disabled:opacity-40 shadow-md hover:scale-[1.03] group ${
-                                isLightMode 
-                                  ? 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700 hover:border-indigo-500/40' 
-                                  : `${item.color} bg-dark-depth-2/80`
-                              }`}
-                            >
-                              <item.icon className="w-5 h-5 mb-2 group-hover:scale-110 transition-transform" />
-                              <span className="text-xs font-bold leading-snug text-white group-hover:text-brand-300 transition-colors">{item.text}</span>
-                              <span className="text-[9px] text-gray-500 mt-1.5 font-bold uppercase tracking-wider">{item.desc}</span>
-                            </button>
-                          ))}
-                        </div>
                       </div>
                     </div>
                   ) : (
