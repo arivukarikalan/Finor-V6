@@ -661,7 +661,13 @@ export const More = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  const rawName = profile?.username || user?.email?.split('@')[0] || '';
+  let rawName = profile?.username || user?.email?.split('@')[0] || '';
+  // Remove trailing numbers (e.g. arivukarikalan7 -> arivukarikalan)
+  rawName = rawName.replace(/\d+$/, '');
+  // Map custom long usernames to short names
+  if (rawName.toLowerCase().includes('arivukarikalan')) {
+    rawName = 'Arivu';
+  }
   const displayName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : '';
   const greetingText = displayName ? `What's the vibe, ${displayName}?` : "What's the vibe?";
 
@@ -1315,7 +1321,7 @@ export const More = ({
       )}
 
       {/* Subtab Contents router */}
-      <div className={activeSubTab === 'ai-chat' ? 'flex-1 min-h-0 flex flex-col h-full md:h-[calc(100vh-164px)] md:mt-4' : 'min-h-[400px]'}>
+      <div className={activeSubTab === 'ai-chat' ? 'flex-1 min-h-0 flex flex-col h-full md:mt-4' : 'min-h-[400px]'}>
         
         {/* 1. News subtab */}
         {activeSubTab === 'news' && <News />}

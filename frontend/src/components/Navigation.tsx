@@ -421,10 +421,12 @@ export const Navigation: React.FC<NavigationProps> = ({
         </header>
 
         {/* Main Content Container */}
-        <main className={`flex-grow overflow-y-auto ${
-          activeTab === 'ai-chat' ? 'px-0 pt-[56px] pb-[112px] md:p-6' : 'px-4 pt-[72px] pb-[112px] md:px-8 md:pt-6 md:pb-16'
-        } min-h-0`}>
-          <div className="max-w-7xl mx-auto flex flex-col w-full">
+        <main className={`flex-grow min-h-0 ${
+          activeTab === 'ai-chat' 
+            ? 'px-0 pt-[56px] pb-[16px] md:p-6 md:h-[calc(100vh-64px)] flex flex-col overflow-hidden' 
+            : 'overflow-y-auto px-4 pt-[72px] pb-[112px] md:px-8 md:pt-6 md:pb-16'
+        }`}>
+          <div className={`max-w-7xl mx-auto flex flex-col w-full ${activeTab === 'ai-chat' ? 'flex-1 h-full min-h-0' : ''}`}>
             {!isOnline && (
               <div className="mb-4 p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-semibold flex items-center justify-between gap-3 animate-in slide-in-from-top-4 duration-300">
                 <div className="flex items-center gap-2">

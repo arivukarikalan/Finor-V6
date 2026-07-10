@@ -107,7 +107,7 @@ function App() {
   return (
     <>
       <Navigation activeTab={activeTab} setActiveTab={setActiveTab}>
-        <div className="w-full transition-opacity duration-200 animate-in fade-in">
+        <div className={`w-full transition-opacity duration-200 animate-in fade-in ${activeTab === 'ai-chat' ? 'h-full flex-1 flex flex-col min-h-0' : ''}`}>
           {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
           {activeTab === 'holdings' && <Holdings />}
           {activeTab === 'orders' && <Orders />}
