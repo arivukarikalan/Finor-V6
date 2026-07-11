@@ -207,6 +207,7 @@ export const Finance: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [txIdToDelete, setTxIdToDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [showBulkCategoryDropdown, setShowBulkCategoryDropdown] = useState(false);
 
   // Debt deletion confirm states
   const [showDebtDeleteConfirm, setShowDebtDeleteConfirm] = useState(false);
@@ -453,6 +454,29 @@ export const Finance: React.FC = () => {
   const confirmDeleteTx = (id: string) => {
     setTxIdToDelete(id);
     setShowDeleteConfirm(true);
+  };
+
+  const handleBulkMapCategory = async (newCat: string) => {
+    if (selectedTxIds.length === 0) return;
+    const rollback = [...transactions];
+    try {
+      // Optimistic update
+      setTransactions(prev => prev.map(t => selectedTxIds.includes(t.id) ? { ...t, category: newCat } : t));
+      const ids = [...selectedTxIds];
+      setSelectedTxIds([]);
+      setShowBulkCategoryDropdown(false);
+      triggerToast('success', `Mapped selected transactions to ${newCat}.`);
+
+      await apiRequest('/finance/transaction/bulk-map-category', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, category: newCat })
+      });
+      fetchDashboardData(true);
+    } catch (err: any) {
+      setTransactions(rollback);
+      triggerToast('error', err.message || 'Failed bulk mapping.');
+    }
   };
 
   const confirmBulkDelete = () => {
@@ -732,27 +756,30 @@ export const Finance: React.FC = () => {
       <div className="flex border-b border-dark-border/60 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full">
         <button
           onClick={() => setSubTab('wealth')}
-          className={`px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
+          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
             subTab === 'wealth' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
           }`}
         >
-          Wealth & Goals
+          <span className="hidden md:inline">Wealth & Goals</span>
+          <span className="md:hidden">Wealth</span>
         </button>
         <button
           onClick={() => setSubTab('expenses')}
-          className={`px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
+          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
             subTab === 'expenses' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
           }`}
         >
-          Expenses & Sync
+          <span className="hidden md:inline">Expenses & Sync</span>
+          <span className="md:hidden">Expenses</span>
         </button>
         <button
           onClick={() => setSubTab('debts')}
-          className={`px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
+          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
             subTab === 'debts' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
           }`}
         >
-          Debt Ledger
+          <span className="hidden md:inline">Debt Ledger</span>
+          <span className="md:hidden">Debts</span>
         </button>
       </div>
 
@@ -1122,6 +1149,35 @@ export const Finance: React.FC = () => {
                   >
                     Cancel
                   </button>
+                  <div className="relative inline-block">
+                    <button
+                      onClick={() => setShowBulkCategoryDropdown(!showBulkCategoryDropdown)}
+                      className="px-3.5 py-1.5 text-[10px] font-extrabold rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-300 hover:text-white border border-dark-border/40 uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      Map Category
+                    </button>
+                    {showBulkCategoryDropdown && (
+                      <div className="absolute right-0 top-full mt-2 z-50 w-48 bg-[#141416] border border-dark-border rounded-xl shadow-2xl p-2 select-none animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="text-[9px] font-bold text-gray-500 px-2 py-1 uppercase tracking-wider border-b border-dark-border/40 mb-1">
+                          Select Category
+                        </div>
+                        <div className="max-h-48 overflow-y-auto space-y-0.5">
+                          {CATEGORIES.map((cat) => (
+                            <button
+                              key={cat}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                await handleBulkMapCategory(cat);
+                              }}
+                              className="w-full text-left px-2 py-1.5 text-[10px] font-semibold rounded-lg hover:bg-brand-500/10 hover:text-brand-400 text-gray-300 transition-all cursor-pointer"
+                            >
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={confirmBulkDelete}
                     className="px-3.5 py-1.5 text-[10px] font-extrabold rounded-xl bg-rose-600 hover:bg-rose-700 text-white uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-rose-900/20"
@@ -1218,7 +1274,18 @@ export const Finance: React.FC = () => {
                               
                               {/* Quick Category popover */}
                               {activeQuickMapTxId === tx.id && (
-                                <div className="absolute left-0 mt-6 z-50 w-56 bg-[#141416] border border-dark-border rounded-xl shadow-2xl p-2 select-none">
+                                <div className="absolute left-0 mt-6 z-50 w-60 bg-[#141416] border border-dark-border rounded-2xl shadow-2xl p-3 select-none animate-in fade-in zoom-in-95 duration-150">
+                                  {/* Popover Header with Close Button */}
+                                  <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-dark-border/40">
+                                    <span className="text-[9px] font-black uppercase tracking-wider text-brand-400">Quick Actions</span>
+                                    <button 
+                                      onClick={(e) => { e.stopPropagation(); setActiveQuickMapTxId(null); }}
+                                      className="p-1 rounded-lg hover:bg-dark-depth-2 text-gray-500 hover:text-white cursor-pointer transition-colors"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+
                                   {/* Tab Switcher */}
                                   <div className="flex border-b border-dark-border/40 pb-1.5 mb-1.5">
                                     <button 
@@ -1503,7 +1570,18 @@ export const Finance: React.FC = () => {
                           </button>
                           
                           {activeQuickMapTxId === tx.id && (
-                            <div className="absolute left-0 mt-6 z-50 w-56 bg-[#141416] border border-dark-border rounded-xl shadow-2xl p-2 select-none">
+                            <div className="absolute left-0 mt-6 z-50 w-60 bg-[#141416] border border-dark-border rounded-2xl shadow-2xl p-3 select-none animate-in fade-in zoom-in-95 duration-150">
+                              {/* Popover Header with Close Button */}
+                              <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-dark-border/40">
+                                <span className="text-[9px] font-black uppercase tracking-wider text-brand-400">Quick Actions</span>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setActiveQuickMapTxId(null); }}
+                                  className="p-1 rounded-lg hover:bg-dark-depth-2 text-gray-500 hover:text-white cursor-pointer transition-colors"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+
                               {/* Tab Switcher */}
                               <div className="flex border-b border-dark-border/40 pb-1.5 mb-1.5">
                                 <button 

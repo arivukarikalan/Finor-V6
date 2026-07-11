@@ -216,7 +216,10 @@ router.post('/transaction', requireAuth, async (req, res) => {
         .maybeSingle();
 
       if (fetchError) throw fetchError;
-      result = insertedTx || payload;
+    }
+
+    if (result && result.id) {
+      await syncTransactionToDebts(result);
     }
 
     res.json({ message: 'Transaction saved successfully.', transaction: result });
@@ -269,6 +272,37 @@ router.post('/transaction/bulk-delete', requireAuth, async (req, res) => {
 
   } catch (err) {
     console.error('[FinanceRoute] Bulk delete transactions failed:', err.message);
+    res.status(500).json({ error: err.message });
+});
+
+
+// ─── POST /api/finance/transaction/bulk-map-category ──────────────────────────
+router.post('/transaction/bulk-map-category', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { ids, category } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0 || !category) {
+      return res.status(400).json({ error: 'Invalid payload.' });
+    }
+
+    const { data, error } = await supabase
+      .from('finance_transactions')
+      .update({ category })
+      .in('id', ids)
+      .eq('user_id', userId)
+      .select();
+
+    if (error) throw error;
+
+    // Trigger auto-sync to debt ledger if mapped to Lent/Friends
+    for (const tx of (data || [])) {
+      await syncTransactionToDebts(tx);
+    }
+
+    res.json({ message: `Successfully mapped ${ids.length} transactions to ${category}.`, transactions: data });
+  } catch (err) {
+    console.error('[FinanceRoute] Bulk map category failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -599,7 +633,9 @@ router.post('/sms-webhook', async (req, res) => {
       .select('*')
       .eq('user_id', userId)
       .eq('external_ref_id', defaultHash)
-      .maybeSingle();
+    if (insertedTx) {
+      await syncTransactionToDebts(insertedTx);
+    }
 
     res.status(201).json({
       success: true,
@@ -677,6 +713,109 @@ router.post('/import-staging', requireAuth, async (req, res) => {
     console.error('[FinanceRoute] Import staging failed:', err.message);
     res.status(500).json({ error: err.message });
   }
-});
+async function syncTransactionToDebts(tx) {
+  try {
+    const userId = tx.user_id;
+    const amount = parseFloat(tx.amount);
+    
+    if (tx.category === 'Lent/Friends') {
+      if (tx.type === 'EXPENSE') {
+        // 1. Check if debt already exists for this tx
+        const noteTag = `tx_id: ${tx.id}`;
+        const { data: existing } = await supabase
+          .from('finance_debts')
+          .select('id')
+          .eq('user_id', userId)
+          .like('notes', `%${noteTag}%`)
+          .maybeSingle();
+
+        if (!existing) {
+          // Parse name from description (e.g. "Lent to Sanjay" -> "Sanjay", or "Sent to Vignesh" -> "Vignesh")
+          let name = 'Friend';
+          const desc = (tx.description || '').toLowerCase();
+          
+          // Match common formats like "lent to Name", "sent to Name", "given to Name", "to Name"
+          const match = tx.description.match(/(?:lent to|sent to|given to|to|friends?|friend)\s+([A-Za-z0-9]+)/i);
+          if (match && match[1]) {
+            name = match[1].charAt(0).toUpperCase() + match[1].slice(1);
+          } else {
+            // Check if name is the first word after common payment tags
+            const words = tx.description.split(/\s+/).filter(w => w.length > 0);
+            if (words.length > 0) {
+              const firstWord = words[0];
+              if (!['upi', 'to', 'transfer', 'rent', 'sent', 'lent', 'paid'].includes(firstWord.toLowerCase())) {
+                name = firstWord.charAt(0).toUpperCase() + firstWord.slice(1);
+              }
+            }
+          }
+
+          // Insert new Lent entry
+          const { error } = await supabase
+            .from('finance_debts')
+            .insert({
+              user_id: userId,
+              person_name: name,
+              type: 'LENT',
+              amount: amount,
+              remaining_amount: amount,
+              date: tx.date,
+              notes: `${noteTag} | Auto-generated from transaction ledger: "${tx.description || ''}"`,
+              status: 'ACTIVE'
+            });
+          if (error) console.error('[FinanceRoute] Auto-debt LENT insert failed:', error.message);
+        }
+      } else if (tx.type === 'INCOME') {
+        // Repayment received!
+        // 1. Check if repayment tag already exists
+        const noteTag = `repayment_tx_id: ${tx.id}`;
+        const { data: existing } = await supabase
+          .from('finance_debts')
+          .select('id')
+          .eq('user_id', userId)
+          .like('notes', `%${noteTag}%`)
+          .maybeSingle();
+
+        if (!existing) {
+          // Find the oldest active LENT debt for this user
+          const { data: activeDebts } = await supabase
+            .from('finance_debts')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('type', 'LENT')
+            .eq('status', 'ACTIVE')
+            .order('date', { ascending: true });
+
+          if (activeDebts && activeDebts.length > 0) {
+            // Apply repayment to oldest active debt
+            let repaymentRemaining = amount;
+            for (const debt of activeDebts) {
+              if (repaymentRemaining <= 0) break;
+
+              const deduct = Math.min(repaymentRemaining, parseFloat(debt.remaining_amount));
+              const newRemaining = Math.max(0, parseFloat(debt.remaining_amount) - deduct);
+              repaymentRemaining -= deduct;
+
+              const updatedNotes = `${debt.notes || ''}\n[Repayment of ₹${deduct.toFixed(2)} received - ${noteTag}]`;
+              const updatedStatus = newRemaining === 0 ? 'SETTLED' : 'ACTIVE';
+
+              const { error } = await supabase
+                .from('finance_debts')
+                .update({
+                  remaining_amount: newRemaining,
+                  status: updatedStatus,
+                  notes: updatedNotes
+                })
+                .eq('id', debt.id);
+
+              if (error) console.error('[FinanceRoute] Auto-debt repayment update failed:', error.message);
+            }
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[syncTransactionToDebts] unexpected error:', err.message);
+  }
+}
 
 export default router;
