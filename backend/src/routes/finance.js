@@ -714,6 +714,8 @@ router.post('/import-staging', requireAuth, async (req, res) => {
     console.error('[FinanceRoute] Import staging failed:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
 async function syncTransactionToDebts(tx) {
   try {
     const userId = tx.user_id;
