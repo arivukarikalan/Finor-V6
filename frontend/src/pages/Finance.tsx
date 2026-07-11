@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
   Edit2, UserMinus, UserPlus, Users, Sparkles, X, Link2
@@ -187,24 +187,9 @@ export const Finance: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
 
-  // List Virtualization Windowing
-  const [displayLimit, setDisplayLimit] = useState(50);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-  
-  const sentinelRef = useCallback((node: HTMLTableRowElement | HTMLDivElement | null) => {
-    if (loading) return;
-    if (observerRef.current) observerRef.current.disconnect();
-    observerRef.current = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting) {
-        setDisplayLimit(prev => prev + 50);
-      }
-    });
-    if (node) observerRef.current.observe(node);
-  }, [loading]);
+  // No virtualization — render all transactions at once (data is already in memory)
 
-  useEffect(() => {
-    setDisplayLimit(50);
-  }, [filterSearch, filterType, filterCategory, filterMethod, filterStartDate, filterEndDate]);
+
 
   // Selection & Bulk Actions
   const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
@@ -1275,7 +1260,7 @@ export const Finance: React.FC = () => {
                 <tbody className="divide-y divide-dark-border/40 text-xs">
                   {filteredTransactions.length > 0 ? (
                     <>
-                      {filteredTransactions.slice(0, displayLimit).map((tx) => (
+                      {filteredTransactions.map((tx) => (
                         <tr key={tx.id} className={`hover:bg-dark-depth-2/20 ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
                           <td className="p-4 w-10">
                             <input 
@@ -1498,13 +1483,7 @@ export const Finance: React.FC = () => {
                           </td>
                         </tr>
                       ))}
-                      {filteredTransactions.length > displayLimit && (
-                        <tr ref={sentinelRef}>
-                          <td colSpan={9} className="p-4 text-center text-gray-500 font-bold animate-pulse text-[10px] tracking-wider uppercase">
-                            Loading more transactions...
-                          </td>
-                        </tr>
-                      )}
+
                     </>
                   ) : (
                     <tr>
@@ -1521,7 +1500,7 @@ export const Finance: React.FC = () => {
             <div className="md:hidden divide-y divide-dark-border/40 text-xs">
               {filteredTransactions.length > 0 ? (
                 <>
-                  {filteredTransactions.slice(0, displayLimit).map((tx) => (
+                  {filteredTransactions.map((tx) => (
                     <div key={tx.id} className={`p-4 space-y-3 hover:bg-dark-depth-2/20 transition-all ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
                       {/* Header: Date/Time + Actions */}
                       <div className="flex items-center justify-between gap-2">
@@ -1743,11 +1722,7 @@ export const Finance: React.FC = () => {
                       </div>
                     </div>
                   ))}
-                  {filteredTransactions.length > displayLimit && (
-                    <div ref={sentinelRef} className="p-4 text-center text-gray-500 font-bold animate-pulse text-[10px] tracking-wider uppercase">
-                      Loading more transactions...
-                    </div>
-                  )}
+
                 </>
               ) : (
                 <div className="p-8 text-center text-gray-500">
