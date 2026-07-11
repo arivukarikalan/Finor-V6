@@ -273,6 +273,7 @@ router.post('/transaction/bulk-delete', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[FinanceRoute] Bulk delete transactions failed:', err.message);
     res.status(500).json({ error: err.message });
+  }
 });
 
 
