@@ -172,13 +172,17 @@ export const Finance: React.FC = () => {
   const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>(() => (sessionStorage.getItem('finor_filter_type') as any) || 'ALL');
   const [filterCategory, setFilterCategory] = useState(() => sessionStorage.getItem('finor_filter_category') || 'ALL');
   const [filterMethod, setFilterMethod] = useState(() => sessionStorage.getItem('finor_filter_method') || 'ALL');
+  const [filterStartDate, setFilterStartDate] = useState(() => sessionStorage.getItem('finor_filter_start_date') || '');
+  const [filterEndDate, setFilterEndDate] = useState(() => sessionStorage.getItem('finor_filter_end_date') || '');
 
   useEffect(() => {
     sessionStorage.setItem('finor_filter_search', filterSearch);
     sessionStorage.setItem('finor_filter_type', filterType);
     sessionStorage.setItem('finor_filter_category', filterCategory);
     sessionStorage.setItem('finor_filter_method', filterMethod);
-  }, [filterSearch, filterType, filterCategory, filterMethod]);
+    sessionStorage.setItem('finor_filter_start_date', filterStartDate);
+    sessionStorage.setItem('finor_filter_end_date', filterEndDate);
+  }, [filterSearch, filterType, filterCategory, filterMethod, filterStartDate, filterEndDate]);
 
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
@@ -200,7 +204,7 @@ export const Finance: React.FC = () => {
 
   useEffect(() => {
     setDisplayLimit(50);
-  }, [filterSearch, filterType, filterCategory, filterMethod]);
+  }, [filterSearch, filterType, filterCategory, filterMethod, filterStartDate, filterEndDate]);
 
   // Selection & Bulk Actions
   const [selectedTxIds, setSelectedTxIds] = useState<string[]>([]);
@@ -410,7 +414,20 @@ export const Finance: React.FC = () => {
     const matchesType = filterType === 'ALL' || tx.type === filterType;
     const matchesCategory = filterCategory === 'ALL' || tx.category === filterCategory;
     const matchesMethod = filterMethod === 'ALL' || tx.method === filterMethod;
-    return matchesSearch && matchesType && matchesCategory && matchesMethod;
+    
+    let matchesDate = true;
+    if (filterStartDate) {
+      const start = new Date(filterStartDate);
+      start.setHours(0, 0, 0, 0);
+      matchesDate = matchesDate && new Date(tx.date) >= start;
+    }
+    if (filterEndDate) {
+      const end = new Date(filterEndDate);
+      end.setHours(23, 59, 59, 999);
+      matchesDate = matchesDate && new Date(tx.date) <= end;
+    }
+    
+    return matchesSearch && matchesType && matchesCategory && matchesMethod && matchesDate;
   });
 
 
@@ -1132,6 +1149,43 @@ export const Finance: React.FC = () => {
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
+
+                {/* Date Filters */}
+                <div className="flex items-center gap-1.5 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-1.5 w-full sm:w-auto">
+                  <span className="text-[9px] font-extrabold text-gray-500 uppercase select-none">From:</span>
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                    className="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer w-full sm:w-28"
+                  />
+                  {filterStartDate && (
+                    <button 
+                      onClick={() => setFilterStartDate('')}
+                      className="text-gray-400 hover:text-white text-[10px] font-bold px-0.5 cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-1.5 w-full sm:w-auto">
+                  <span className="text-[9px] font-extrabold text-gray-500 uppercase select-none">To:</span>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                    className="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer w-full sm:w-28"
+                  />
+                  {filterEndDate && (
+                    <button 
+                      onClick={() => setFilterEndDate('')}
+                      className="text-gray-400 hover:text-white text-[10px] font-bold px-0.5 cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
