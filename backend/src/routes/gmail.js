@@ -4,6 +4,7 @@ import { google } from 'googleapis';
 import { createRequire } from 'module';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
+import { encryptText, decryptText } from '../utils/encryption.js';
 
 const require = createRequire(import.meta.url);
 const pdfjsLib = require('pdfjs-dist/build/pdf.js');
@@ -26,7 +27,8 @@ const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 
 // ─── Helpers: Store/Read Refresh Token ───────────────────────────────────────
 const saveRefreshToken = async (userId, token, email = null) => {
-  const updatePayload = { gmail_refresh_token: token };
+  const encryptedToken = encryptText(token);
+  const updatePayload = { gmail_refresh_token: encryptedToken };
   if (email) {
     updatePayload.gmail_connected_email = email;
   }
@@ -53,7 +55,7 @@ const getRefreshToken = async (userId) => {
     console.error('Error reading user refresh token:', error.message);
     throw error;
   }
-  return data?.gmail_refresh_token || null;
+  return decryptText(data?.gmail_refresh_token) || null;
 };
 
 const getAuthorizedClient = async (userId) => {

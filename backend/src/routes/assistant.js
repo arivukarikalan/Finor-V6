@@ -516,6 +516,45 @@ async function buildPortfolioContext(userId, skipInsights = false) {
     ctx += corporateActionsText;
   }
 
+  // 5. Fetch profile data (non-sensitive fields)
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('username, country, gender')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profile) {
+      ctx += `\n## User Profile Summary (Non-Sensitive):\n`;
+      ctx += `- Username: ${profile.username || 'N/A'}\n`;
+      ctx += `- Country: ${profile.country || 'N/A'}\n`;
+      ctx += `- Gender: ${profile.gender || 'N/A'}\n`;
+    }
+  } catch (errProfile) {
+    console.error('[AI Assistant] Fetching profile metadata failed:', errProfile.message);
+  }
+
+  // 6. Fetch 15 recent finance transactions
+  try {
+    const { data: recentTransactions } = await supabase
+      .from('finance_transactions')
+      .select('date, description, amount, type, category')
+      .eq('user_id', userId)
+      .order('date', { ascending: false })
+      .limit(15);
+
+    ctx += `\n## Recent Finance Ledger Transactions:\n`;
+    if (recentTransactions && recentTransactions.length > 0) {
+      recentTransactions.forEach(t => {
+        ctx += `- **${t.date.substring(0, 10)}**: [${t.type}] ${t.description || 'No description'} - ₹${t.amount} (Category: ${t.category || 'Uncategorized'})\n`;
+      });
+    } else {
+      ctx += `No recent ledger transactions found.\n`;
+    }
+  } catch (errTx) {
+    console.error('[AI Assistant] Fetching finance transactions failed:', errTx.message);
+  }
+
   // Cache the built context
   portfolioContextCache.set(cacheKey, {
     contextText: ctx,
@@ -823,11 +862,14 @@ These parameters are locked in the active order workflow. Keep them in mind. If 
       const systemInstruction = `You are Finor AI (V6.0), a professional trading coach and portfolio risk advisor. You are chatting with the user, ${userName}.
 Always address the user as ${userName} or Arivu to maintain a personalized and friendly relationship.
 
-You are directly integrated with the user's trading terminal database (Supabase). The context below is computed dynamically by the backend from the user's complete historical trade ledger (including all buy/sell transactions):
+You are directly integrated with the user's trading terminal database (Supabase). The context below is computed dynamically by the backend from the user's profile and complete historical trade ledger (including all buy/sell transactions and finance ledger inputs):
 ${contextText}
 ${workflowContext}
 
 Analyze this context and answer the user's query directly and professionally. Maintain an encouraging, analytical, yet direct tone. Use clean markdown formatting with headers, bullet points, and tables where helpful. Do not repeat the entire context list unless asked, but reference specific details. Keep your response under 300 words.
+
+### 🛡️ CRITICAL SECURITY POLICY:
+You have access to calculated analytical metrics, profile attributes, and transaction logs. However, you must NEVER ask for, expose, or output sensitive credentials, passwords, Zerodha API Key/Secrets, Gmail refresh tokens, or other private access credentials. If the user asks for passwords or API secrets, explain that you do not display or store these in plaintext for security reasons, and instruct them to update their API credentials securely via the Profile Settings page.
 
 Acknowledge that you have full access to these pre-calculated metrics. If the user asks about database integration or historical trade data access, confidently confirm that your backend retrieves and calculates these metrics from their complete trade ledger in Supabase, meaning you do have access to these aggregated insights.
 

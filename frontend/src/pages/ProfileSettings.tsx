@@ -47,6 +47,9 @@ export const ProfileSettings = () => {
   const [kiteStatus, setKiteStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'MOCK_MODE'>('MOCK_MODE');
   const [kiteLoginUrl, setKiteLoginUrl] = useState('');
 
+  // Gmail integration state
+  const [disconnectingGmail, setDisconnectingGmail] = useState(false);
+
   const [savingProfile, setSavingProfile] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
 
@@ -55,14 +58,23 @@ export const ProfileSettings = () => {
   }, [fetchProfile]);
 
   useEffect(() => {
+    const fetchDecryptedCredentials = async () => {
+      try {
+        const credentials = await apiRequest('/auth/decrypted-profile');
+        setZerodhaApiKey(credentials.zerodha_api_key || '');
+        setZerodhaApiSecret(credentials.zerodha_api_secret || '');
+        setZerodhaPdfPassword(credentials.zerodha_pdf_password || '');
+      } catch (err) {
+        console.error('Failed to fetch decrypted credentials:', err);
+      }
+    };
+
     if (profile) {
       setUsername(profile.username || '');
       setCountry(profile.country || '');
       setGender(profile.gender || 'Male');
       setSessionExpiryDays(profile.session_expiry_days || 1);
-      setZerodhaApiKey(profile.zerodha_api_key || '');
-      setZerodhaApiSecret(profile.zerodha_api_secret || '');
-      setZerodhaPdfPassword(profile.zerodha_pdf_password || '');
+      fetchDecryptedCredentials();
     }
   }, [profile]);
 
@@ -177,6 +189,29 @@ export const ProfileSettings = () => {
       useToastStore.getState().addToast(err.message || 'Failed to save Zerodha credentials.', 'error');
     } finally {
       setSavingZerodha(false);
+    }
+  };
+
+  const handleConnectGmail = () => {
+    const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+    const base = backendUrl.endsWith('/api') ? backendUrl.replace('/api', '') : backendUrl;
+    window.open(`${base}/api/gmail/auth?userId=${profile?.id}`, '_self');
+  };
+
+  const handleDisconnectGmail = async () => {
+    if (!window.confirm('Are you sure you want to disconnect your Gmail integration? Auto-syncing of trades will stop.')) {
+      return;
+    }
+    setDisconnectingGmail(true);
+    try {
+      await apiRequest('/auth/disconnect-gmail', { method: 'POST' });
+      await fetchProfile();
+      useToastStore.getState().addToast('Gmail connection disconnected successfully!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast(err.message || 'Failed to disconnect Gmail.', 'error');
+    } finally {
+      setDisconnectingGmail(false);
     }
   };
 
@@ -588,6 +623,68 @@ export const ProfileSettings = () => {
                 )}
               </div>
             </form>
+          </div>
+
+          {/* Gmail Integration Card */}
+          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-emerald-400" />
+                <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">Gmail Integration</h3>
+              </div>
+              <span className={`text-[9px] font-black uppercase px-2 py-0.5 border rounded-full select-none ${
+                profile?.gmail_connected_email
+                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                  : 'text-gray-400 bg-gray-500/10 border-gray-500/20'
+              }`}>
+                {profile?.gmail_connected_email ? 'Connected' : 'Disconnected'}
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-gray-300 leading-relaxed">
+                Connect your personal Gmail account directly to synchronize transaction contract notes automatically.
+              </p>
+
+              {profile?.gmail_connected_email ? (
+                <div className="space-y-3">
+                  <div className="p-3.5 rounded-2xl bg-dark-depth-2 border border-dark-border flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-[10px] font-bold text-gray-400 block uppercase">Connected Inbox</span>
+                      <span className="text-xs text-white block font-bold truncate mt-0.5">{profile.gmail_connected_email}</span>
+                    </div>
+                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                  </div>
+                  <button
+                    onClick={handleDisconnectGmail}
+                    disabled={disconnectingGmail}
+                    className="w-full py-2.5 px-4 rounded-xl border border-rose-500/30 hover:border-rose-500 text-rose-400 hover:text-white hover:bg-rose-500/10 font-bold text-xs uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    {disconnectingGmail ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Disconnecting...
+                      </>
+                    ) : (
+                      'Disconnect Gmail Account'
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-[9px] text-gray-400 leading-relaxed">
+                    <span className="font-extrabold text-amber-400 uppercase block mb-0.5">Authorization Notice</span>
+                    Connecting your inbox allows Finor to scan emails from **Zerodha** matching subjects like **"contract note"** to automatically ingest trades. Your password is never shared.
+                  </div>
+                  <button
+                    onClick={handleConnectGmail}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 text-white font-bold text-xs uppercase tracking-wider hover:from-emerald-500 hover:to-emerald-600 focus:outline-none active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-700/20"
+                  >
+                    Link Gmail Inbox
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
         </div>

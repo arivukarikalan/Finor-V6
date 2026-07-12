@@ -15,6 +15,7 @@ export interface Profile {
   zerodha_api_secret?: string | null;
   zerodha_pdf_password?: string | null;
   session_expiry_days?: number | null;
+  gmail_connected_email?: string | null;
 }
 
 interface AuthState {

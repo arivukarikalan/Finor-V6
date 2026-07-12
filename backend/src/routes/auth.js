@@ -2,6 +2,7 @@ import express from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { sendWelcomeEmail } from '../services/emailService.js';
+import { encryptText, decryptText } from '../utils/encryption.js';
 
 const router = express.Router();
 
@@ -362,6 +363,57 @@ router.post('/ticket-recovery', async (req, res) => {
 });
 
 /**
+ * GET /api/auth/decrypted-profile
+ * Returns the decrypted credentials of the active user for profile page configuration forms.
+ */
+router.get('/decrypted-profile', requireAuth, async (req, res) => {
+  try {
+    const { data: profile, error } = await supabaseAdmin
+      .from('profiles')
+      .select('zerodha_api_key, zerodha_api_secret, zerodha_pdf_password')
+      .eq('id', req.user.id)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    res.json({
+      zerodha_api_key: decryptText(profile?.zerodha_api_key) || '',
+      zerodha_api_secret: decryptText(profile?.zerodha_api_secret) || '',
+      zerodha_pdf_password: decryptText(profile?.zerodha_pdf_password) || ''
+    });
+  } catch (err) {
+    console.error('[AuthRoute] Decrypted profile fetch failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/auth/disconnect-gmail
+ * Clears the user's saved Gmail sync credentials.
+ */
+router.post('/disconnect-gmail', requireAuth, async (req, res) => {
+  try {
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        gmail_refresh_token: null,
+        gmail_connected_email: null
+      })
+      .eq('id', req.user.id);
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Gmail connection disconnected successfully.'
+    });
+  } catch (err) {
+    console.error('[AuthRoute] Disconnect Gmail failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * POST /api/auth/update-zerodha-credentials
  * Updates the user's specific Zerodha Kite credentials and statement password
  */
@@ -369,12 +421,16 @@ router.post('/update-zerodha-credentials', requireAuth, async (req, res) => {
   try {
     const { zerodha_api_key, zerodha_api_secret, zerodha_pdf_password } = req.body;
 
+    const encryptedKey = encryptText(zerodha_api_key);
+    const encryptedSecret = encryptText(zerodha_api_secret);
+    const encryptedPdfPassword = encryptText(zerodha_pdf_password);
+
     const { data: updated, error } = await supabaseAdmin
       .from('profiles')
       .update({ 
-        zerodha_api_key: zerodha_api_key || null, 
-        zerodha_api_secret: zerodha_api_secret || null, 
-        zerodha_pdf_password: zerodha_pdf_password || null 
+        zerodha_api_key: encryptedKey || null, 
+        zerodha_api_secret: encryptedSecret || null, 
+        zerodha_pdf_password: encryptedPdfPassword || null 
       })
       .eq('id', req.user.id)
       .select()
@@ -386,8 +442,8 @@ router.post('/update-zerodha-credentials', requireAuth, async (req, res) => {
       success: true,
       message: 'Zerodha Kite credentials updated successfully.',
       profile: {
-        zerodha_api_key: updated.zerodha_api_key,
-        zerodha_pdf_password: updated.zerodha_pdf_password
+        zerodha_api_key: decryptText(updated.zerodha_api_key),
+        zerodha_pdf_password: decryptText(updated.zerodha_pdf_password)
       }
     });
   } catch (err) {

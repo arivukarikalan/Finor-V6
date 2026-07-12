@@ -1,6 +1,7 @@
 import { supabase } from '../config/supabase.js';
 import pkg from 'kiteconnect';
 import { fetchMultipleLTPs } from './yahooFinance.js';
+import { decryptText } from '../utils/encryption.js';
 
 const { KiteConnect } = pkg;
 
@@ -16,9 +17,9 @@ export async function getUserZerodhaCredentials(userId) {
       .eq('id', userId)
       .maybeSingle();
 
-    const apiKey = profile?.zerodha_api_key || process.env.ZERODHA_API_KEY;
-    const apiSecret = profile?.zerodha_api_secret || process.env.ZERODHA_API_SECRET;
-    const pdfPassword = profile?.zerodha_pdf_password || process.env.ZERODHA_PDF_PASSWORD || '';
+    const apiKey = decryptText(profile?.zerodha_api_key) || process.env.ZERODHA_API_KEY;
+    const apiSecret = decryptText(profile?.zerodha_api_secret) || process.env.ZERODHA_API_SECRET;
+    const pdfPassword = decryptText(profile?.zerodha_pdf_password) || process.env.ZERODHA_PDF_PASSWORD || '';
 
     return {
       apiKey: apiKey && apiKey !== 'your_zerodha_api_key_here' ? apiKey : null,
