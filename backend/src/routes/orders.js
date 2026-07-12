@@ -3,7 +3,7 @@ import pkg from 'kiteconnect';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
-import { getActiveSession, placeGttOrderInternal } from '../services/orderService.js';
+import { getActiveSession, placeGttOrderInternal, getUserZerodhaCredentials } from '../services/orderService.js';
 
 const { KiteConnect } = pkg;
 const router = express.Router();
@@ -14,10 +14,11 @@ const router = express.Router();
  */
 router.get('/config', requireAuth, async (req, res) => {
   try {
-    const apiKey = process.env.ZERODHA_API_KEY;
-    const apiSecret = process.env.ZERODHA_API_SECRET;
+    const credentials = await getUserZerodhaCredentials(req.user.id);
+    const apiKey = credentials.apiKey;
+    const apiSecret = credentials.apiSecret;
     
-    const isConfigured = apiKey && apiKey !== 'your_zerodha_api_key_here' && apiSecret && apiSecret !== 'your_zerodha_api_secret_here';
+    const isConfigured = !!(apiKey && apiSecret);
 
     if (!isConfigured) {
       return res.json({
@@ -59,11 +60,12 @@ router.post('/kite/session', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Missing request_token.' });
     }
 
-    const apiKey = process.env.ZERODHA_API_KEY;
-    const apiSecret = process.env.ZERODHA_API_SECRET;
+    const credentials = await getUserZerodhaCredentials(req.user.id);
+    const apiKey = credentials.apiKey;
+    const apiSecret = credentials.apiSecret;
 
-    if (!apiKey || apiKey === 'your_zerodha_api_key_here') {
-      return res.status(400).json({ error: 'Kite Connect keys are not configured.' });
+    if (!apiKey || !apiSecret) {
+      return res.status(400).json({ error: 'Kite Connect credentials are not configured in your Profile Settings.' });
     }
 
     const kc = new KiteConnect({ api_key: apiKey });
@@ -106,8 +108,9 @@ router.get('/live', requireAuth, async (req, res) => {
     
     if (session) {
       // Real mode
+      const credentials = await getUserZerodhaCredentials(req.user.id);
       const kc = new KiteConnect({
-        api_key: process.env.ZERODHA_API_KEY,
+        api_key: credentials.apiKey || process.env.ZERODHA_API_KEY,
         access_token: session.access_token
       });
       const kiteOrders = await kc.getOrders();
@@ -173,8 +176,9 @@ router.get('/gtt/live', requireAuth, async (req, res) => {
     
     if (session) {
       // Real Mode
+      const credentials = await getUserZerodhaCredentials(req.user.id);
       const kc = new KiteConnect({
-        api_key: process.env.ZERODHA_API_KEY,
+        api_key: credentials.apiKey || process.env.ZERODHA_API_KEY,
         access_token: session.access_token
       });
       const kiteGTTs = await kc.getGTTs();
@@ -263,8 +267,9 @@ router.post('/place', requireAuth, async (req, res) => {
 
     if (session) {
       // REAL ORDER PLACEMENT
+      const credentials = await getUserZerodhaCredentials(req.user.id);
       const kc = new KiteConnect({
-        api_key: process.env.ZERODHA_API_KEY,
+        api_key: credentials.apiKey || process.env.ZERODHA_API_KEY,
         access_token: session.access_token
       });
 
@@ -463,8 +468,9 @@ router.post('/cancel', requireAuth, async (req, res) => {
 
     if (session) {
       // Real Mode
+      const credentials = await getUserZerodhaCredentials(req.user.id);
       const kc = new KiteConnect({
-        api_key: process.env.ZERODHA_API_KEY,
+        api_key: credentials.apiKey || process.env.ZERODHA_API_KEY,
         access_token: session.access_token
       });
       await kc.cancelOrder('regular', order_id);
@@ -532,8 +538,9 @@ router.post('/gtt/cancel', requireAuth, async (req, res) => {
 
     if (session) {
       // Real Mode
+      const credentials = await getUserZerodhaCredentials(req.user.id);
       const kc = new KiteConnect({
-        api_key: process.env.ZERODHA_API_KEY,
+        api_key: credentials.apiKey || process.env.ZERODHA_API_KEY,
         access_token: session.access_token
       });
       await kc.deleteGTT(gtt_id);

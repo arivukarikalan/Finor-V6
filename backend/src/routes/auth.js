@@ -356,6 +356,41 @@ router.post('/ticket-recovery', async (req, res) => {
 });
 
 /**
+ * POST /api/auth/update-zerodha-credentials
+ * Updates the user's specific Zerodha Kite credentials and statement password
+ */
+router.post('/update-zerodha-credentials', requireAuth, async (req, res) => {
+  try {
+    const { zerodha_api_key, zerodha_api_secret, zerodha_pdf_password } = req.body;
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('profiles')
+      .update({ 
+        zerodha_api_key: zerodha_api_key || null, 
+        zerodha_api_secret: zerodha_api_secret || null, 
+        zerodha_pdf_password: zerodha_pdf_password || null 
+      })
+      .eq('id', req.user.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Zerodha Kite credentials updated successfully.',
+      profile: {
+        zerodha_api_key: updated.zerodha_api_key,
+        zerodha_pdf_password: updated.zerodha_pdf_password
+      }
+    });
+  } catch (err) {
+    console.error('[AuthRoute] Update Zerodha credentials failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * POST /api/auth/regenerate-sms-key
  * Regenerates the user-specific SMS ingestion key
  */

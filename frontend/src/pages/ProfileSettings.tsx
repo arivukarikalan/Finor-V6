@@ -36,6 +36,16 @@ export const ProfileSettings = () => {
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [regeneratingKey, setRegeneratingKey] = useState(false);
 
+  // Zerodha Integration state
+  const [zerodhaApiKey, setZerodhaApiKey] = useState('');
+  const [zerodhaApiSecret, setZerodhaApiSecret] = useState('');
+  const [zerodhaPdfPassword, setZerodhaPdfPassword] = useState('');
+  const [showZerodhaSecret, setShowZerodhaSecret] = useState(false);
+  const [showPdfPassword, setShowPdfPassword] = useState(false);
+  const [savingZerodha, setSavingZerodha] = useState(false);
+  const [kiteStatus, setKiteStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'MOCK_MODE'>('MOCK_MODE');
+  const [kiteLoginUrl, setKiteLoginUrl] = useState('');
+
   const [savingProfile, setSavingProfile] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
 
@@ -48,6 +58,26 @@ export const ProfileSettings = () => {
       setUsername(profile.username || '');
       setCountry(profile.country || '');
       setGender(profile.gender || 'Male');
+      setZerodhaApiKey(profile.zerodha_api_key || '');
+      setZerodhaApiSecret(profile.zerodha_api_secret || '');
+      setZerodhaPdfPassword(profile.zerodha_pdf_password || '');
+    }
+  }, [profile]);
+
+  useEffect(() => {
+    const fetchKiteConfig = async () => {
+      try {
+        const data = await apiRequest('/orders/config');
+        setKiteStatus(data.status);
+        if (data.login_url) {
+          setKiteLoginUrl(data.login_url);
+        }
+      } catch (err) {
+        console.error('Error fetching Kite config:', err);
+      }
+    };
+    if (profile) {
+      fetchKiteConfig();
     }
   }, [profile]);
 
@@ -123,6 +153,28 @@ export const ProfileSettings = () => {
       useToastStore.getState().addToast(err.message || 'Failed to rotate SMS key.', 'error');
     } finally {
       setRegeneratingKey(false);
+    }
+  };
+
+  const handleUpdateZerodha = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingZerodha(true);
+    try {
+      await apiRequest('/auth/update-zerodha-credentials', {
+        method: 'POST',
+        body: JSON.stringify({
+          zerodha_api_key: zerodhaApiKey,
+          zerodha_api_secret: zerodhaApiSecret,
+          zerodha_pdf_password: zerodhaPdfPassword
+        })
+      });
+      await fetchProfile();
+      useToastStore.getState().addToast('Zerodha credentials saved successfully!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast(err.message || 'Failed to save Zerodha credentials.', 'error');
+    } finally {
+      setSavingZerodha(false);
     }
   };
 
@@ -375,6 +427,127 @@ export const ProfileSettings = () => {
                   'Update Password Key'
                 )}
               </button>
+            </form>
+          </div>
+
+          {/* Zerodha Kite Brokerage Integration */}
+          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+              <div className="flex items-center gap-2">
+                <Landmark className="w-4 h-4 text-brand-400" />
+                <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">Zerodha Kite Integration</h3>
+              </div>
+              <span className={`text-[9px] font-black uppercase px-2 py-0.5 border rounded-full select-none ${
+                kiteStatus === 'CONNECTED' 
+                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
+                  : kiteStatus === 'DISCONNECTED'
+                  ? 'text-amber-400 bg-amber-500/10 border-amber-500/20'
+                  : 'text-gray-400 bg-gray-500/10 border-gray-500/20'
+              }`}>
+                {kiteStatus === 'CONNECTED' ? 'Connected' : kiteStatus === 'DISCONNECTED' ? 'Credentials Loaded' : 'Mock Mode'}
+              </span>
+            </div>
+
+            <form onSubmit={handleUpdateZerodha} className="space-y-4">
+              {/* API Key */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="zerodhaKey">
+                  Kite API Key
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                    <Landmark className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="zerodhaKey"
+                    type="text"
+                    placeholder="Enter your Zerodha API Key"
+                    value={zerodhaApiKey}
+                    onChange={(e) => setZerodhaApiKey(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all"
+                  />
+                </div>
+              </div>
+
+              {/* API Secret */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="zerodhaSecret">
+                  Kite API Secret
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="zerodhaSecret"
+                    type={showZerodhaSecret ? "text" : "password"}
+                    placeholder="Enter your Zerodha API Secret"
+                    value={zerodhaApiSecret}
+                    onChange={(e) => setZerodhaApiSecret(e.target.value)}
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowZerodhaSecret(!showZerodhaSecret)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                  >
+                    {showZerodhaSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* PDF Decryption PAN Password */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="pdfPassword">
+                  Contract Note PDF Password (PAN)
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="pdfPassword"
+                    type={showPdfPassword ? "text" : "password"}
+                    placeholder="PAN in uppercase (e.g. ABCDE1234F)"
+                    value={zerodhaPdfPassword}
+                    onChange={(e) => setZerodhaPdfPassword(e.target.value)}
+                    className="w-full pl-10 pr-10 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPdfPassword(!showPdfPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                  >
+                    {showPdfPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={savingZerodha}
+                  className="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-brand-600 to-brand-700 text-white font-bold text-xs uppercase tracking-wider hover:from-brand-500 hover:to-brand-600 focus:outline-none active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-brand-700/20"
+                >
+                  {savingZerodha ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Credentials'
+                  )}
+                </button>
+
+                {kiteStatus === 'DISCONNECTED' && kiteLoginUrl && (
+                  <a
+                    href={kiteLoginUrl}
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-650 text-white text-center font-bold text-xs uppercase tracking-wider hover:bg-indigo-500 active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/20 cursor-pointer"
+                  >
+                    Link Zerodha
+                  </a>
+                )}
+              </div>
             </form>
           </div>
 

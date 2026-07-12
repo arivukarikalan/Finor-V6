@@ -11,6 +11,9 @@ export interface Profile {
   gender: string | null;
   security_question: string | null;
   sms_api_key?: string | null;
+  zerodha_api_key?: string | null;
+  zerodha_api_secret?: string | null;
+  zerodha_pdf_password?: string | null;
 }
 
 interface AuthState {

@@ -363,6 +363,15 @@ router.post('/sync', requireAuth, async (req, res) => {
     const gmail = google.gmail({ version: 'v1', auth });
     const userId = req.user.id;
 
+    // Retrieve user-specific PAN password for PDF contract note decryption
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('zerodha_pdf_password')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const pdfPassword = profile?.zerodha_pdf_password || process.env.ZERODHA_PDF_PASSWORD || '';
+
     // Broad search — catches both direct Zerodha emails AND forwarded ones
     const ninetyDaysAgo = Math.floor((Date.now() - 90 * 24 * 60 * 60 * 1000) / 1000);
     let messages = [];
@@ -456,7 +465,7 @@ router.post('/sync', requireAuth, async (req, res) => {
             }
 
             if (pdfData) {
-              let pdfText = await extractPdfText(pdfData, PDF_PASSWORD);
+              let pdfText = await extractPdfText(pdfData, pdfPassword);
               if (!pdfText || pdfText.trim().length < 50) {
                 pdfText = await extractPdfText(pdfData, '');
               }

@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import pkg from 'kiteconnect';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
-import { getActiveSession } from '../services/orderService.js';
+import { getActiveSession, getUserZerodhaCredentials } from '../services/orderService.js';
 
 const { KiteConnect } = pkg;
 const router = express.Router();
@@ -489,8 +489,9 @@ router.post('/sync-kite', requireAuth, async (req, res) => {
       });
     }
 
+    const credentials = await getUserZerodhaCredentials(req.user.id);
     const kc = new KiteConnect({
-      api_key: process.env.ZERODHA_API_KEY,
+      api_key: credentials.apiKey || process.env.ZERODHA_API_KEY,
       access_token: session.access_token
     });
 

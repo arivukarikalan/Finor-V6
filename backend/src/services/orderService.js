@@ -5,6 +5,37 @@ import { fetchMultipleLTPs } from './yahooFinance.js';
 const { KiteConnect } = pkg;
 
 /**
+ * Helper to retrieve user-specific Zerodha API configuration keys from their profile.
+ * Falls back to global env variables if profile parameters are not configured.
+ */
+export async function getUserZerodhaCredentials(userId) {
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('zerodha_api_key, zerodha_api_secret, zerodha_pdf_password')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const apiKey = profile?.zerodha_api_key || process.env.ZERODHA_API_KEY;
+    const apiSecret = profile?.zerodha_api_secret || process.env.ZERODHA_API_SECRET;
+    const pdfPassword = profile?.zerodha_pdf_password || process.env.ZERODHA_PDF_PASSWORD || '';
+
+    return {
+      apiKey: apiKey && apiKey !== 'your_zerodha_api_key_here' ? apiKey : null,
+      apiSecret: apiSecret && apiSecret !== 'your_zerodha_api_secret_here' ? apiSecret : null,
+      pdfPassword
+    };
+  } catch (err) {
+    console.error('[OrderService] Error fetching Zerodha credentials:', err.message);
+    return {
+      apiKey: process.env.ZERODHA_API_KEY || null,
+      apiSecret: process.env.ZERODHA_API_SECRET || null,
+      pdfPassword: process.env.ZERODHA_PDF_PASSWORD || ''
+    };
+  }
+}
+
+/**
  * Helper to retrieve active Zerodha session for a user.
  * Validates that the session was created today after 6:00 AM (Zerodha session lifetime).
  */
@@ -64,8 +95,9 @@ export async function placeGttOrderInternal({
 
   if (session) {
     // REAL GTT PLACEMENT VIA ZERODHA
+    const credentials = await getUserZerodhaCredentials(userId);
     const kc = new KiteConnect({
-      api_key: process.env.ZERODHA_API_KEY,
+      api_key: credentials.apiKey || process.env.ZERODHA_API_KEY,
       access_token: session.access_token
     });
 
