@@ -276,11 +276,6 @@ export const Finance: React.FC = () => {
   const getGoalValue = (goal: Goal) => {
     if (goal.asset_class === 'EQUITY_STOCKS') return autoValuations.equity;
     if (goal.asset_class === 'ETF') return autoValuations.etf;
-    if (goal.asset_class === 'GOLD_SILVER') {
-      const goldVal = (goal.gold_grams || 0) * autoValuations.goldPricePerGram;
-      const silverVal = (goal.silver_grams || 0) * autoValuations.silverPricePerGram;
-      return goldVal + silverVal;
-    }
     return goal.current_value;
   };
 
@@ -842,7 +837,6 @@ export const Finance: React.FC = () => {
           <div className="lg:col-span-2 glass-panel rounded-3xl p-6 border border-dark-border space-y-5">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Financial Wealth Goals</h3>
-              <p className="text-[10px] text-gray-400 font-bold uppercase block">Dynamic Gold: {fmt(autoValuations.goldPricePerGram)}/g</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1086,25 +1080,71 @@ export const Finance: React.FC = () => {
 
           {/* Transactions Table */}
           <div className="glass-panel rounded-3xl border border-dark-border overflow-hidden">
-            <div className="p-5 border-b border-dark-border/60 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Transaction Ledger</h3>
+            <div className="p-5 border-b border-dark-border/60 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Transaction Ledger</h3>
+                  <span className="text-[10px] font-black text-gray-500 bg-dark-depth-2 border border-dark-border/60 px-2 py-0.5 rounded-full">
+                    {filteredTransactions.length} of {transactions.length}
+                  </span>
+                </div>
+
+                {/* Quick Date Preset Chips */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[9px] font-extrabold text-gray-500 uppercase tracking-wider select-none">Quick:</span>
+                  {[
+                    { label: 'This Month', action: () => {
+                      const now = new Date();
+                      setFilterStartDate(`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`);
+                      setFilterEndDate(now.toISOString().split('T')[0]);
+                    }},
+                    { label: 'Last 30d', action: () => {
+                      const end = new Date();
+                      const start = new Date(end);
+                      start.setDate(start.getDate() - 30);
+                      setFilterStartDate(start.toISOString().split('T')[0]);
+                      setFilterEndDate(end.toISOString().split('T')[0]);
+                    }},
+                    { label: 'Last 3M', action: () => {
+                      const end = new Date();
+                      const start = new Date(end);
+                      start.setMonth(start.getMonth() - 3);
+                      setFilterStartDate(start.toISOString().split('T')[0]);
+                      setFilterEndDate(end.toISOString().split('T')[0]);
+                    }},
+                    { label: 'Clear', action: () => { setFilterStartDate(''); setFilterEndDate(''); }},
+                  ].map(chip => (
+                    <button
+                      key={chip.label}
+                      onClick={chip.action}
+                      className={`px-2.5 py-1 text-[9px] font-extrabold rounded-lg border transition-all cursor-pointer uppercase tracking-wider ${
+                        chip.label === 'Clear'
+                          ? 'border-dark-border/40 bg-dark-depth-2 text-gray-500 hover:text-rose-400 hover:border-rose-500/30'
+                          : 'border-dark-border/40 bg-dark-depth-2 text-gray-400 hover:text-brand-400 hover:border-brand-500/30 hover:bg-brand-500/5'
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               
               {/* Filter controls row */}
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full lg:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full">
                 {/* Search */}
                 <input
                   type="text"
-                  placeholder="Search description..."
+                  placeholder="Search description or category..."
                   value={filterSearch}
                   onChange={(e) => setFilterSearch(e.target.value)}
-                  className="col-span-2 bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 w-full sm:w-44 transition-all"
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 w-full sm:w-48 transition-all"
                 />
 
                 {/* Type Filter */}
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value as any)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer w-full sm:w-auto"
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer flex-1 sm:flex-none min-w-0"
                 >
                   <option value="ALL">All Types</option>
                   <option value="EXPENSE">Expenses</option>
@@ -1115,7 +1155,7 @@ export const Finance: React.FC = () => {
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer w-full sm:w-auto"
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer flex-1 sm:flex-none min-w-0"
                 >
                   <option value="ALL">All Categories</option>
                   {CATEGORIES.map(c => (
@@ -1127,7 +1167,7 @@ export const Finance: React.FC = () => {
                 <select
                   value={filterMethod}
                   onChange={(e) => setFilterMethod(e.target.value)}
-                  className="col-span-2 sm:col-span-1 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer w-full sm:w-auto"
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer flex-1 sm:flex-none min-w-0"
                 >
                   <option value="ALL">All Methods</option>
                   {METHODS.map(m => (
@@ -1135,37 +1175,39 @@ export const Finance: React.FC = () => {
                   ))}
                 </select>
 
-                {/* Date Filters */}
-                <div className="flex items-center gap-1.5 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-1.5 w-full sm:w-auto">
-                  <span className="text-[9px] font-extrabold text-gray-500 uppercase select-none">From:</span>
+                {/* Date Range Filters */}
+                <div className="flex items-center gap-2 bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 flex-1 sm:flex-none min-w-0">
+                  <span className="text-[9px] font-extrabold text-gray-500 uppercase select-none shrink-0">From:</span>
                   <input
                     type="date"
                     value={filterStartDate}
                     onChange={(e) => setFilterStartDate(e.target.value)}
-                    className="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer w-full sm:w-28"
+                    className="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer min-w-0 flex-1"
+                    style={{ colorScheme: 'dark' }}
                   />
                   {filterStartDate && (
                     <button 
                       onClick={() => setFilterStartDate('')}
-                      className="text-gray-400 hover:text-white text-[10px] font-bold px-0.5 cursor-pointer"
+                      className="text-gray-400 hover:text-rose-400 text-sm font-bold px-0.5 cursor-pointer shrink-0 leading-none"
                     >
                       ×
                     </button>
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-1.5 w-full sm:w-auto">
-                  <span className="text-[9px] font-extrabold text-gray-500 uppercase select-none">To:</span>
+                <div className="flex items-center gap-2 bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 flex-1 sm:flex-none min-w-0">
+                  <span className="text-[9px] font-extrabold text-gray-500 uppercase select-none shrink-0">To:</span>
                   <input
                     type="date"
                     value={filterEndDate}
                     onChange={(e) => setFilterEndDate(e.target.value)}
-                    className="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer w-full sm:w-28"
+                    className="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer min-w-0 flex-1"
+                    style={{ colorScheme: 'dark' }}
                   />
                   {filterEndDate && (
                     <button 
                       onClick={() => setFilterEndDate('')}
-                      className="text-gray-400 hover:text-white text-[10px] font-bold px-0.5 cursor-pointer"
+                      className="text-gray-400 hover:text-rose-400 text-sm font-bold px-0.5 cursor-pointer shrink-0 leading-none"
                     >
                       ×
                     </button>
@@ -1987,55 +2029,40 @@ export const Finance: React.FC = () => {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-dark-depth-1 border border-dark-border w-full max-w-md rounded-2xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="px-6 py-4 border-b border-dark-border/60 flex items-center justify-between">
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">Update Target settings</h3>
+              <div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Update Goal Target</h3>
+                <p className="text-[10px] text-gray-500 mt-0.5">Set current holding value and target milestone</p>
+              </div>
               <button onClick={() => setShowGoalModal(null)} className="text-gray-400 hover:text-white cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
             
             <form onSubmit={handleSaveGoal} className="p-6 space-y-4">
-              <div className="text-xs text-gray-400 border border-dark-border/40 bg-dark-depth-2/30 p-3.5 rounded-xl">
-                Asset Class: <strong className="text-white font-extrabold">{goalForm.asset_class}</strong>
+              <div className="flex items-center gap-3 bg-brand-500/5 border border-brand-500/20 p-3.5 rounded-xl">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Asset Class:</span>
+                <strong className="text-white font-extrabold text-xs">{goalForm.asset_class.replace('_', ' ')}</strong>
               </div>
 
-              {/* Only show current value input for manual fields (not Equity/ETF) */}
-              {goalForm.asset_class !== 'EQUITY_STOCKS' && goalForm.asset_class !== 'ETF' && goalForm.asset_class !== 'GOLD_SILVER' && (
+              {/* Only show current value input for manually-managed fields (not Equity/ETF which are auto-fetched) */}
+              {goalForm.asset_class !== 'EQUITY_STOCKS' && goalForm.asset_class !== 'ETF' && (
                 <div>
-                  <label className="text-[10px] text-gray-400 font-extrabold uppercase block mb-1">Current Stored Value (₹)</label>
+                  <label className="text-[10px] text-gray-400 font-extrabold uppercase block mb-1">Current Holdings Value (₹)</label>
                   <input
                     type="number"
                     required
-                    placeholder="0.00"
+                    placeholder="e.g. 50000"
                     value={goalForm.current_value}
                     onChange={(e) => setGoalForm({ ...goalForm, current_value: e.target.value })}
-                    className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                    className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500/60"
                   />
+                  <p className="text-[9px] text-gray-500 mt-1">Enter total current ₹ value of your holdings in this asset class.</p>
                 </div>
               )}
 
-              {/* Show metal gram weights for GOLD_SILVER */}
-              {goalForm.asset_class === 'GOLD_SILVER' && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-[10px] text-gray-400 font-extrabold uppercase block mb-1">Gold holdings (Grams)</label>
-                    <input
-                      type="number"
-                      step="0.001"
-                      placeholder="0.000"
-                      value={goalForm.gold_grams}
-                      onChange={(e) => setGoalForm({ ...goalForm, gold_grams: e.target.value })}
-                      className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[10px] text-gray-400 font-extrabold uppercase block mb-1">Silver holdings (Grams)</label>
-                    <input
-                      type="number"
-                      step="0.001"
-                      placeholder="0.000"
-                      value={goalForm.silver_grams}
-                      onChange={(e) => setGoalForm({ ...goalForm, silver_grams: e.target.value })}
-                      className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
-                    />
-                  </div>
+              {(goalForm.asset_class === 'EQUITY_STOCKS' || goalForm.asset_class === 'ETF') && (
+                <div className="bg-indigo-500/5 border border-indigo-500/20 p-3 rounded-xl">
+                  <p className="text-[10px] text-indigo-400 font-semibold">
+                    💡 Current value for {goalForm.asset_class === 'ETF' ? 'ETFs' : 'Equity Stocks'} is auto-fetched from your linked portfolio. No manual input needed.
+                  </p>
                 </div>
               )}
 
@@ -2045,11 +2072,12 @@ export const Finance: React.FC = () => {
                 <input
                   type="number"
                   required
-                  placeholder="2500000"
+                  placeholder="e.g. 2500000"
                   value={goalForm.target_value}
                   onChange={(e) => setGoalForm({ ...goalForm, target_value: e.target.value })}
-                  className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
+                  className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500/60"
                 />
+                <p className="text-[9px] text-gray-500 mt-1">Set your milestone target amount for this asset.</p>
               </div>
 
               <button
