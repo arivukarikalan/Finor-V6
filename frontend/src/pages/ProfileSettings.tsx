@@ -128,6 +128,7 @@ export const ProfileSettings = () => {
 
   const backendBaseUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
   const webhookUrl = `${backendBaseUrl.endsWith('/api') ? backendBaseUrl : `${backendBaseUrl}/api`}/finance/sms-webhook`;
+  const apkDownloadUrl = `${backendBaseUrl.replace(/\/api$/, '')}/downloads/finor-sms-sync.apk`;
 
   const handleCopyUrl = () => {
     navigator.clipboard.writeText(webhookUrl);
@@ -406,7 +407,7 @@ export const ProfileSettings = () => {
                 </p>
               </div>
               <a
-                href="/downloads/finor-sms-sync.apk"
+                href={apkDownloadUrl}
                 download
                 className="px-4 py-2.5 bg-indigo-650 hover:bg-indigo-500 text-[10px] font-black uppercase rounded-xl text-white transition-all shadow-md shadow-indigo-600/15 whitespace-nowrap text-center shrink-0 cursor-pointer"
               >
