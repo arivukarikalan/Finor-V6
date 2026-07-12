@@ -127,7 +127,7 @@ router.get('/auth', (req, res) => {
     access_type: 'offline',
     prompt: 'consent',   // Always request refresh token
     scope: SCOPES,
-    state: userId as string
+    state: String(userId)
   });
   res.redirect(url);
 });
@@ -149,7 +149,7 @@ router.get('/callback', async (req, res) => {
 
   try {
     const auth = getOAuth2Client();
-    const { tokens } = await auth.getToken(code as string);
+    const { tokens } = await auth.getToken(String(code));
 
     if (tokens.refresh_token) {
       // Resolve connected Gmail address to store in profile
