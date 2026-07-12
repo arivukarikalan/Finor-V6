@@ -349,6 +349,19 @@ export const Navigation: React.FC<NavigationProps> = ({
             {isThemeLight ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
           </button>
 
+          {/* Mobile Profile Navigation Icon */}
+          <button
+            onClick={() => setActiveTab('profile')}
+            className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+              activeTab === 'profile'
+                ? 'bg-brand-500/10 border-brand-500/30 text-brand-400'
+                : 'border-dark-border text-gray-400 hover:text-white'
+            }`}
+            title="Profile Settings"
+          >
+            <User className="w-3.5 h-3.5" />
+          </button>
+
         </div>
       </header>
 

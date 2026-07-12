@@ -249,11 +249,17 @@ router.get('/profile', requireAuth, async (req, res) => {
  */
 router.post('/update-profile', requireAuth, async (req, res) => {
   try {
-    const { username, country, gender } = req.body;
+    const { username, country, gender, session_expiry_days } = req.body;
+
+    const updatePayload = { username, country, gender };
+    if (typeof session_expiry_days !== 'undefined') {
+      // Clamp values between 1 and 30 days
+      updatePayload.session_expiry_days = Math.max(1, Math.min(30, parseInt(session_expiry_days) || 1));
+    }
 
     const { data: updated, error } = await supabaseAdmin
       .from('profiles')
-      .update({ username, country, gender })
+      .update(updatePayload)
       .eq('id', req.user.id)
       .select()
       .single();

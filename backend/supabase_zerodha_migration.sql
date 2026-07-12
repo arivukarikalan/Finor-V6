@@ -4,3 +4,4 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zerodha_api_secret VARCHAR(
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zerodha_pdf_password VARCHAR(255) DEFAULT NULL;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zerodha_access_token VARCHAR(255) DEFAULT NULL;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zerodha_session_updated_at TIMESTAMPTZ DEFAULT NULL;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS session_expiry_days INT DEFAULT 1;

@@ -14,6 +14,7 @@ export interface Profile {
   zerodha_api_key?: string | null;
   zerodha_api_secret?: string | null;
   zerodha_pdf_password?: string | null;
+  session_expiry_days?: number | null;
 }
 
 interface AuthState {
@@ -115,6 +116,23 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (session?.user) {
         await get().fetchProfile();
+        
+        // Custom Session Expiry Policy Enforcement
+        if (!localStorage.getItem('finor_login_timestamp')) {
+          localStorage.setItem('finor_login_timestamp', new Date().toISOString());
+        } else {
+          const loginTs = localStorage.getItem('finor_login_timestamp');
+          const maxDays = get().profile?.session_expiry_days ?? 1;
+          if (loginTs) {
+            const diffTime = Date.now() - new Date(loginTs).getTime();
+            const diffDays = diffTime / (1000 * 60 * 60 * 24);
+            if (diffDays > maxDays) {
+              console.warn('[authStore] Session expired based on custom user settings policy. Forcing log out...');
+              await get().signOut();
+              return;
+            }
+          }
+        }
       }
 
       set({ loading: false });
@@ -129,9 +147,25 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         });
 
         if (newSession?.user) {
+          if (!localStorage.getItem('finor_login_timestamp')) {
+            localStorage.setItem('finor_login_timestamp', new Date().toISOString());
+          }
           set({ loading: true });
           await get().fetchProfile();
           set({ loading: false });
+
+          // Re-enforce policy check on login state refresh
+          const loginTs = localStorage.getItem('finor_login_timestamp');
+          const maxDays = get().profile?.session_expiry_days ?? 1;
+          if (loginTs) {
+            const diffTime = Date.now() - new Date(loginTs).getTime();
+            const diffDays = diffTime / (1000 * 60 * 60 * 24);
+            if (diffDays > maxDays) {
+              console.warn('[authStore] Session expired based on custom user settings policy. Forcing log out...');
+              await get().signOut();
+              return;
+            }
+          }
         }
       });
     } catch (error) {
@@ -144,7 +178,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ loading: true });
     try {
       await supabase.auth.signOut();
-      set({ user: null, session: null, role: null, profile: null, loading: false });
+      localStorage.removeItem('finor_login_timestamp');
+      window.location.href = '/';
     } catch (error) {
       console.error('Error signing out:', error);
       set({ loading: false });

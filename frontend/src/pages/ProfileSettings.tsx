@@ -24,6 +24,7 @@ export const ProfileSettings = () => {
   const [username, setUsername] = useState('');
   const [country, setCountry] = useState('');
   const [gender, setGender] = useState('Male');
+  const [sessionExpiryDays, setSessionExpiryDays] = useState(1);
 
   // Change Password state
   const [oldPassword, setOldPassword] = useState('');
@@ -58,6 +59,7 @@ export const ProfileSettings = () => {
       setUsername(profile.username || '');
       setCountry(profile.country || '');
       setGender(profile.gender || 'Male');
+      setSessionExpiryDays(profile.session_expiry_days || 1);
       setZerodhaApiKey(profile.zerodha_api_key || '');
       setZerodhaApiSecret(profile.zerodha_api_secret || '');
       setZerodhaPdfPassword(profile.zerodha_pdf_password || '');
@@ -92,7 +94,7 @@ export const ProfileSettings = () => {
     try {
       await apiRequest('/auth/update-profile', {
         method: 'POST',
-        body: JSON.stringify({ username, country, gender })
+        body: JSON.stringify({ username, country, gender, session_expiry_days: sessionExpiryDays })
       });
       await fetchProfile();
       useToastStore.getState().addToast('Profile updated successfully!', 'success');
@@ -204,7 +206,7 @@ export const ProfileSettings = () => {
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&color=63-66-f1&bgcolor=0f-14-1f&data=${encodeURIComponent(qrConfigPayload)}`;
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 w-full px-4 md:px-8">
       
       {/* Premium Profile Header Board */}
       <div className="glass-panel rounded-3xl border border-dark-border p-6 flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden shadow-xl">
@@ -323,6 +325,32 @@ export const ProfileSettings = () => {
                     <option value="Other">Other</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Session Expiry Slider */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center ml-1">
+                  <label className="text-[10px] font-bold text-gray-300 uppercase" htmlFor="sessionExpiry">
+                    Session Security Timeout
+                  </label>
+                  <span className="text-[10px] font-black text-brand-400 font-mono">
+                    {sessionExpiryDays} {sessionExpiryDays === 1 ? 'Day' : 'Days'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <input
+                    id="sessionExpiry"
+                    type="range"
+                    min="1"
+                    max="30"
+                    value={sessionExpiryDays}
+                    onChange={(e) => setSessionExpiryDays(parseInt(e.target.value))}
+                    className="flex-1 accent-brand-500 h-1 bg-dark-depth-3 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+                <span className="text-[9px] text-gray-500 block leading-normal ml-1">
+                  Enforces password re-authentication at regular intervals. Min: 1 Day, Max: 30 Days.
+                </span>
               </div>
 
               <button
