@@ -2069,14 +2069,19 @@ export const Finance: React.FC = () => {
         if (!activeTx) return null;
         return (
           <div 
-            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
             onClick={() => setActiveQuickMapTxId(null)}
           >
             <div 
-              className="bg-dark-depth-1 border-t sm:border border-dark-border w-full max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 max-h-[90vh] flex flex-col"
+              className="bg-dark-depth-1 border-t sm:border border-dark-border w-full max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 max-h-[90vh] flex flex-col pb-safe pb-5 sm:pb-0"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="px-6 py-4 border-b border-dark-border/60 flex items-center justify-between flex-shrink-0">
+              {/* Drag Handle Indicator for Mobile Bottom Sheet */}
+              <div className="flex justify-center pt-3 sm:hidden flex-shrink-0">
+                <div className="w-12 h-1 bg-dark-border rounded-full opacity-60" />
+              </div>
+
+              <div className="px-6 py-4 sm:pt-4 border-b border-dark-border/60 flex items-center justify-between flex-shrink-0">
                 <div>
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider">Quick Actions</h3>
                   <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[280px] font-semibold">
