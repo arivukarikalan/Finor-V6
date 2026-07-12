@@ -1129,33 +1129,31 @@ export const Finance: React.FC = () => {
                 </div>
               </div>
               
-              {/* Filter controls row */}
-              <div className="flex flex-wrap items-center gap-2 w-full">
-                {/* Search */}
-                <input
-                  type="text"
-                  placeholder="Search description or category..."
-                  value={filterSearch}
-                  onChange={(e) => setFilterSearch(e.target.value)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 w-full sm:w-48 transition-all"
-                />
+              {/* Row 1: Search (full width) */}
+              <input
+                type="text"
+                placeholder="Search description or category..."
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+                className="bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 w-full transition-all"
+              />
 
-                {/* Type Filter */}
+              {/* Row 2: Dropdowns side by side */}
+              <div className="grid grid-cols-3 gap-2">
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value as any)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer flex-1 sm:flex-none min-w-0"
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer w-full"
                 >
                   <option value="ALL">All Types</option>
                   <option value="EXPENSE">Expenses</option>
                   <option value="INCOME">Income</option>
                 </select>
 
-                {/* Category Filter */}
                 <select
                   value={filterCategory}
                   onChange={(e) => setFilterCategory(e.target.value)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer flex-1 sm:flex-none min-w-0"
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer w-full"
                 >
                   <option value="ALL">All Categories</option>
                   {CATEGORIES.map(c => (
@@ -1163,55 +1161,60 @@ export const Finance: React.FC = () => {
                   ))}
                 </select>
 
-                {/* Method Filter */}
                 <select
                   value={filterMethod}
                   onChange={(e) => setFilterMethod(e.target.value)}
-                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer flex-1 sm:flex-none min-w-0"
+                  className="bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-2.5 text-xs text-gray-300 focus:outline-none focus:border-brand-500/80 cursor-pointer w-full"
                 >
                   <option value="ALL">All Methods</option>
                   {METHODS.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </select>
+              </div>
 
-                {/* Date Range Filters */}
-                <div className="flex items-center gap-2 bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 flex-1 sm:flex-none min-w-0">
-                  <span className="text-[9px] font-extrabold text-gray-500 uppercase select-none shrink-0">From:</span>
-                  <input
-                    type="date"
-                    value={filterStartDate}
-                    onChange={(e) => setFilterStartDate(e.target.value)}
-                    className="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer min-w-0 flex-1"
-                    style={{ colorScheme: 'dark' }}
-                  />
-                  {filterStartDate && (
-                    <button 
-                      onClick={() => setFilterStartDate('')}
-                      className="text-gray-400 hover:text-rose-400 text-sm font-bold px-0.5 cursor-pointer shrink-0 leading-none"
-                    >
-                      ×
-                    </button>
-                  )}
+              {/* Row 3: Date range — dedicated full-width row, each half on mobile */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] font-extrabold text-gray-500 uppercase tracking-wider pl-1 select-none">From Date</label>
+                  <div className="relative bg-dark-depth-2 border border-dark-border rounded-xl overflow-hidden">
+                    <input
+                      type="date"
+                      value={filterStartDate}
+                      onChange={(e) => setFilterStartDate(e.target.value)}
+                      className="w-full bg-transparent px-3 py-3 text-xs text-gray-300 focus:outline-none cursor-pointer"
+                      style={{ colorScheme: 'dark' }}
+                    />
+                    {filterStartDate && (
+                      <button 
+                        onClick={() => setFilterStartDate('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-rose-400 text-base font-bold cursor-pointer leading-none"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2 bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 flex-1 sm:flex-none min-w-0">
-                  <span className="text-[9px] font-extrabold text-gray-500 uppercase select-none shrink-0">To:</span>
-                  <input
-                    type="date"
-                    value={filterEndDate}
-                    onChange={(e) => setFilterEndDate(e.target.value)}
-                    className="bg-transparent text-xs text-gray-300 focus:outline-none cursor-pointer min-w-0 flex-1"
-                    style={{ colorScheme: 'dark' }}
-                  />
-                  {filterEndDate && (
-                    <button 
-                      onClick={() => setFilterEndDate('')}
-                      className="text-gray-400 hover:text-rose-400 text-sm font-bold px-0.5 cursor-pointer shrink-0 leading-none"
-                    >
-                      ×
-                    </button>
-                  )}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[9px] font-extrabold text-gray-500 uppercase tracking-wider pl-1 select-none">To Date</label>
+                  <div className="relative bg-dark-depth-2 border border-dark-border rounded-xl overflow-hidden">
+                    <input
+                      type="date"
+                      value={filterEndDate}
+                      onChange={(e) => setFilterEndDate(e.target.value)}
+                      className="w-full bg-transparent px-3 py-3 text-xs text-gray-300 focus:outline-none cursor-pointer"
+                      style={{ colorScheme: 'dark' }}
+                    />
+                    {filterEndDate && (
+                      <button 
+                        onClick={() => setFilterEndDate('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-rose-400 text-base font-bold cursor-pointer leading-none"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
