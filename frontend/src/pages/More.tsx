@@ -1802,9 +1802,9 @@ export const More = ({
               <div className={`flex flex-col relative select-none border-b ${
                 isLightMode ? 'border-slate-200 bg-white' : 'border-dark-border bg-dark-depth-1'
               }`}>
-                <div className="flex items-center justify-between p-3.5 w-full relative min-h-[52px]">
+                <div className="flex items-center justify-between p-3.5 w-full relative min-h-[52px] gap-2">
                   {/* Left Side: Menu button on mobile, Finor Title on desktop */}
-                  <div className="flex items-center md:static absolute left-3 top-1/2 -translate-y-1/2 z-10">
+                  <div className="flex items-center shrink-0">
                     <button
                       type="button"
                       onClick={() => setIsSidebarOpen(true)}
@@ -1825,9 +1825,9 @@ export const More = ({
                     </span>
                   </div>
 
-                  {/* Center Content: Model selector centered on mobile, adjacent to title on desktop */}
-                  <div className="flex items-center justify-center md:justify-start md:ml-4 w-full md:w-auto absolute md:static left-0 right-0 top-1/2 -translate-y-1/2 pointer-events-none md:pointer-events-auto">
-                    <div className="relative flex items-center gap-1.5 pointer-events-auto">
+                  {/* Center Content: Model selector */}
+                  <div className="flex items-center justify-center min-w-0">
+                    <div className="relative flex items-center gap-1">
                       <Sparkles className="w-3 h-3 text-brand-400 shrink-0" />
                       <select
                         value={selectedModel}
@@ -1843,7 +1843,7 @@ export const More = ({
                           backgroundSize: '0.6em'
                         }}
                       >
-                        <option value="default">Default (Auto-Switch)</option>
+                        <option value="default">Default</option>
                         <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
                         <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                         <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
@@ -1852,14 +1852,14 @@ export const More = ({
                   </div>
                   
                   {/* Right Side: Usage & Mode */}
-                  <div className="flex items-center gap-2 md:static absolute right-3 top-1/2 -translate-y-1/2 z-10">
+                  <div className="flex items-center gap-1.5 shrink-0">
                     {usageRemaining !== null && (
                       <span className={`text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wider px-2 py-1 rounded-lg select-none ${
                         usageRemaining <= 20 
                           ? 'bg-rose-500/10 text-rose-500 border border-rose-500/25 animate-pulse' 
                           : (isLightMode ? 'bg-slate-100 text-slate-655' : 'bg-dark-depth-3 text-gray-400')
                       }`}>
-                        {isMobile ? `${usageRemaining}/100` : `${usageRemaining} of 100 queries left`}
+                        {isMobile ? `${usageRemaining}/100` : `${usageRemaining} queries left`}
                       </span>
                     )}
                     {messages.length > 0 && (
