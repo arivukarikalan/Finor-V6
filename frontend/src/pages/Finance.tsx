@@ -1233,35 +1233,12 @@ export const Finance: React.FC = () => {
                   >
                     Cancel
                   </button>
-                  <div className="relative inline-block">
-                    <button
-                      onClick={() => setShowBulkCategoryDropdown(!showBulkCategoryDropdown)}
-                      className="px-3.5 py-1.5 text-[10px] font-extrabold rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-300 hover:text-white border border-dark-border/40 uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
-                    >
-                      Map Category
-                    </button>
-                    {showBulkCategoryDropdown && (
-                      <div className="absolute right-0 top-full mt-2 z-50 w-48 bg-[#141416]/95 backdrop-blur-md border border-dark-border rounded-xl shadow-2xl p-2 select-none animate-in fade-in slide-in-from-top-2 duration-200">
-                        <div className="text-[9px] font-bold text-gray-500 px-2 py-1 uppercase tracking-wider border-b border-dark-border/40 mb-1">
-                          Select Category
-                        </div>
-                        <div className="max-h-48 overflow-y-auto space-y-0.5 custom-scrollbar">
-                          {CATEGORIES.map((cat) => (
-                            <button
-                              key={cat}
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                await handleBulkMapCategory(cat);
-                              }}
-                              className="w-full text-left px-2 py-1.5 text-[10px] font-semibold rounded-lg hover:bg-brand-500/10 hover:text-brand-400 text-gray-300 transition-all cursor-pointer"
-                            >
-                              {cat}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    onClick={() => setShowBulkCategoryDropdown(true)}
+                    className="px-3.5 py-1.5 text-[10px] font-extrabold rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-300 hover:text-white border border-dark-border/40 uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    Map Category
+                  </button>
                   <button
                     onClick={confirmBulkDelete}
                     className="px-3.5 py-1.5 text-[10px] font-extrabold rounded-xl bg-rose-600 hover:bg-rose-700 text-white uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-rose-900/20"
@@ -2244,6 +2221,55 @@ export const Finance: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* ─── MODAL 8: BULK MAP CATEGORY (BOTTOM SHEET / MODAL) ─── */}
+      {showBulkCategoryDropdown && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+          onClick={() => setShowBulkCategoryDropdown(false)}
+        >
+          <div 
+            className="bg-dark-depth-1 border-t sm:border border-dark-border w-full max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 max-h-[90vh] flex flex-col pb-safe pb-5 sm:pb-0"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Drag Handle Indicator for Mobile Bottom Sheet */}
+            <div className="flex justify-center pt-3 sm:hidden flex-shrink-0">
+              <div className="w-12 h-1 bg-dark-border rounded-full opacity-60" />
+            </div>
+
+            <div className="px-6 py-4 sm:pt-4 border-b border-dark-border/60 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Bulk Map Category</h3>
+                <p className="text-[10px] text-gray-400 mt-0.5 font-semibold">
+                  Select a category for {selectedTxIds.length} selected transactions
+                </p>
+              </div>
+              <button 
+                onClick={() => setShowBulkCategoryDropdown(false)} 
+                className="text-gray-400 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-dark-depth-2 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="grid grid-cols-2 gap-2 pr-1">
+                {CATEGORIES.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={async () => {
+                      await handleBulkMapCategory(cat);
+                    }}
+                    className="text-left px-3 py-2.5 text-xs font-semibold rounded-xl border bg-dark-depth-2 border-dark-border/40 hover:bg-brand-500/5 hover:border-brand-500/20 text-gray-300 hover:text-white transition-all cursor-pointer"
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
