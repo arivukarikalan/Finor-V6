@@ -1221,12 +1221,12 @@ export const Finance: React.FC = () => {
 
             {/* Bulk Action Toolbar */}
             {selectedTxIds.length > 0 && (
-              <div className="px-5 py-3 bg-rose-500/10 border-b border-dark-border/60 flex items-center justify-between gap-4 animate-in slide-in-from-top duration-200">
+              <div className="px-5 py-3 bg-rose-500/10 border-b border-dark-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in slide-in-from-top duration-200">
                 <div className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
                   <span className="text-[10px] font-black text-rose-400 uppercase tracking-wider">{selectedTxIds.length} transactions selected</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center flex-wrap gap-2 w-full sm:w-auto justify-start sm:justify-end">
                   <button
                     onClick={() => setSelectedTxIds([])}
                     className="px-3 py-1.5 text-[10px] font-extrabold text-gray-400 hover:text-white uppercase tracking-wider transition-all cursor-pointer"
@@ -1241,11 +1241,11 @@ export const Finance: React.FC = () => {
                       Map Category
                     </button>
                     {showBulkCategoryDropdown && (
-                      <div className="absolute right-0 top-full mt-2 z-50 w-48 bg-[#141416] border border-dark-border rounded-xl shadow-2xl p-2 select-none animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="absolute right-0 top-full mt-2 z-50 w-48 bg-[#141416]/95 backdrop-blur-md border border-dark-border rounded-xl shadow-2xl p-2 select-none animate-in fade-in slide-in-from-top-2 duration-200">
                         <div className="text-[9px] font-bold text-gray-500 px-2 py-1 uppercase tracking-wider border-b border-dark-border/40 mb-1">
                           Select Category
                         </div>
-                        <div className="max-h-48 overflow-y-auto space-y-0.5">
+                        <div className="max-h-48 overflow-y-auto space-y-0.5 custom-scrollbar">
                           {CATEGORIES.map((cat) => (
                             <button
                               key={cat}
