@@ -355,4 +355,33 @@ router.post('/ticket-recovery', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/auth/regenerate-sms-key
+ * Regenerates the user-specific SMS ingestion key
+ */
+router.post('/regenerate-sms-key', requireAuth, async (req, res) => {
+  try {
+    const crypto = await import('crypto');
+    const newKey = 'FinorSMS_' + crypto.randomBytes(8).toString('hex');
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('profiles')
+      .update({ sms_api_key: newKey })
+      .eq('id', req.user.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'SMS Ingestion key regenerated successfully.',
+      sms_api_key: updated.sms_api_key
+    });
+  } catch (err) {
+    console.error('[AuthRoute] Regenerate SMS key failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

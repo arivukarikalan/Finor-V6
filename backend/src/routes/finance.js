@@ -518,25 +518,6 @@ router.post('/sms-webhook', async (req, res) => {
       return res.status(401).json({ error: 'API key missing in x-api-key header.' });
     }
 
-    // Get key from DB, generate default if missing
-    let { data: dbKey } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'sms_ingestion_api_key')
-      .maybeSingle();
-
-    if (!dbKey) {
-      // Insert default key
-      await supabase
-        .from('system_settings')
-        .insert({ key: 'sms_ingestion_api_key', value: 'FinorSMS_8d2f7a9c3e' });
-      dbKey = { value: 'FinorSMS_8d2f7a9c3e' };
-    }
-
-    if (apiKeyHeader !== dbKey.value) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid API key.' });
-    }
-
     const { sender, message, timestamp } = req.body;
     
     // Handle test connection requests
@@ -544,16 +525,18 @@ router.post('/sms-webhook', async (req, res) => {
       return res.status(200).json({ success: true, message: 'Connection verified successfully.' });
     }
 
-    // 1. Get userId dynamically
-    let userId = '56fdfb1f-1068-4120-9e1c-18ef69d837d0'; // Fallback
-    const { data: sampleGoal } = await supabase
-      .from('finance_goals')
-      .select('user_id')
-      .limit(1)
+    // 1. Get userId dynamically by looking up key in profiles table
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('sms_api_key', apiKeyHeader)
       .maybeSingle();
-    if (sampleGoal?.user_id) {
-      userId = sampleGoal.user_id;
+
+    if (profileError || !profile) {
+      return res.status(401).json({ error: 'Unauthorized: Invalid or expired API key.' });
     }
+
+    const userId = profile.id;
 
     // 2. Parse raw SMS text
     const textToAnalyze = message.toLowerCase();

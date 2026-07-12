@@ -10,6 +10,7 @@ export interface Profile {
   country: string | null;
   gender: string | null;
   security_question: string | null;
+  sms_api_key?: string | null;
 }
 
 interface AuthState {
@@ -78,7 +79,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             role: defaultRole,
             username: user.user_metadata?.username || userEmail.split('@')[0] || 'User',
             gender: 'Male',
-            country: 'India'
+            country: 'India',
+            sms_api_key: 'FinorSMS_' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10)
           })
           .select()
           .maybeSingle();
