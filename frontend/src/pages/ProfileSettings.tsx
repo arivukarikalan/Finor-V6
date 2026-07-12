@@ -523,6 +523,17 @@ export const ProfileSettings = () => {
                 </div>
               </div>
 
+              {/* Required Redirect URL */}
+              <div className="p-3 rounded-2xl bg-brand-500/5 border border-brand-500/10 text-[9px] text-gray-350 space-y-1.5 leading-relaxed">
+                <span className="font-extrabold text-white block uppercase tracking-wider">Required Kite Redirect URL</span>
+                <span>In your <a href="https://kite.trade" target="_blank" rel="noreferrer" className="text-brand-400 hover:text-brand-300 underline font-bold">Kite Developer Console</a>, you must set your app's <strong>Redirect URL</strong> to:</span>
+                <div className="flex items-center gap-2 mt-1">
+                  <code className="bg-dark-depth-3 px-2 py-1 rounded font-mono text-[9px] border border-dark-border text-gray-300 select-all flex-1">
+                    {window.location.origin}/orders
+                  </code>
+                </div>
+              </div>
+
               <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <button
                   type="submit"
