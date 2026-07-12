@@ -5,3 +5,5 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zerodha_pdf_password VARCHA
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zerodha_access_token VARCHAR(255) DEFAULT NULL;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zerodha_session_updated_at TIMESTAMPTZ DEFAULT NULL;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS session_expiry_days INT DEFAULT 1;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_refresh_token VARCHAR(255) DEFAULT NULL;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_connected_email VARCHAR(255) DEFAULT NULL;

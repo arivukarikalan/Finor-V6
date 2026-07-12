@@ -44,6 +44,7 @@ export const Navigation: React.FC<NavigationProps> = ({
   const [syncToast, setSyncToast] = React.useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [syncDetails, setSyncDetails] = React.useState<any>(null);
   const [showDetailsModal, setShowDetailsModal] = React.useState<boolean>(false);
+  const [showTimeframeModal, setShowTimeframeModal] = React.useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState<boolean>(false);
 
   const fetchLastTrade = async () => {
@@ -98,14 +99,22 @@ export const Navigation: React.FC<NavigationProps> = ({
     if (!gmailConnected) {
       const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
       const base = backendUrl.endsWith('/api') ? backendUrl.replace('/api', '') : backendUrl;
-      window.open(`${base}/api/gmail/auth`, '_self');
+      window.open(`${base}/api/gmail/auth?userId=${user?.id}`, '_self');
       return;
     }
 
+    setShowTimeframeModal(true);
+  };
+
+  const executeSync = async (days: number) => {
+    setShowTimeframeModal(false);
     setIsSyncing(true);
     setSyncToast(null);
     try {
-      const res: any = await apiRequest('/gmail/sync', { method: 'POST' });
+      const res: any = await apiRequest('/gmail/sync', { 
+        method: 'POST', 
+        body: JSON.stringify({ days })
+      });
       await fetchLastTrade();
       window.dispatchEvent(new Event('portfolio-sync-complete'));
       setSyncDetails(res);
@@ -499,6 +508,66 @@ export const Navigation: React.FC<NavigationProps> = ({
           });
         })()}
       </nav>
+
+      {/* Gmail Sync Timeframe Picker Modal */}
+      {showTimeframeModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-md rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 p-6 space-y-5">
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+              <div className="flex items-center gap-2">
+                <Mail className="w-5 h-5 text-brand-400" />
+                <div>
+                  <h3 className="text-sm font-bold text-white tracking-wide">Sync Timeframe</h3>
+                  <p className="text-[10px] text-gray-400">Choose scan period for contract notes</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTimeframeModal(false)}
+                className="p-1.5 rounded-xl hover:bg-dark-depth-2 border border-transparent hover:border-dark-border text-gray-400 hover:text-white transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <p className="text-xs text-gray-305 leading-relaxed">
+                Scan your connected Gmail inbox for trade confirmation contract notes. Choose a timeframe for a faster response.
+              </p>
+
+              {/* Timeframe Chips */}
+              <div className="grid grid-cols-3 gap-2.5">
+                <button
+                  onClick={() => executeSync(1)}
+                  className="py-3 px-4 rounded-xl border border-dark-border hover:border-emerald-500/40 bg-dark-depth-2 hover:bg-emerald-500/5 text-center transition-all group cursor-pointer"
+                >
+                  <span className="text-sm font-black text-white block group-hover:text-emerald-400">1 Day</span>
+                  <span className="text-[9px] text-gray-500 block mt-0.5">Last 24 Hours</span>
+                </button>
+                <button
+                  onClick={() => executeSync(7)}
+                  className="py-3 px-4 rounded-xl border border-dark-border hover:border-brand-500/40 bg-dark-depth-2 hover:bg-brand-500/5 text-center transition-all group cursor-pointer"
+                >
+                  <span className="text-sm font-black text-white block group-hover:text-brand-400">1 Week</span>
+                  <span className="text-[9px] text-gray-500 block mt-0.5">Last 7 Days</span>
+                </button>
+                <button
+                  onClick={() => executeSync(30)}
+                  className="py-3 px-4 rounded-xl border border-dark-border hover:border-indigo-500/40 bg-dark-depth-2 hover:bg-indigo-500/5 text-center transition-all group cursor-pointer"
+                >
+                  <span className="text-sm font-black text-white block group-hover:text-indigo-400">1 Month</span>
+                  <span className="text-[9px] text-gray-500 block mt-0.5">Last 30 Days</span>
+                </button>
+              </div>
+
+              {/* Uploader info note */}
+              <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-2xl text-[9px] text-gray-400 leading-relaxed">
+                <span className="font-extrabold text-amber-400 uppercase block mb-0.5">Sync Limitation</span>
+                Scanning beyond 30 days is not supported via automated Gmail sync to maintain fast response speeds. To import older trades, please use the **Trade Book Import** CSV uploader inside the Holdings portal.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 5. Gmail Sync Details Logs Modal Popup */}
       {showDetailsModal && syncDetails && (

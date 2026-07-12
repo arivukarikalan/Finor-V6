@@ -25,55 +25,39 @@ const getOAuth2Client = () => {
 const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 
 // ─── Helpers: Store/Read Refresh Token ───────────────────────────────────────
-const saveRefreshToken = async (token) => {
-  const { data: existing, error: selectError } = await supabase
-    .from('system_settings')
-    .select('key')
-    .eq('key', 'gmail_refresh_token')
-    .maybeSingle();
-
-  if (selectError) {
-    console.error('Error checking existing refresh token:', selectError.message);
-    throw selectError;
+const saveRefreshToken = async (userId, token, email = null) => {
+  const updatePayload = { gmail_refresh_token: token };
+  if (email) {
+    updatePayload.gmail_connected_email = email;
   }
+  const { error } = await supabase
+    .from('profiles')
+    .update(updatePayload)
+    .eq('id', userId);
 
-  if (existing) {
-    const { error: updateError } = await supabase
-      .from('system_settings')
-      .update({ value: token })
-      .eq('key', 'gmail_refresh_token');
-    if (updateError) {
-      console.error('Error updating refresh token:', updateError.message);
-      throw updateError;
-    }
-    console.log('Refresh token UPDATED in DB');
-  } else {
-    const { error: insertError } = await supabase
-      .from('system_settings')
-      .insert({ key: 'gmail_refresh_token', value: token });
-    if (insertError) {
-      console.error('Error inserting refresh token:', insertError.message);
-      throw insertError;
-    }
-    console.log('Refresh token INSERTED in DB');
-  }
-};
-
-const getRefreshToken = async () => {
-  const { data, error } = await supabase
-    .from('system_settings')
-    .select('value')
-    .eq('key', 'gmail_refresh_token')
-    .maybeSingle();
   if (error) {
-    console.error('Error reading refresh token:', error.message);
+    console.error('Error saving Gmail refresh token:', error.message);
     throw error;
   }
-  return data?.value || null;
+  console.log(`Gmail refresh token saved for user ${userId}`);
 };
 
-const getAuthorizedClient = async () => {
-  const token = await getRefreshToken();
+const getRefreshToken = async (userId) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('gmail_refresh_token')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Error reading user refresh token:', error.message);
+    throw error;
+  }
+  return data?.gmail_refresh_token || null;
+};
+
+const getAuthorizedClient = async (userId) => {
+  const token = await getRefreshToken(userId);
   if (!token) return null;
   const auth = getOAuth2Client();
   auth.setCredentials({ refresh_token: token });
@@ -107,15 +91,22 @@ const extractPdfText = async (pdfBuffer, password) => {
 // ─── GET /api/gmail/status ───────────────────────────────────────────────────
 router.get('/status', requireAuth, async (req, res) => {
   try {
-    const token = await getRefreshToken();
+    const token = await getRefreshToken(req.user.id);
     if (!token) return res.json({ connected: false });
 
     const auth = getOAuth2Client();
     auth.setCredentials({ refresh_token: token });
-    const gmail = google.gmail({ version: 'v1', auth });
-    await gmail.users.getProfile({ userId: 'me' });
+    
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('gmail_connected_email')
+      .eq('id', req.user.id)
+      .maybeSingle();
 
-    res.json({ connected: true, email: process.env.GMAIL_USER });
+    res.json({ 
+      connected: true, 
+      email: profile?.gmail_connected_email || 'Connected Gmail' 
+    });
   } catch (err) {
     console.error('Gmail status error:', err.message);
     res.json({ connected: false });
@@ -124,18 +115,24 @@ router.get('/status', requireAuth, async (req, res) => {
 
 // ─── GET /api/gmail/auth ─────────────────────────────────────────────────────
 router.get('/auth', (req, res) => {
+  const { userId } = req.query;
+  if (!userId) {
+    return res.status(400).send('Missing userId query parameter for state mapping.');
+  }
+
   const auth = getOAuth2Client();
   const url = auth.generateAuthUrl({
     access_type: 'offline',
     prompt: 'consent',   // Always request refresh token
-    scope: SCOPES
+    scope: SCOPES,
+    state: userId as string
   });
   res.redirect(url);
 });
 
 // ─── GET /api/gmail/callback ─────────────────────────────────────────────────
 router.get('/callback', async (req, res) => {
-  const { code, error: oauthError } = req.query;
+  const { code, state: userId, error: oauthError } = req.query;
   const frontendUrl = process.env.FRONTEND_URL || 'https://finor-v6.vercel.app';
 
   if (oauthError) {
@@ -144,21 +141,29 @@ router.get('/callback', async (req, res) => {
   if (!code) {
     return res.redirect(`${frontendUrl}?gmail_error=no_code`);
   }
+  if (!userId) {
+    return res.redirect(`${frontendUrl}?gmail_error=no_user_context`);
+  }
 
   try {
     const auth = getOAuth2Client();
-    const { tokens } = await auth.getToken(code);
+    const { tokens } = await auth.getToken(code as string);
 
     if (tokens.refresh_token) {
-      // Got a new refresh token — save it
-      await saveRefreshToken(tokens.refresh_token);
-      console.log('Gmail refresh token saved successfully');
+      // Resolve connected Gmail address to store in profile
+      auth.setCredentials({ refresh_token: tokens.refresh_token });
+      const gmail = google.gmail({ version: 'v1', auth });
+      const gmailProfile = await gmail.users.getProfile({ userId: 'me' });
+      const connectedEmail = gmailProfile.data.emailAddress || null;
+
+      // Save token scoped to this user
+      await saveRefreshToken(userId, tokens.refresh_token, connectedEmail);
+      console.log(`Gmail refresh token saved for user context ${userId}`);
     } else {
       // No new refresh token — check if we already have one saved
-      const existingToken = await getRefreshToken();
+      const existingToken = await getRefreshToken(userId);
       if (!existingToken) {
-        // No token at all — user needs to revoke and re-authorize
-        console.error('No refresh token received and none stored');
+        console.error('No refresh token received and none stored for user context:', userId);
         return res.redirect(`${frontendUrl}?gmail_error=no_refresh_token`);
       }
       console.log('Using existing refresh token (no new one issued)');
@@ -352,7 +357,7 @@ const recalculateHoldingsForUser = async (userId) => {
 // ─── POST /api/gmail/sync ─────────────────────────────────────────────────────
 router.post('/sync', requireAuth, async (req, res) => {
   try {
-    const auth = await getAuthorizedClient();
+    const auth = await getAuthorizedClient(req.user.id);
     if (!auth) {
       return res.status(401).json({
         error: 'Gmail not connected. Please connect your Gmail account first.',
@@ -372,14 +377,17 @@ router.post('/sync', requireAuth, async (req, res) => {
 
     const pdfPassword = profile?.zerodha_pdf_password || process.env.ZERODHA_PDF_PASSWORD || '';
 
-    // Broad search — catches both direct Zerodha emails AND forwarded ones
-    const ninetyDaysAgo = Math.floor((Date.now() - 90 * 24 * 60 * 60 * 1000) / 1000);
+    // Dynamic search duration: limit to custom range (default 30, max 30)
+    const daysParam = parseInt(req.body.days || req.query.days || 30);
+    const syncDays = Math.min(30, Math.max(1, daysParam));
+    const syncTimeAgo = Math.floor((Date.now() - syncDays * 24 * 60 * 60 * 1000) / 1000);
+    
     let messages = [];
 
     const searches = [
-      `subject:"contract note" after:${ninetyDaysAgo}`,
-      `subject:"equity contract" after:${ninetyDaysAgo}`,
-      `subject:UPC after:${ninetyDaysAgo}`,
+      `subject:"contract note" after:${syncTimeAgo}`,
+      `subject:"equity contract" after:${syncTimeAgo}`,
+      `subject:UPC after:${syncTimeAgo}`,
     ];
 
     for (const q of searches) {
