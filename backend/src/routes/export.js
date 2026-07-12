@@ -63,6 +63,17 @@ function drawTableRow(doc, y, columns, isHeader = false) {
      .stroke();
 }
 
+// Helper to strip markdown symbols and emojis/non-ASCII characters for clean PDFkit rendering
+function cleanTextForPdf(str) {
+  if (!str) return '';
+  let result = str.replace(/₹/g, 'Rs.');
+  // Strip bold (**), italic (*), and underline (_) markdown wrappers
+  result = result.replace(/\*\*/g, '').replace(/\*/g, '').replace(/_/g, '');
+  // Strip non-ASCII (emojis, icons, special symbols) to avoid Helvetica crash/corrupted characters (e.g. Ø=ÜE)
+  result = result.replace(/[^\x20-\x7E\n]/g, '');
+  return result.trim();
+}
+
 /**
  * GET /api/export/markdown-pdf
  * Converts the latest assistant markdown statement into a formatted PDF document.
@@ -77,13 +88,11 @@ router.all('/markdown-pdf', requireAuth, async (req, res) => {
       markdown = "### Finor Statement\nNo recent assistant messages found. Please ask the Finor AI Assistant a question to generate a report first!";
     }
 
-    // Replace Rupee Unicode character with safe ASCII compatible 'Rs.' to prevent Helvetica font crashing
-    markdown = markdown.replace(/₹/g, 'Rs.');
-
     const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    const dateStr = new Date().toISOString().substring(0, 10);
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=finor_report.pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=finor_statement_${dateStr}.pdf`);
 
     doc.pipe(res);
 
@@ -112,9 +121,8 @@ router.all('/markdown-pdf', requireAuth, async (req, res) => {
       // Calculate column widths
       const colWidths = [];
       if (numCols === 2) {
-        colWidths.push(200, totalWidth - 200);
+        colWidths.push(220, totalWidth - 220);
       } else {
-        // First column wider, rest equal
         const firstWidth = 140;
         colWidths.push(firstWidth);
         const restWidth = (totalWidth - firstWidth) / (numCols - 1);
@@ -131,20 +139,31 @@ router.all('/markdown-pdf', requireAuth, async (req, res) => {
         }
 
         const isHeader = rowIndex === 0;
+        
+        // Shaded zebra rows background for premium feel
+        if (!isHeader) {
+          doc.rect(startX, y - 4, totalWidth, 18)
+             .fill(rowIndex % 2 === 0 ? '#f8fafc' : '#ffffff');
+        } else {
+          doc.rect(startX, y - 4, totalWidth, 20)
+             .fill('#f1f5f9');
+        }
+
         let currentX = startX;
         doc.fontSize(isHeader ? 9 : 8);
         doc.font(isHeader ? 'Helvetica-Bold' : 'Helvetica');
         doc.fillColor(isHeader ? '#0f172a' : '#334155');
 
         row.forEach((cell, colIndex) => {
-          doc.text(cell, currentX, y, { width: colWidths[colIndex], align: colIndex === 0 ? 'left' : 'right' });
+          const cleanCell = cleanTextForPdf(cell);
+          doc.text(cleanCell, currentX, y, { width: colWidths[colIndex], align: colIndex === 0 ? 'left' : 'right' });
           currentX += colWidths[colIndex];
         });
 
-        // Draw line
+        // Draw line divider
         doc.moveTo(startX, y + (isHeader ? 14 : 12))
            .lineTo(startX + totalWidth, y + (isHeader ? 14 : 12))
-           .strokeColor(isHeader ? '#475569' : '#cbd5e1')
+           .strokeColor(isHeader ? '#94a3b8' : '#e2e8f0')
            .lineWidth(isHeader ? 1 : 0.5)
            .stroke();
 
@@ -182,14 +201,14 @@ router.all('/markdown-pdf', requireAuth, async (req, res) => {
       // Check for headings
       if (line.startsWith('#')) {
         const level = line.match(/^#+/)[0].length;
-        const text = line.replace(/^#+\s*/, '');
+        const text = cleanTextForPdf(line.replace(/^#+\s*/, ''));
         
         if (y > doc.page.height - 80) {
           doc.addPage();
           y = 50;
         }
 
-        doc.fontSize(level === 1 ? 14 : level === 2 ? 12 : 10)
+        doc.fontSize(level === 1 ? 13 : level === 2 ? 11 : 9.5)
            .font('Helvetica-Bold')
            .fillColor('#0f172a')
            .text(text, 50, y);
@@ -197,7 +216,7 @@ router.all('/markdown-pdf', requireAuth, async (req, res) => {
       }
       // Check for list items
       else if (line.startsWith('-') || line.startsWith('*')) {
-        const text = line.replace(/^[-*]\s*/, '');
+        const text = cleanTextForPdf(line.replace(/^[-*]\s*/, ''));
         if (y > doc.page.height - 40) {
           doc.addPage();
           y = 50;
@@ -211,6 +230,8 @@ router.all('/markdown-pdf', requireAuth, async (req, res) => {
       }
       // Plain text
       else {
+        const text = cleanTextForPdf(line);
+        if (!text) continue;
         if (y > doc.page.height - 40) {
           doc.addPage();
           y = 50;
@@ -218,8 +239,8 @@ router.all('/markdown-pdf', requireAuth, async (req, res) => {
         doc.fontSize(9)
            .font('Helvetica')
            .fillColor('#334155');
-        doc.text(line, 50, y, { width: doc.page.width - 100 });
-        y += doc.heightOfString(line, { width: doc.page.width - 100 }) + 6;
+        doc.text(text, 50, y, { width: doc.page.width - 100 });
+        y += doc.heightOfString(text, { width: doc.page.width - 100 }) + 6;
       }
     }
 
@@ -364,7 +385,8 @@ router.get('/pnl-pdf', requireAuth, async (req, res) => {
 
     // Set Response Headers
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=finor_realized_pnl_statement.pdf`);
+    const dateStr = new Date().toISOString().substring(0, 10);
+    res.setHeader('Content-Disposition', `attachment; filename=finor_realized_pnl_${dateStr}.pdf`);
 
     // Stream PDF directly to client response
     doc.pipe(res);
@@ -556,8 +578,9 @@ router.get('/pnl-csv', requireAuth, async (req, res) => {
       csvContent += `${trade.stock_symbol},${trade.quantity},${buyDateStr},${sellDateStr},${trade.buy_price.toFixed(2)},${trade.sell_price.toFixed(2)},${trade.realized_pnl.toFixed(2)},${trade.holding_days},${taxClass}\n`;
     });
 
+    const dateStr = new Date().toISOString().substring(0, 10);
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=finor_realized_pnl_ledger.csv');
+    res.setHeader('Content-Disposition', `attachment; filename=finor_realized_pnl_ledger_${dateStr}.csv`);
     res.status(200).send(csvContent);
   } catch (err) {
     console.error('[ExportRoute] Failed to generate P&L CSV:', err.message);
@@ -589,8 +612,9 @@ router.get('/holdings-csv', requireAuth, async (req, res) => {
       csvContent += `${h.stock_symbol},${h.quantity},${h.average_buy_price.toFixed(2)},${(h.ltp || 0).toFixed(2)},${invested.toFixed(2)},${current.toFixed(2)},${pnl.toFixed(2)},${pnlPct.toFixed(2)}\n`;
     });
 
+    const dateStr = new Date().toISOString().substring(0, 10);
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=finor_holdings_statement.csv');
+    res.setHeader('Content-Disposition', `attachment; filename=finor_holdings_statement_${dateStr}.csv`);
     res.status(200).send(csvContent);
   } catch (err) {
     console.error('[ExportRoute] Failed to generate holdings CSV:', err.message);

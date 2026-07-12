@@ -534,14 +534,14 @@ async function buildPortfolioContext(userId, skipInsights = false) {
     console.error('[AI Assistant] Fetching profile metadata failed:', errProfile.message);
   }
 
-  // 6. Fetch 15 recent finance transactions
+  // 6. Fetch 150 recent finance transactions
   try {
     const { data: recentTransactions } = await supabase
       .from('finance_transactions')
       .select('date, description, amount, type, category')
       .eq('user_id', userId)
       .order('date', { ascending: false })
-      .limit(15);
+      .limit(150);
 
     ctx += `\n## Recent Finance Ledger Transactions:\n`;
     if (recentTransactions && recentTransactions.length > 0) {
