@@ -17,6 +17,12 @@ import authRouter from './routes/auth.js';
 
 dotenv.config();
 
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -29,6 +35,9 @@ app.use(cors({
 
 // Parse JSON request bodies
 app.use(express.json());
+
+// Serve static assets in the downloads folder
+app.use('/downloads', express.static(path.join(__dirname, '../downloads')));
 
 // Routes
 app.use('/api/trades', tradesRouter);

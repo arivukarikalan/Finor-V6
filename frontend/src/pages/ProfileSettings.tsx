@@ -143,19 +143,45 @@ export const ProfileSettings = () => {
     }
   };
 
+  // Generate instant setup QR payload
+  const qrConfigPayload = JSON.stringify({
+    url: webhookUrl,
+    key: profile?.sms_api_key || ''
+  });
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&color=63-66-f1&bgcolor=0f-14-1f&data=${encodeURIComponent(qrConfigPayload)}`;
+
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-black text-white tracking-tight uppercase">Profile Settings & Integrations</h1>
-        <p className="text-xs text-gray-400 mt-1">Configure your personal tenant info, credentials, and automated ingestion keys.</p>
+      
+      {/* Premium Profile Header Board */}
+      <div className="glass-panel rounded-3xl border border-dark-border p-6 flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden shadow-xl">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-brand-600 via-brand-500 to-indigo-400 flex items-center justify-center text-white text-xl font-extrabold shadow-lg select-none">
+            {profile?.username?.charAt(0).toUpperCase() || profile?.email?.charAt(0).toUpperCase() || 'U'}
+          </div>
+          <div>
+            <h1 className="text-xl font-extrabold text-white tracking-tight">{profile?.username || 'Client Profile'}</h1>
+            <p className="text-xs text-gray-400 mt-0.5">{profile?.email}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 select-none">
+          <span className="text-[9px] font-black uppercase text-emerald-400 bg-emerald-500/10 px-2.5 py-1 border border-emerald-500/20 rounded-full">
+            Status: Active
+          </span>
+          <span className="text-[9px] font-black uppercase text-brand-400 bg-brand-500/10 px-2.5 py-1 border border-brand-500/20 rounded-full">
+            Role: {profile?.role || 'USER'}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         
-        {/* Left Column: Tenant Profile */}
+        {/* Left Column: Tenant Profile & Password (Stacked for balanced heights) */}
         <div className="space-y-6">
-          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4">
+          
+          {/* Profile metadata Card */}
+          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4 shadow-sm">
             <div className="flex items-center gap-2 border-b border-dark-border/40 pb-3">
               <User className="w-4 h-4 text-brand-400" />
               <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">Tenant Profile</h3>
@@ -262,13 +288,9 @@ export const ProfileSettings = () => {
               </button>
             </form>
           </div>
-        </div>
 
-        {/* Right Column: Password & Integrations */}
-        <div className="space-y-6">
-          
           {/* Change Password Form */}
-          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4">
+          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4 shadow-sm">
             <div className="flex items-center gap-2 border-b border-dark-border/40 pb-3">
               <Lock className="w-4 h-4 text-emerald-400" />
               <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">Change Password</h3>
@@ -355,8 +377,13 @@ export const ProfileSettings = () => {
             </form>
           </div>
 
+        </div>
+
+        {/* Right Column: SMS Webhook Sync & Ingestion Setup (APK Banner & QR) */}
+        <div className="space-y-6">
+          
           {/* SMS Webhook Ingestion Configuration */}
-          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4">
+          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-5 shadow-sm">
             <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
               <div className="flex items-center gap-2">
                 <Smartphone className="w-4 h-4 text-indigo-400" />
@@ -365,6 +392,26 @@ export const ProfileSettings = () => {
               <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 border border-indigo-500/20 rounded-full select-none">
                 Automated
               </span>
+            </div>
+
+            {/* Premium Download Banner */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-brand-500/5 to-transparent border border-brand-500/15 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="space-y-1 text-center sm:text-left">
+                <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center justify-center sm:justify-start gap-1.5">
+                  <Smartphone className="w-4.5 h-4.5 text-brand-400" />
+                  Download Finor SMS Sync App
+                </h4>
+                <p className="text-[10px] text-gray-400 leading-normal max-w-sm">
+                  Automate UPI trade & expense sync directly from your device. Our lightweight Android background app intercepts transaction SMSes and securely forwards them.
+                </p>
+              </div>
+              <a
+                href="/downloads/finor-sms-sync.apk"
+                download
+                className="px-4 py-2.5 bg-indigo-650 hover:bg-indigo-500 text-[10px] font-black uppercase rounded-xl text-white transition-all shadow-md shadow-indigo-600/15 whitespace-nowrap text-center shrink-0 cursor-pointer"
+              >
+                Download APK
+              </a>
             </div>
 
             <div className="space-y-4">
@@ -379,7 +426,7 @@ export const ProfileSettings = () => {
                     type="text"
                     readOnly
                     value={webhookUrl}
-                    className="flex-1 px-3 py-2 rounded-xl bg-dark-depth-2/60 border border-dark-border/40 text-gray-400 text-xs focus:outline-none select-all"
+                    className="flex-1 px-3 py-2.5 rounded-xl bg-dark-depth-2/60 border border-dark-border/40 text-gray-400 text-xs focus:outline-none select-all font-mono"
                   />
                   <button
                     type="button"
@@ -403,7 +450,7 @@ export const ProfileSettings = () => {
                       type={showSmsKey ? "text" : "password"}
                       readOnly
                       value={profile?.sms_api_key || 'No Ingestion Key Loaded'}
-                      className="w-full pl-3 pr-10 py-2.5 rounded-xl bg-dark-depth-2/60 border border-dark-border/40 text-gray-300 text-xs focus:outline-none"
+                      className="w-full pl-3 pr-10 py-2.5 rounded-xl bg-dark-depth-2/60 border border-dark-border/40 text-gray-300 text-xs focus:outline-none font-mono"
                     />
                     <button
                       type="button"
@@ -434,31 +481,33 @@ export const ProfileSettings = () => {
                 </div>
               </div>
 
-              {/* Guide/Instructions section */}
-              <div className="p-3.5 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 text-[10px] leading-relaxed text-gray-350 space-y-2">
-                <div className="flex items-start gap-2">
-                  <Smartphone className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                  <div>
-                    <strong className="text-white font-extrabold block mb-0.5">Automate with Finor SMS Sync App:</strong>
-                    To automate, you can configure an Android gateway app (such as Tasker or "SMS Gateway" from Play Store) to forward UPI transaction alert SMSes to this URL.
+              {/* Instant Setup config & instructions */}
+              <div className="flex flex-col sm:flex-row gap-4 items-center p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10">
+                <div className="flex-1 text-[10px] leading-relaxed text-gray-350 space-y-2.5">
+                  <div className="space-y-1">
+                    <strong className="text-white font-extrabold block text-xs">Instant Config Scanner:</strong>
+                    <span>Open the Finor SMS app on your Android device, select "Scan Config", and point your camera to this QR code. It will auto-configure your Webhook URL and API Key instantly.</span>
                   </div>
-                </div>
-                <div className="flex items-start gap-2 pl-6">
-                  <span className="text-[9px] font-black text-indigo-400 mr-1 select-none">1.</span>
-                  <span>Set target URL to the Webhook URL above.</span>
-                </div>
-                <div className="flex items-start gap-2 pl-6">
-                  <span className="text-[9px] font-black text-indigo-400 mr-1 select-none">2.</span>
-                  <span>Add header: <code className="bg-dark-depth-3 px-1 py-0.5 rounded font-mono text-[9px] border border-dark-border">x-api-key: [Your Personal Ingestion Key]</code></span>
+                  
+                  <div className="pt-2.5 border-t border-indigo-500/10 flex items-start gap-2">
+                    <Landmark className="w-4.5 h-4.5 text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-white font-extrabold block mb-0.5">Alternative: Manual Ingestion</strong>
+                      You can record transactions manually on the <strong className="text-white">Finance</strong> page using the <strong className="text-white">+ Add Transaction</strong> / <strong className="text-white">+ Add Cash</strong> buttons.
+                    </div>
+                  </div>
                 </div>
                 
-                <div className="pt-2 border-t border-indigo-500/10 flex items-start gap-2">
-                  <Landmark className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
-                  <div>
-                    <strong className="text-white font-extrabold block mb-0.5">Alternative: Manual Ingestion</strong>
-                    If you don't use SMS sync, you can always record transactions manually on the <strong className="text-white">Finance</strong> page using the <strong className="text-white">+ Add Transaction</strong> / <strong className="text-white">+ Add Cash</strong> buttons.
+                {profile?.sms_api_key && (
+                  <div className="p-2.5 bg-dark-depth-1 border border-dark-border/80 rounded-2xl shrink-0 flex flex-col items-center gap-1.5 shadow-md">
+                    <img 
+                      src={qrImageUrl} 
+                      alt="Config QR Code" 
+                      className="w-24 h-24 object-contain rounded-md"
+                    />
+                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest select-none">Scan config</span>
                   </div>
-                </div>
+                )}
               </div>
 
             </div>
