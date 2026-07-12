@@ -6,7 +6,6 @@ import {
   Loader2, 
   User, 
   Globe, 
-  Users2, 
   Lock, 
   ShieldCheck, 
   Mail, 
@@ -267,7 +266,7 @@ export const ProfileSettings = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
         
-        {/* Left Column: Tenant Profile & Password (Stacked for balanced heights) */}
+        {/* Left Column: Tenant Profile, Change Password, and SMS Webhook configuration */}
         <div className="space-y-6">
           
           {/* Profile metadata Card */}
@@ -284,7 +283,7 @@ export const ProfileSettings = () => {
                   Email Address
                 </label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-500">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-505">
                     <Mail className="w-4 h-4" />
                   </div>
                   <input
@@ -332,60 +331,63 @@ export const ProfileSettings = () => {
                     id="profileCountry"
                     type="text"
                     required
-                    placeholder="Country"
+                    placeholder="India"
                     value={country}
                     onChange={(e) => setCountry(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all"
                   />
                 </div>
               </div>
 
-              {/* Gender */}
+              {/* Gender selection */}
               <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="profileGender">
+                <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase">
                   Gender
                 </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
-                    <Users2 className="w-4 h-4" />
-                  </div>
-                  <select
-                    id="profileGender"
-                    value={gender}
-                    onChange={(e) => setGender(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none accent-dark-depth-1"
-                  >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
+                <div className="grid grid-cols-3 gap-2">
+                  {['Male', 'Female', 'Other'].map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setGender(g)}
+                      className={`py-2 px-3 rounded-xl border text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer ${
+                        gender === g
+                          ? 'bg-brand-500/10 border-brand-500 text-brand-400 font-extrabold'
+                          : 'bg-dark-depth-2 border-dark-border/40 text-gray-455 hover:bg-dark-depth-3 hover:text-white'
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Session Expiry Slider */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center ml-1">
-                  <label className="text-[10px] font-bold text-gray-300 uppercase" htmlFor="sessionExpiry">
-                    Session Security Timeout
+              {/* Security session expiry slider */}
+              <div className="space-y-2 border-t border-dark-border/40 pt-4">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-black text-gray-300 uppercase tracking-wider block ml-1">
+                    Security Session Expiry Limit
                   </label>
-                  <span className="text-[10px] font-black text-brand-400 font-mono">
+                  <span className="text-[10px] font-black text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded-lg border border-brand-500/20">
                     {sessionExpiryDays} {sessionExpiryDays === 1 ? 'Day' : 'Days'}
                   </span>
                 </div>
-                <div className="flex items-center gap-4">
+                <p className="text-[9px] text-gray-400 leading-normal ml-1">
+                  Enforces automatic credentials re-authentication verification. Configurable between 1 and 30 days.
+                </p>
+                <div className="flex items-center gap-4 pt-1 px-1">
                   <input
-                    id="sessionExpiry"
                     type="range"
                     min="1"
                     max="30"
                     value={sessionExpiryDays}
-                    onChange={(e) => setSessionExpiryDays(parseInt(e.target.value))}
-                    className="flex-1 accent-brand-500 h-1 bg-dark-depth-3 rounded-lg appearance-none cursor-pointer"
+                    onChange={(e) => setSessionExpiryDays(parseInt(e.target.value) || 1)}
+                    className="flex-1 accent-brand-500 bg-dark-depth-3 h-1.5 rounded-lg cursor-pointer"
                   />
+                  <div className="flex justify-between text-[8px] font-black text-gray-500 w-12 text-right">
+                    <span>1D - 30D</span>
+                  </div>
                 </div>
-                <span className="text-[9px] text-gray-500 block leading-normal ml-1">
-                  Enforces password re-authentication at regular intervals. Min: 1 Day, Max: 30 Days.
-                </span>
               </div>
 
               <button
@@ -461,7 +463,7 @@ export const ProfileSettings = () => {
                   Confirm New Password
                 </label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-400">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-405">
                     <ShieldCheck className="w-4 h-4" />
                   </div>
                   <input
@@ -493,6 +495,142 @@ export const ProfileSettings = () => {
             </form>
           </div>
 
+          {/* SMS Webhook Ingestion Configuration */}
+          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-5 shadow-sm">
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-indigo-400" />
+                <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">SMS Webhook Sync</h3>
+              </div>
+              <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 border border-indigo-500/20 rounded-full select-none">
+                Automated
+              </span>
+            </div>
+
+            {/* Premium Download Banner */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-brand-500/5 to-transparent border border-brand-500/15 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="space-y-1 text-center sm:text-left">
+                <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center justify-center sm:justify-start gap-1.5">
+                  <Smartphone className="w-4.5 h-4.5 text-brand-400" />
+                  Download Finor SMS Sync App
+                </h4>
+                <p className="text-[10px] text-gray-400 leading-normal max-w-sm">
+                  Automate UPI trade & expense sync directly from your device. Our lightweight Android background app intercepts transaction SMSes and securely forwards them.
+                </p>
+              </div>
+              <a
+                href={apkDownloadUrl}
+                download
+                className="px-4 py-2.5 bg-indigo-650 hover:bg-indigo-500 text-[10px] font-black uppercase rounded-xl text-white transition-all shadow-md shadow-indigo-600/15 whitespace-nowrap text-center shrink-0 cursor-pointer"
+              >
+                Download APK
+              </a>
+            </div>
+
+            <div className="space-y-4">
+              
+              {/* Webhook Endpoint Input */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase">
+                  SMS Webhook URL
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={webhookUrl}
+                    className="flex-1 px-3 py-2.5 rounded-xl bg-dark-depth-2/60 border border-dark-border/40 text-gray-400 text-xs focus:outline-none select-all font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCopyUrl}
+                    className="p-2.5 rounded-xl border border-dark-border bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    title="Copy Webhook URL"
+                  >
+                    {copiedUrl ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Personal SMS API Ingestion Key */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase">
+                  Personal Ingestion Key
+                </label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showSmsKey ? "text" : "password"}
+                      readOnly
+                      value={profile?.sms_api_key || 'No Ingestion Key Loaded'}
+                      className="w-full pl-3 pr-10 py-2.5 rounded-xl bg-dark-depth-2/60 border border-dark-border/40 text-gray-300 text-xs focus:outline-none font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSmsKey(!showSmsKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
+                    >
+                      {showSmsKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCopyKey}
+                    disabled={!profile?.sms_api_key}
+                    className="p-2.5 rounded-xl border border-dark-border bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    title="Copy Ingestion Key"
+                  >
+                    {copiedKey ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRegenerateSmsKey}
+                    disabled={regeneratingKey}
+                    className="p-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
+                    title="Rotate/Regenerate Ingestion Key"
+                  >
+                    {regeneratingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Instant Setup config & instructions */}
+              <div className="flex flex-col sm:flex-row gap-4 items-center p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10">
+                <div className="flex-1 text-[10px] leading-relaxed text-gray-350 space-y-2.5">
+                  <div className="space-y-1">
+                    <strong className="text-white font-extrabold block text-xs">Instant Config Scanner:</strong>
+                    <span>Open the Finor SMS app on your Android device, select "Scan Config", and point your camera to this QR code. It will auto-configure your Webhook URL and API Key instantly.</span>
+                  </div>
+                  
+                  <div className="pt-2.5 border-t border-indigo-500/10 flex items-start gap-2">
+                    <Landmark className="w-4.5 h-4.5 text-indigo-400 shrink-0 mt-0.5" />
+                    <div>
+                      <strong className="text-white font-extrabold block mb-0.5">Alternative: Manual Ingestion</strong>
+                      You can record transactions manually on the <strong className="text-white">Finance</strong> page using the <strong className="text-white">+ Add Transaction</strong> / <strong className="text-white">+ Add Cash</strong> buttons.
+                    </div>
+                  </div>
+                </div>
+                
+                {profile?.sms_api_key && (
+                  <div className="p-2.5 bg-dark-depth-1 border border-dark-border/80 rounded-2xl shrink-0 flex flex-col items-center gap-1.5 shadow-md">
+                    <img 
+                      src={qrImageUrl} 
+                      alt="Config QR Code" 
+                      className="w-24 h-24 object-contain rounded-md"
+                    />
+                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest select-none">Scan config</span>
+                  </div>
+                )}
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+        {/* Right Column: Broker API and Mail Sync Integrations */}
+        <div className="space-y-6">
+          
           {/* Zerodha Kite Brokerage Integration */}
           <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4 shadow-sm">
             <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">

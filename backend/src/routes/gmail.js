@@ -373,7 +373,7 @@ router.post('/sync', requireAuth, async (req, res) => {
     // Retrieve user-specific PAN password for PDF contract note decryption
     const { data: profile } = await supabase
       .from('profiles')
-      .select('zerodha_pdf_password')
+      .select('zerodha_pdf_password, gmail_filter_from, gmail_filter_subject')
       .eq('id', userId)
       .maybeSingle();
 
@@ -386,11 +386,23 @@ router.post('/sync', requireAuth, async (req, res) => {
     
     let messages = [];
 
-    const searches = [
-      `subject:"contract note" after:${syncTimeAgo}`,
-      `subject:"equity contract" after:${syncTimeAgo}`,
-      `subject:UPC after:${syncTimeAgo}`,
-    ];
+    const filterFrom = profile?.gmail_filter_from || '';
+    const filterSubject = profile?.gmail_filter_subject || '';
+
+    let searches = [];
+    if (filterFrom || filterSubject) {
+      let q = '';
+      if (filterFrom) q += `from:${filterFrom} `;
+      if (filterSubject) q += `subject:"${filterSubject}" `;
+      q += `after:${syncTimeAgo}`;
+      searches.push(q.trim());
+    } else {
+      searches = [
+        `subject:"contract note" after:${syncTimeAgo}`,
+        `subject:"equity contract" after:${syncTimeAgo}`,
+        `subject:UPC after:${syncTimeAgo}`,
+      ];
+    }
 
     for (const q of searches) {
       const listRes = await gmail.users.messages.list({ userId: 'me', q, maxResults: 30 });

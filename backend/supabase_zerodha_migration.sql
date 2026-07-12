@@ -7,3 +7,5 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS zerodha_session_updated_at 
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS session_expiry_days INT DEFAULT 1;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_refresh_token VARCHAR(255) DEFAULT NULL;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_connected_email VARCHAR(255) DEFAULT NULL;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_filter_from VARCHAR(255) DEFAULT 'noreply@zerodha.com';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_filter_subject VARCHAR(255) DEFAULT 'contract note';

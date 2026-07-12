@@ -250,9 +250,15 @@ router.get('/profile', requireAuth, async (req, res) => {
  */
 router.post('/update-profile', requireAuth, async (req, res) => {
   try {
-    const { username, country, gender, session_expiry_days } = req.body;
+    const { username, country, gender, session_expiry_days, gmail_filter_from, gmail_filter_subject } = req.body;
 
-    const updatePayload = { username, country, gender };
+    const updatePayload = { 
+      username, 
+      country, 
+      gender,
+      gmail_filter_from: typeof gmail_filter_from !== 'undefined' ? gmail_filter_from : undefined,
+      gmail_filter_subject: typeof gmail_filter_subject !== 'undefined' ? gmail_filter_subject : undefined
+    };
     if (typeof session_expiry_days !== 'undefined') {
       // Clamp values between 1 and 30 days
       updatePayload.session_expiry_days = Math.max(1, Math.min(30, parseInt(session_expiry_days) || 1));
