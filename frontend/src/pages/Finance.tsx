@@ -1303,123 +1303,13 @@ export const Finance: React.FC = () => {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setPopoverTab('category');
-                                  setActiveQuickMapTxId(activeQuickMapTxId === tx.id ? null : tx.id);
+                                  setActiveQuickMapTxId(tx.id);
                                 }}
                                 className="text-gray-500 hover:text-brand-400 transition-colors p-0.5 rounded hover:bg-dark-depth-2 cursor-pointer"
                                 title="Quick Link/Map Category"
                               >
                                 <Link2 className="w-3 h-3" />
                               </button>
-                              
-                              {/* Quick Category popover */}
-                              {activeQuickMapTxId === tx.id && (
-                                <div className="absolute left-0 mt-6 z-50 w-60 bg-[#141416] border border-dark-border rounded-2xl shadow-2xl p-3 select-none animate-in fade-in zoom-in-95 duration-150">
-                                  {/* Popover Header with Close Button */}
-                                  <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-dark-border/40">
-                                    <span className="text-[9px] font-black uppercase tracking-wider text-brand-400">Quick Actions</span>
-                                    <button 
-                                      onClick={(e) => { e.stopPropagation(); setActiveQuickMapTxId(null); }}
-                                      className="p-1 rounded-lg hover:bg-dark-depth-2 text-gray-500 hover:text-white cursor-pointer transition-colors"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-
-                                  {/* Tab Switcher */}
-                                  <div className="flex border-b border-dark-border/40 pb-1.5 mb-1.5">
-                                    <button 
-                                      onClick={(e) => { e.stopPropagation(); setPopoverTab('category'); }}
-                                      className={`flex-1 text-center py-0.5 text-[9px] font-black uppercase tracking-wider transition-colors cursor-pointer ${popoverTab === 'category' ? 'text-brand-400 border-b border-brand-400' : 'text-gray-500 hover:text-white'}`}
-                                    >
-                                      Category
-                                    </button>
-                                    <button 
-                                      onClick={(e) => { e.stopPropagation(); setPopoverTab('link'); }}
-                                      className={`flex-1 text-center py-0.5 text-[9px] font-black uppercase tracking-wider transition-colors cursor-pointer ${popoverTab === 'link' ? 'text-brand-400 border-b border-brand-400' : 'text-gray-500 hover:text-white'}`}
-                                    >
-                                      Link Share
-                                    </button>
-                                  </div>
-
-                                  {popoverTab === 'category' ? (
-                                    <div className="max-h-48 overflow-y-auto space-y-0.5">
-                                      {CATEGORIES.map((cat) => (
-                                        <button
-                                          key={cat}
-                                          onClick={async (e) => {
-                                            e.stopPropagation();
-                                            await handleQuickMapCategory(tx, cat);
-                                          }}
-                                          className="w-full text-left px-2 py-1.5 text-[10px] font-semibold rounded-lg hover:bg-brand-500/10 hover:text-brand-400 text-gray-300 transition-all cursor-pointer"
-                                        >
-                                          {cat}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="space-y-1.5">
-                                      {tx.linked_tx_id ? (
-                                        <div className="p-1 space-y-1">
-                                          <div className="text-[9px] text-gray-400 leading-tight">
-                                            Linked to: <span className="text-white font-bold">{transactions.find(t => t.id === tx.linked_tx_id)?.description}</span>
-                                          </div>
-                                          <button
-                                            onClick={async (e) => {
-                                              e.stopPropagation();
-                                              await handleLinkTransaction(tx, null);
-                                            }}
-                                            className="w-full text-center py-1.5 text-[9px] font-extrabold rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all cursor-pointer mt-1"
-                                          >
-                                            Unlink Payment
-                                          </button>
-                                        </div>
-                                      ) : (
-                                        <div className="max-h-48 overflow-y-auto space-y-1.5">
-                                          <div className="text-[8px] font-bold text-gray-500 px-1 uppercase tracking-wider">
-                                            Select Matching Payment:
-                                          </div>
-                                          {(() => {
-                                            const candidates = getLinkCandidates(tx);
-                                            if (candidates.length === 0) {
-                                              return <div className="text-[9px] text-gray-500 italic p-2 text-center">No transactions in last 15 days.</div>;
-                                            }
-                                            return candidates.map(c => {
-                                              const isHalf = Math.abs(c.amount - tx.amount * 2) < 0.01;
-                                              const isDouble = Math.abs(c.amount - tx.amount / 2) < 0.01;
-                                              const isPerfect = Math.abs(c.amount - tx.amount) < 0.01;
-                                              return (
-                                                <button
-                                                  key={c.id}
-                                                  onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    await handleLinkTransaction(tx, c.id);
-                                                  }}
-                                                  className="w-full text-left p-1.5 rounded-lg hover:bg-brand-500/10 text-[10px] text-gray-300 hover:text-white transition-all cursor-pointer border border-dark-border/40 hover:border-brand-500/20"
-                                                >
-                                                  <div className="flex justify-between font-bold">
-                                                    <span className="truncate max-w-[110px]">{c.description || 'No description'}</span>
-                                                    <span className={c.type === 'INCOME' ? 'text-emerald-400' : 'text-slate-400'}>
-                                                      {c.type === 'INCOME' ? '+' : '-'}{c.amount}
-                                                    </span>
-                                                  </div>
-                                                  <div className="flex justify-between items-center text-[8px] text-gray-500 mt-0.5">
-                                                    <span>{new Date(c.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
-                                                    {(isHalf || isDouble || isPerfect) && (
-                                                      <span className="text-brand-400 font-extrabold uppercase">
-                                                        {isPerfect ? 'Match' : 'Split Match'}
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                </button>
-                                              );
-                                            });
-                                          })()}
-                                        </div>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
                             </div>
                           </td>
                           <td className="p-4 text-gray-400 font-semibold">{tx.method}</td>
@@ -1594,122 +1484,13 @@ export const Finance: React.FC = () => {
                             onClick={(e) => {
                               e.stopPropagation();
                               setPopoverTab('category');
-                              setActiveQuickMapTxId(activeQuickMapTxId === tx.id ? null : tx.id);
+                              setActiveQuickMapTxId(tx.id);
                             }}
                             className="text-gray-500 hover:text-brand-400 transition-colors p-0.5 rounded hover:bg-dark-depth-2 cursor-pointer ml-1 inline-block align-middle"
                             title="Quick Link/Map Category"
                           >
                             <Link2 className="w-3 h-3" />
                           </button>
-                          
-                          {activeQuickMapTxId === tx.id && (
-                            <div className="absolute left-0 mt-6 z-50 w-60 bg-[#141416] border border-dark-border rounded-2xl shadow-2xl p-3 select-none animate-in fade-in zoom-in-95 duration-150">
-                              {/* Popover Header with Close Button */}
-                              <div className="flex items-center justify-between pb-2 mb-1.5 border-b border-dark-border/40">
-                                <span className="text-[9px] font-black uppercase tracking-wider text-brand-400">Quick Actions</span>
-                                <button 
-                                  onClick={(e) => { e.stopPropagation(); setActiveQuickMapTxId(null); }}
-                                  className="p-1 rounded-lg hover:bg-dark-depth-2 text-gray-500 hover:text-white cursor-pointer transition-colors"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-
-                              {/* Tab Switcher */}
-                              <div className="flex border-b border-dark-border/40 pb-1.5 mb-1.5">
-                                <button 
-                                  onClick={(e) => { e.stopPropagation(); setPopoverTab('category'); }}
-                                  className={`flex-1 text-center py-0.5 text-[9px] font-black uppercase tracking-wider transition-colors cursor-pointer ${popoverTab === 'category' ? 'text-brand-400 border-b border-brand-400' : 'text-gray-500 hover:text-white'}`}
-                                >
-                                  Category
-                                </button>
-                                <button 
-                                  onClick={(e) => { e.stopPropagation(); setPopoverTab('link'); }}
-                                  className={`flex-1 text-center py-0.5 text-[9px] font-black uppercase tracking-wider transition-colors cursor-pointer ${popoverTab === 'link' ? 'text-brand-400 border-b border-brand-400' : 'text-gray-500 hover:text-white'}`}
-                                >
-                                  Link Share
-                                </button>
-                              </div>
-
-                              {popoverTab === 'category' ? (
-                                <div className="max-h-40 overflow-y-auto space-y-0.5">
-                                  {CATEGORIES.map((cat) => (
-                                    <button
-                                      key={cat}
-                                      onClick={async (e) => {
-                                        e.stopPropagation();
-                                        await handleQuickMapCategory(tx, cat);
-                                      }}
-                                      className="w-full text-left px-2 py-1 text-[9px] font-semibold rounded-lg hover:bg-brand-500/10 hover:text-brand-400 text-gray-300 transition-all cursor-pointer"
-                                    >
-                                      {cat}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div className="space-y-1.5">
-                                  {tx.linked_tx_id ? (
-                                    <div className="p-1 space-y-1">
-                                      <div className="text-[8px] text-gray-400 leading-tight">
-                                        Linked to: <span className="text-white font-bold">{transactions.find(t => t.id === tx.linked_tx_id)?.description}</span>
-                                      </div>
-                                      <button
-                                        onClick={async (e) => {
-                                          e.stopPropagation();
-                                          await handleLinkTransaction(tx, null);
-                                        }}
-                                        className="w-full text-center py-1.5 text-[8px] font-extrabold rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-all cursor-pointer mt-1"
-                                      >
-                                        Unlink Payment
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <div className="max-h-40 overflow-y-auto space-y-1.5">
-                                      <div className="text-[8px] font-bold text-gray-500 px-1 uppercase tracking-wider">
-                                        Select Matching Payment:
-                                      </div>
-                                      {(() => {
-                                        const candidates = getLinkCandidates(tx);
-                                        if (candidates.length === 0) {
-                                          return <div className="text-[9px] text-gray-500 italic p-2 text-center">No transactions in last 15 days.</div>;
-                                        }
-                                        return candidates.map(c => {
-                                          const isHalf = Math.abs(c.amount - tx.amount * 2) < 0.01;
-                                          const isDouble = Math.abs(c.amount - tx.amount / 2) < 0.01;
-                                          const isPerfect = Math.abs(c.amount - tx.amount) < 0.01;
-                                          return (
-                                            <button
-                                              key={c.id}
-                                              onClick={async (e) => {
-                                                e.stopPropagation();
-                                                await handleLinkTransaction(tx, c.id);
-                                              }}
-                                              className="w-full text-left p-1 rounded hover:bg-brand-500/10 text-[9px] text-gray-300 hover:text-white transition-all cursor-pointer border border-dark-border/40 hover:border-brand-500/20"
-                                            >
-                                              <div className="flex justify-between font-bold">
-                                                <span className="truncate max-w-[100px]">{c.description || 'No description'}</span>
-                                                <span className={c.type === 'INCOME' ? 'text-emerald-400' : 'text-slate-400'}>
-                                                  {c.type === 'INCOME' ? '+' : '-'}{c.amount}
-                                                </span>
-                                              </div>
-                                              <div className="flex justify-between items-center text-[7px] text-gray-500 mt-0.5">
-                                                <span>{new Date(c.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
-                                                {(isHalf || isDouble || isPerfect) && (
-                                                  <span className="text-brand-400 font-extrabold uppercase">
-                                                    {isPerfect ? 'Match' : 'Split Match'}
-                                                  </span>
-                                                )}
-                                              </div>
-                                            </button>
-                                          );
-                                        });
-                                      })()}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          )}
                         </div>
                         <span className="bg-dark-depth-2/40 px-2 py-0.5 rounded-lg border border-dark-border/20 text-[9px] text-gray-400">
                           {tx.method}
@@ -2258,6 +2039,7 @@ export const Finance: React.FC = () => {
                 </div>
               )}
 
+              {/* Target Wealth Goal */}
               <div>
                 <label className="text-[10px] text-gray-400 font-extrabold uppercase block mb-1">Target Wealth Goal (₹)</label>
                 <input
@@ -2280,6 +2062,152 @@ export const Finance: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ─── MODAL 7: QUICK ACTIONS (CATEGORY & LINK SHARE) ─── */}
+      {activeQuickMapTxId && (() => {
+        const activeTx = transactions.find(t => t.id === activeQuickMapTxId);
+        if (!activeTx) return null;
+        return (
+          <div 
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+            onClick={() => setActiveQuickMapTxId(null)}
+          >
+            <div 
+              className="bg-dark-depth-1 border-t sm:border border-dark-border w-full max-w-md rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-2xl animate-in slide-in-from-bottom sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-200 max-h-[90vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-4 border-b border-dark-border/60 flex items-center justify-between flex-shrink-0">
+                <div>
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">Quick Actions</h3>
+                  <p className="text-[10px] text-gray-400 mt-0.5 truncate max-w-[280px] font-semibold">
+                    {activeTx.description || 'No description'} ({activeTx.type === 'INCOME' ? '+' : '-'}₹{activeTx.amount})
+                  </p>
+                </div>
+                <button 
+                  onClick={() => setActiveQuickMapTxId(null)} 
+                  className="text-gray-400 hover:text-white cursor-pointer p-1 rounded-lg hover:bg-dark-depth-2 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto flex-1 space-y-4">
+                {/* Tab Switcher */}
+                <div className="flex border-b border-dark-border/40 pb-2 flex-shrink-0">
+                  <button 
+                    onClick={() => setPopoverTab('category')}
+                    className={`flex-1 text-center py-1.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer ${popoverTab === 'category' ? 'text-brand-400 border-b-2 border-brand-400' : 'text-gray-500 hover:text-white'}`}
+                  >
+                    Category
+                  </button>
+                  <button 
+                    onClick={() => setPopoverTab('link')}
+                    className={`flex-1 text-center py-1.5 text-xs font-black uppercase tracking-wider transition-colors cursor-pointer ${popoverTab === 'link' ? 'text-brand-400 border-b-2 border-brand-400' : 'text-gray-500 hover:text-white'}`}
+                  >
+                    Link Share
+                  </button>
+                </div>
+
+                {popoverTab === 'category' ? (
+                  <div className="grid grid-cols-2 gap-2 pr-1">
+                    {CATEGORIES.map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={async () => {
+                          await handleQuickMapCategory(activeTx, cat);
+                        }}
+                        className={`text-left px-3 py-2 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
+                          activeTx.category === cat 
+                            ? 'bg-brand-500/10 border-brand-500/50 text-brand-400 font-extrabold' 
+                            : 'bg-dark-depth-2 border-dark-border/40 hover:bg-brand-500/5 hover:border-brand-500/20 text-gray-300 hover:text-white'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-4 pr-1">
+                    {activeTx.linked_tx_id ? (
+                      <div className="bg-dark-depth-2 border border-dark-border/40 rounded-xl p-4 space-y-3">
+                        <div className="text-[10px] text-gray-400 uppercase font-bold tracking-wider">Linked Transaction:</div>
+                        {(() => {
+                          const linked = transactions.find(t => t.id === activeTx.linked_tx_id);
+                          if (!linked) return <div className="text-xs text-gray-500 italic">Linked transaction not found.</div>;
+                          return (
+                            <div className="flex justify-between items-center bg-dark-depth-1 border border-dark-border/60 p-2.5 rounded-lg">
+                              <div>
+                                <div className="text-xs font-bold text-white">{linked.description || 'No description'}</div>
+                                <div className="text-[9px] text-gray-500 mt-0.5">
+                                  {new Date(linked.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </div>
+                              </div>
+                              <div className={`text-xs font-extrabold ${linked.type === 'INCOME' ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                {linked.type === 'INCOME' ? '+' : '-'}₹{linked.amount}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        <button
+                          onClick={async () => {
+                            await handleLinkTransaction(activeTx, null);
+                          }}
+                          className="w-full text-center py-2.5 text-xs font-extrabold rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-all cursor-pointer mt-2"
+                        >
+                          Unlink Payment
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                          Select Matching Payment (Last 15 Days):
+                        </div>
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                          {(() => {
+                            const candidates = getLinkCandidates(activeTx);
+                            if (candidates.length === 0) {
+                              return <div className="text-xs text-gray-500 italic p-4 text-center border border-dashed border-dark-border rounded-xl bg-dark-depth-2/20">No matching payments found in last 15 days.</div>;
+                            }
+                            return candidates.map(c => {
+                              const isHalf = Math.abs(c.amount - activeTx.amount * 2) < 0.01;
+                              const isDouble = Math.abs(c.amount - activeTx.amount / 2) < 0.01;
+                              const isPerfect = Math.abs(c.amount - activeTx.amount) < 0.01;
+                              return (
+                                <button
+                                  key={c.id}
+                                  onClick={async () => {
+                                    await handleLinkTransaction(activeTx, c.id);
+                                  }}
+                                  className="w-full text-left p-3 rounded-xl bg-dark-depth-2 hover:bg-brand-500/10 text-xs text-gray-300 hover:text-white transition-all cursor-pointer border border-dark-border/40 hover:border-brand-500/20 flex flex-col gap-1"
+                                >
+                                  <div className="flex justify-between items-start w-full">
+                                    <span className="truncate max-w-[200px] font-bold">{c.description || 'No description'}</span>
+                                    <span className={`font-extrabold ${c.type === 'INCOME' ? 'text-emerald-400' : 'text-slate-400'}`}>
+                                      {c.type === 'INCOME' ? '+' : '-'}₹{c.amount}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center text-[9px] text-gray-500 w-full mt-0.5">
+                                    <span>{new Date(c.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                                    {(isHalf || isDouble || isPerfect) && (
+                                      <span className="text-brand-400 font-extrabold uppercase text-[8px] tracking-wider bg-brand-500/10 px-1.5 py-0.5 rounded-lg border border-brand-500/25">
+                                        {isPerfect ? 'Match' : 'Split Match'}
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
