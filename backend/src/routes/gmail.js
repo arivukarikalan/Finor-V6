@@ -416,7 +416,7 @@ router.post('/sync', requireAuth, async (req, res) => {
     // Retrieve user-specific PAN password for PDF contract note decryption
     const { data: profile } = await supabase
       .from('profiles')
-      .select('zerodha_pdf_password, gmail_filter_from, gmail_filter_subject')
+      .select('zerodha_pdf_password, gmail_filter_from, gmail_filter_subject, gmail_connected_email')
       .eq('id', userId)
       .maybeSingle();
 
@@ -458,8 +458,9 @@ router.post('/sync', requireAuth, async (req, res) => {
     }
 
     if (messages.length === 0) {
+      const userGmail = profile?.gmail_connected_email || req.user.email || 'your connected email address';
       return res.json({
-        message: 'No contract note emails found in the last 90 days. Check if emails are forwarded to finorvtrades@gmail.com.',
+        message: `No contract note emails found in the last 90 days. Check if emails are forwarded to ${userGmail}.`,
         newTrades: 0,
         emailsFound: 0
       });
