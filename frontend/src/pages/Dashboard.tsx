@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '../services/api';
+import { useAuthStore } from '../context/authStore';
 import { LtpPriceText } from '../components/LtpPriceText';
 import { 
   AreaChart, 
@@ -88,6 +89,7 @@ const periodTitles = {
 };
 
 export const Dashboard = ({ setActiveTab }: DashboardProps) => {
+  const { profile } = useAuthStore();
   const [period, setPeriod] = useState<'1W' | '1M' | '3M' | '6M' | '1Y' | 'ALL'>('1Y');
   const [history, setHistory] = useState<HistoryPoint[]>(() => {
     try {
@@ -327,6 +329,51 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
           Welcome back. Here is your portfolio performance snapshot at a glance.
         </p>
       </div>
+
+      {/* Configuration Checklist / Welcome Guide Banner for New Users */}
+      {profile && (!profile.zerodha_api_key || !profile.gmail_connected_email) && (
+        <div className="glass-panel rounded-3xl border border-brand-500/25 p-6 relative overflow-hidden shadow-xl bg-gradient-to-r from-brand-950/15 via-dark-depth-1 to-indigo-950/10 backdrop-blur-md">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="flex h-2.5 w-2.5 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-405 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-500"></span>
+                </span>
+                <span className="text-[10px] font-black text-brand-400 uppercase tracking-widest bg-brand-500/10 px-2 py-0.5 rounded-md border border-brand-550/20">Setup Guide Checklist</span>
+              </div>
+              <h2 className="text-lg font-extrabold text-white tracking-tight">Complete your Account Integration Setup</h2>
+              <p className="text-xs text-gray-305 max-w-xl leading-relaxed">
+                Unlock automated trades ingestion, real-time portfolio tracking, and AI-driven coaching insights by linking your broker API keys or Gmail sync.
+              </p>
+              
+              {/* Checklist list */}
+              <div className="flex flex-wrap gap-x-6 gap-y-2 pt-2 text-[11px] text-gray-400 font-bold uppercase tracking-wider">
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-3.5 h-3.5 rounded-full border ${profile.zerodha_api_key ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'border-gray-500 text-gray-550'} flex items-center justify-center text-[9px]`}>
+                    {profile.zerodha_api_key ? '✓' : '1'}
+                  </div>
+                  <span className={profile.zerodha_api_key ? 'text-emerald-400 line-through' : ''}>Broker API Credentials</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className={`w-3.5 h-3.5 rounded-full border ${profile.gmail_connected_email ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'border-gray-500 text-gray-555'} flex items-center justify-center text-[9px]`}>
+                    {profile.gmail_connected_email ? '✓' : '2'}
+                  </div>
+                  <span className={profile.gmail_connected_email ? 'text-emerald-400 line-through' : ''}>Gmail Sync Authorization</span>
+                </div>
+              </div>
+            </div>
+            
+            <button
+              onClick={() => setActiveTab('profile')}
+              className="py-3 px-5 rounded-2xl bg-brand-600 hover:bg-brand-500 text-white font-extrabold text-xs uppercase tracking-wider active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-brand-600/25 self-start md:self-center shrink-0 border border-brand-500/30"
+            >
+              Configure Now <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Error Alert */}
       {error && (

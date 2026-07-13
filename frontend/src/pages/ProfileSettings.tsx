@@ -15,7 +15,9 @@ import {
   Check, 
   RefreshCw, 
   Smartphone, 
-  Landmark
+  Landmark,
+  HelpCircle,
+  Info
 } from 'lucide-react';
 
 export const ProfileSettings = () => {
@@ -997,6 +999,47 @@ export const ProfileSettings = () => {
             </div>
           </div>
 
+        </div>
+
+        {/* Setup Walkthrough & Help Section */}
+        <div className="glass-panel rounded-3xl border border-dark-border p-6 mt-6 space-y-6 shadow-sm">
+          <div className="flex items-center gap-2 border-b border-dark-border/40 pb-3">
+            <HelpCircle className="w-4 h-4 text-brand-400" />
+            <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">Integration Walkthrough & Support Guide</h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-3">
+              <h4 className="text-xs font-extrabold text-white uppercase flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                Why configure API integrations?
+              </h4>
+              <p className="text-xs text-gray-300 leading-relaxed">
+                Finor is a secure, read-only analytical platform. Linking your broker API credentials allows the app to fetch your active stock holdings, average purchase costs, and session trade listings directly. 
+              </p>
+              <p className="text-xs text-gray-350 leading-relaxed">
+                Authorizing Gmail synchronization scans only designated automated messages (from Zerodha contract notes) to record transaction logs instantly without manual entries. Your account password is never shared, and no transactional permissions are available to the app.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <h4 className="text-xs font-extrabold text-white uppercase flex items-center gap-1.5">
+                <Info className="w-3.5 h-3.5 text-brand-400" />
+                Alternative: Manual Sync Operations
+              </h4>
+              <p className="text-xs text-gray-300 leading-relaxed">
+                If you choose not to link your broker accounts or Gmail inbox, you can still experience all analytical features of Finor using manual sync modes:
+              </p>
+              <ul className="text-xs text-gray-350 list-disc list-inside space-y-1.5 pl-1 leading-relaxed">
+                <li>
+                  <strong className="text-white">Manual Transactions:</strong> Navigate to the <strong className="text-white">Finance</strong> page and click <strong className="text-white">+ Add Transaction</strong> or <strong className="text-white">+ Add Cash</strong> to enter logs manually.
+                </li>
+                <li>
+                  <strong className="text-white">SMS Webhook app:</strong> Set up the Android APK helper to scan incoming transaction SMS alerts and stream them to your Finor account instantly.
+                </li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     </div>
