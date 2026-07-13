@@ -15,11 +15,25 @@ const router = express.Router();
 const PDF_PASSWORD = process.env.ZERODHA_PDF_PASSWORD || '';
 
 // ─── OAuth2 Client Setup ────────────────────────────────────────────────────
-const getOAuth2Client = () => {
+const getOAuth2Client = (profile = null) => {
+  let clientId = process.env.GMAIL_CLIENT_ID;
+  let clientSecret = process.env.GMAIL_CLIENT_SECRET;
+  let redirectUri = process.env.GMAIL_REDIRECT_URI;
+
+  if (profile) {
+    const customId = decryptText(profile.gmail_client_id);
+    const customSecret = decryptText(profile.gmail_client_secret);
+    if (customId && customSecret) {
+      clientId = customId;
+      clientSecret = customSecret;
+      redirectUri = `${process.env.BACKEND_URL || 'https://finor-v6.onrender.com'}/api/gmail/callback`;
+    }
+  }
+
   return new google.auth.OAuth2(
-    process.env.GMAIL_CLIENT_ID,
-    process.env.GMAIL_CLIENT_SECRET,
-    process.env.GMAIL_REDIRECT_URI
+    clientId,
+    clientSecret,
+    redirectUri
   );
 };
 
@@ -59,9 +73,21 @@ const getRefreshToken = async (userId) => {
 };
 
 const getAuthorizedClient = async (userId) => {
-  const token = await getRefreshToken(userId);
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('gmail_refresh_token, gmail_client_id, gmail_client_secret')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error || !profile) {
+    console.error('Error reading user profile for Gmail OAuth Client:', error?.message);
+    return null;
+  }
+
+  const token = decryptText(profile.gmail_refresh_token) || null;
   if (!token) return null;
-  const auth = getOAuth2Client();
+
+  const auth = getOAuth2Client(profile);
   auth.setCredentials({ refresh_token: token });
   return auth;
 };
@@ -116,20 +142,31 @@ router.get('/status', requireAuth, async (req, res) => {
 });
 
 // ─── GET /api/gmail/auth ─────────────────────────────────────────────────────
-router.get('/auth', (req, res) => {
+router.get('/auth', async (req, res) => {
   const { userId } = req.query;
   if (!userId) {
     return res.status(400).send('Missing userId query parameter for state mapping.');
   }
 
-  const auth = getOAuth2Client();
-  const url = auth.generateAuthUrl({
-    access_type: 'offline',
-    prompt: 'consent',   // Always request refresh token
-    scope: SCOPES,
-    state: String(userId)
-  });
-  res.redirect(url);
+  try {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('gmail_client_id, gmail_client_secret')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const auth = getOAuth2Client(profile);
+    const url = auth.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent',   // Always request refresh token
+      scope: SCOPES,
+      state: String(userId)
+    });
+    res.redirect(url);
+  } catch (err) {
+    console.error('Gmail auth redirect setup failed:', err.message);
+    res.status(500).send('Gmail auth initialization error.');
+  }
 });
 
 // ─── GET /api/gmail/callback ─────────────────────────────────────────────────
@@ -148,7 +185,13 @@ router.get('/callback', async (req, res) => {
   }
 
   try {
-    const auth = getOAuth2Client();
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('gmail_client_id, gmail_client_secret')
+      .eq('id', userId)
+      .maybeSingle();
+
+    const auth = getOAuth2Client(profile);
     const { tokens } = await auth.getToken(String(code));
 
     if (tokens.refresh_token) {

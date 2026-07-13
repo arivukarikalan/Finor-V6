@@ -376,7 +376,7 @@ router.get('/decrypted-profile', requireAuth, async (req, res) => {
   try {
     const { data: profile, error } = await supabaseAdmin
       .from('profiles')
-      .select('zerodha_api_key, zerodha_api_secret, zerodha_pdf_password')
+      .select('zerodha_api_key, zerodha_api_secret, zerodha_pdf_password, gmail_client_id, gmail_client_secret')
       .eq('id', req.user.id)
       .maybeSingle();
 
@@ -385,7 +385,9 @@ router.get('/decrypted-profile', requireAuth, async (req, res) => {
     res.json({
       zerodha_api_key: decryptText(profile?.zerodha_api_key) || '',
       zerodha_api_secret: decryptText(profile?.zerodha_api_secret) || '',
-      zerodha_pdf_password: decryptText(profile?.zerodha_pdf_password) || ''
+      zerodha_pdf_password: decryptText(profile?.zerodha_pdf_password) || '',
+      gmail_client_id: decryptText(profile?.gmail_client_id) || '',
+      gmail_client_secret: decryptText(profile?.gmail_client_secret) || ''
     });
   } catch (err) {
     console.error('[AuthRoute] Decrypted profile fetch failed:', err.message);
@@ -454,6 +456,43 @@ router.post('/update-zerodha-credentials', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('[AuthRoute] Update Zerodha credentials failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/auth/update-gmail-credentials
+ * Updates the user's specific Google Client ID and Google Client Secret
+ */
+router.post('/update-gmail-credentials', requireAuth, async (req, res) => {
+  try {
+    const { gmail_client_id, gmail_client_secret } = req.body;
+
+    const encryptedClientId = encryptText(gmail_client_id);
+    const encryptedClientSecret = encryptText(gmail_client_secret);
+
+    const { data: updated, error } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        gmail_client_id: encryptedClientId || null,
+        gmail_client_secret: encryptedClientSecret || null
+      })
+      .eq('id', req.user.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    res.json({
+      success: true,
+      message: 'Gmail Client credentials updated successfully.',
+      profile: {
+        gmail_client_id: decryptText(updated.gmail_client_id),
+        gmail_client_secret: decryptText(updated.gmail_client_secret)
+      }
+    });
+  } catch (err) {
+    console.error('[AuthRoute] Update Gmail credentials failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

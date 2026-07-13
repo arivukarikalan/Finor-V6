@@ -9,3 +9,5 @@ ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_refresh_token VARCHAR
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_connected_email VARCHAR(255) DEFAULT NULL;
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_filter_from VARCHAR(255) DEFAULT 'noreply@zerodha.com';
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_filter_subject VARCHAR(255) DEFAULT 'contract note';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_client_id VARCHAR(512) DEFAULT NULL;
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gmail_client_secret VARCHAR(255) DEFAULT NULL;

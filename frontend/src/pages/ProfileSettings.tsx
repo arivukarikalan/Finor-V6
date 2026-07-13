@@ -48,6 +48,13 @@ export const ProfileSettings = () => {
 
   // Gmail integration state
   const [disconnectingGmail, setDisconnectingGmail] = useState(false);
+  const [gmailFilterFrom, setGmailFilterFrom] = useState('noreply@zerodha.com');
+  const [gmailFilterSubject, setGmailFilterSubject] = useState('contract note');
+  const [gmailClientId, setGmailClientId] = useState('');
+  const [gmailClientSecret, setGmailClientSecret] = useState('');
+  const [showGmailSecret, setShowGmailSecret] = useState(false);
+  const [savingGmailCredentials, setSavingGmailCredentials] = useState(false);
+  const [savingGmailFilters, setSavingGmailFilters] = useState(false);
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
@@ -63,6 +70,8 @@ export const ProfileSettings = () => {
         setZerodhaApiKey(credentials.zerodha_api_key || '');
         setZerodhaApiSecret(credentials.zerodha_api_secret || '');
         setZerodhaPdfPassword(credentials.zerodha_pdf_password || '');
+        setGmailClientId(credentials.gmail_client_id || '');
+        setGmailClientSecret(credentials.gmail_client_secret || '');
       } catch (err) {
         console.error('Failed to fetch decrypted credentials:', err);
       }
@@ -73,6 +82,8 @@ export const ProfileSettings = () => {
       setCountry(profile.country || '');
       setGender(profile.gender || 'Male');
       setSessionExpiryDays(profile.session_expiry_days || 1);
+      setGmailFilterFrom(profile.gmail_filter_from || 'noreply@zerodha.com');
+      setGmailFilterSubject(profile.gmail_filter_subject || 'contract note');
       fetchDecryptedCredentials();
     }
   }, [profile]);
@@ -188,6 +199,48 @@ export const ProfileSettings = () => {
       useToastStore.getState().addToast(err.message || 'Failed to save Zerodha credentials.', 'error');
     } finally {
       setSavingZerodha(false);
+    }
+  };
+
+  const handleUpdateGmailCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingGmailCredentials(true);
+    try {
+      await apiRequest('/auth/update-gmail-credentials', {
+        method: 'POST',
+        body: JSON.stringify({
+          gmail_client_id: gmailClientId,
+          gmail_client_secret: gmailClientSecret
+        })
+      });
+      await fetchProfile();
+      useToastStore.getState().addToast('Google Cloud App credentials saved successfully!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast(err.message || 'Failed to save Google Cloud credentials.', 'error');
+    } finally {
+      setSavingGmailCredentials(false);
+    }
+  };
+
+  const handleSaveGmailFilters = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingGmailFilters(true);
+    try {
+      await apiRequest('/auth/update-profile', {
+        method: 'POST',
+        body: JSON.stringify({
+          gmail_filter_from: gmailFilterFrom,
+          gmail_filter_subject: gmailFilterSubject
+        })
+      });
+      await fetchProfile();
+      useToastStore.getState().addToast('Gmail sync filter queries updated successfully!', 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast(err.message || 'Failed to save filter configs.', 'error');
+    } finally {
+      setSavingGmailFilters(false);
     }
   };
 
@@ -779,190 +832,172 @@ export const ProfileSettings = () => {
               </span>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-6">
               <p className="text-xs text-gray-300 leading-relaxed">
                 Connect your personal Gmail account directly to synchronize transaction contract notes automatically.
               </p>
 
-              {profile?.gmail_connected_email ? (
-                <div className="space-y-3">
-                  <div className="p-3.5 rounded-2xl bg-dark-depth-2 border border-dark-border flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <span className="text-[10px] font-bold text-gray-400 block uppercase">Connected Inbox</span>
-                      <span className="text-xs text-white block font-bold truncate mt-0.5">{profile.gmail_connected_email}</span>
-                    </div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                  </div>
-                  <button
-                    onClick={handleDisconnectGmail}
-                    disabled={disconnectingGmail}
-                    className="w-full py-2.5 px-4 rounded-xl border border-rose-500/30 hover:border-rose-500 text-rose-400 hover:text-white hover:bg-rose-500/10 font-bold text-xs uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    {disconnectingGmail ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Disconnecting...
-                      </>
-                    ) : (
-                      'Disconnect Gmail Account'
-                    )}
-                  </button>
+              {/* 1. Custom Google Cloud Credentials Configuration */}
+              <form onSubmit={handleUpdateGmailCredentials} className="space-y-3.5 border-t border-dark-border/40 pt-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider">Custom Google App ID Credentials</span>
+                  <span className="text-[8px] font-black text-indigo-400 uppercase tracking-wider bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-550/20 select-none">Optional Client</span>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="p-3 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-[9px] text-gray-400 leading-relaxed">
-                    <span className="font-extrabold text-amber-400 uppercase block mb-0.5">Authorization Notice</span>
-                    Connecting your inbox allows Finor to scan emails from **Zerodha** matching subjects like **"contract note"** to automatically ingest trades. Your password is never shared.
-                  </div>
-                  <button
-                    onClick={handleConnectGmail}
-                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 text-white font-bold text-xs uppercase tracking-wider hover:from-emerald-500 hover:to-emerald-600 focus:outline-none active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-700/20"
-                  >
-                    Link Gmail Inbox
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-
-        </div>
-
-        {/* Right Column: SMS Webhook Sync & Ingestion Setup (APK Banner & QR) */}
-        <div className="space-y-6">
-          
-          {/* SMS Webhook Ingestion Configuration */}
-          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-5 shadow-sm">
-            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
-              <div className="flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-indigo-400" />
-                <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">SMS Webhook Sync</h3>
-              </div>
-              <span className="text-[9px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-2 py-0.5 border border-indigo-500/20 rounded-full select-none">
-                Automated
-              </span>
-            </div>
-
-            {/* Premium Download Banner */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-500/10 via-brand-500/5 to-transparent border border-brand-500/15 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div className="space-y-1 text-center sm:text-left">
-                <h4 className="text-xs font-black text-white uppercase tracking-wider flex items-center justify-center sm:justify-start gap-1.5">
-                  <Smartphone className="w-4.5 h-4.5 text-brand-400" />
-                  Download Finor SMS Sync App
-                </h4>
-                <p className="text-[10px] text-gray-400 leading-normal max-w-sm">
-                  Automate UPI trade & expense sync directly from your device. Our lightweight Android background app intercepts transaction SMSes and securely forwards them.
-                </p>
-              </div>
-              <a
-                href={apkDownloadUrl}
-                download
-                className="px-4 py-2.5 bg-indigo-650 hover:bg-indigo-500 text-[10px] font-black uppercase rounded-xl text-white transition-all shadow-md shadow-indigo-600/15 whitespace-nowrap text-center shrink-0 cursor-pointer"
-              >
-                Download APK
-              </a>
-            </div>
-
-            <div className="space-y-4">
-              
-              {/* Webhook Endpoint Input */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase">
-                  SMS Webhook URL
-                </label>
-                <div className="flex items-center gap-2">
+                
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="gmailClientId">
+                    Google OAuth Client ID
+                  </label>
                   <input
+                    id="gmailClientId"
                     type="text"
-                    readOnly
-                    value={webhookUrl}
-                    className="flex-1 px-3 py-2.5 rounded-xl bg-dark-depth-2/60 border border-dark-border/40 text-gray-400 text-xs focus:outline-none select-all font-mono"
+                    placeholder="Enter custom Google Client ID"
+                    value={gmailClientId}
+                    onChange={(e) => setGmailClientId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all font-mono"
                   />
-                  <button
-                    type="button"
-                    onClick={handleCopyUrl}
-                    className="p-2.5 rounded-xl border border-dark-border bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
-                    title="Copy Webhook URL"
-                  >
-                    {copiedUrl ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                  </button>
                 </div>
-              </div>
 
-              {/* Personal SMS API Ingestion Key */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase">
-                  Personal Ingestion Key
-                </label>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="gmailClientSecret">
+                    Google OAuth Client Secret
+                  </label>
+                  <div className="relative">
                     <input
-                      type={showSmsKey ? "text" : "password"}
-                      readOnly
-                      value={profile?.sms_api_key || 'No Ingestion Key Loaded'}
-                      className="w-full pl-3 pr-10 py-2.5 rounded-xl bg-dark-depth-2/60 border border-dark-border/40 text-gray-300 text-xs focus:outline-none font-mono"
+                      id="gmailClientSecret"
+                      type={showGmailSecret ? "text" : "password"}
+                      placeholder="Enter custom Google Client Secret"
+                      value={gmailClientSecret}
+                      onChange={(e) => setGmailClientSecret(e.target.value)}
+                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all font-mono"
                     />
                     <button
                       type="button"
-                      onClick={() => setShowSmsKey(!showSmsKey)}
+                      onClick={() => setShowGmailSecret(!showGmailSecret)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
                     >
-                      {showSmsKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      {showGmailSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleCopyKey}
-                    disabled={!profile?.sms_api_key}
-                    className="p-2.5 rounded-xl border border-dark-border bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
-                    title="Copy Ingestion Key"
-                  >
-                    {copiedKey ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleRegenerateSmsKey}
-                    disabled={regeneratingKey}
-                    className="p-2.5 rounded-xl border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500/10 text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
-                    title="Rotate/Regenerate Ingestion Key"
-                  >
-                    {regeneratingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                  </button>
                 </div>
-              </div>
 
-              {/* Instant Setup config & instructions */}
-              <div className="flex flex-col sm:flex-row gap-4 items-center p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/10">
-                <div className="flex-1 text-[10px] leading-relaxed text-gray-350 space-y-2.5">
-                  <div className="space-y-1">
-                    <strong className="text-white font-extrabold block text-xs">Instant Config Scanner:</strong>
-                    <span>Open the Finor SMS app on your Android device, select "Scan Config", and point your camera to this QR code. It will auto-configure your Webhook URL and API Key instantly.</span>
-                  </div>
-                  
-                  <div className="pt-2.5 border-t border-indigo-500/10 flex items-start gap-2">
-                    <Landmark className="w-4.5 h-4.5 text-indigo-400 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="text-white font-extrabold block mb-0.5">Alternative: Manual Ingestion</strong>
-                      You can record transactions manually on the <strong className="text-white">Finance</strong> page using the <strong className="text-white">+ Add Transaction</strong> / <strong className="text-white">+ Add Cash</strong> buttons.
-                    </div>
-                  </div>
+                <button
+                  type="submit"
+                  disabled={savingGmailCredentials}
+                  className="w-full py-2.5 px-4 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-300 hover:text-white border border-dark-border/40 font-bold text-xs uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  {savingGmailCredentials ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Saving API Keys...
+                    </>
+                  ) : (
+                    'Save Google API Credentials'
+                  )}
+                </button>
+              </form>
+
+              {/* 2. Connection Status & OAuth linking */}
+              <div className="border-t border-dark-border/40 pt-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider">Authentication Link</span>
                 </div>
-                
-                {profile?.sms_api_key && (
-                  <div className="p-2.5 bg-dark-depth-1 border border-dark-border/80 rounded-2xl shrink-0 flex flex-col items-center gap-1.5 shadow-md">
-                    <img 
-                      src={qrImageUrl} 
-                      alt="Config QR Code" 
-                      className="w-24 h-24 object-contain rounded-md"
-                    />
-                    <span className="text-[8px] font-black text-gray-500 uppercase tracking-widest select-none">Scan config</span>
+
+                {profile?.gmail_connected_email ? (
+                  <div className="space-y-4">
+                    <div className="p-3.5 rounded-2xl bg-dark-depth-2 border border-dark-border flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-bold text-gray-400 block uppercase">Connected Inbox</span>
+                        <span className="text-xs text-white block font-bold truncate mt-0.5">{profile.gmail_connected_email}</span>
+                      </div>
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    </div>
+
+                    {/* Gmail Filters Configuration Form */}
+                    <form onSubmit={handleSaveGmailFilters} className="space-y-3.5 bg-dark-depth-2/40 p-4 rounded-2xl border border-dark-border/60">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-gray-350 block uppercase tracking-wider">Sync Ingestion Filters</span>
+                        <span className="text-[8px] font-black text-indigo-400 uppercase tracking-wider bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-550/20 select-none">Active</span>
+                      </div>
+                      
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="gmailFilterFrom">
+                          From Email (Sender)
+                        </label>
+                        <input
+                          id="gmailFilterFrom"
+                          type="text"
+                          placeholder="noreply@zerodha.com"
+                          value={gmailFilterFrom}
+                          onChange={(e) => setGmailFilterFrom(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all font-mono"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="gmailFilterSubject">
+                          Subject Query Filter
+                        </label>
+                        <input
+                          id="gmailFilterSubject"
+                          type="text"
+                          placeholder="contract note"
+                          value={gmailFilterSubject}
+                          onChange={(e) => setGmailFilterSubject(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all font-mono"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={savingGmailFilters}
+                        className="w-full py-2.5 px-4 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-350 hover:text-white border border-dark-border/40 font-bold text-xs uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                      >
+                        {savingGmailFilters ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            Saving Filters...
+                          </>
+                        ) : (
+                          'Save Filters'
+                        )}
+                      </button>
+                    </form>
+
+                    <button
+                      onClick={handleDisconnectGmail}
+                      disabled={disconnectingGmail}
+                      className="w-full py-2.5 px-4 rounded-xl border border-rose-500/30 hover:border-rose-500 text-rose-400 hover:text-white hover:bg-rose-500/10 font-bold text-xs uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer mt-2"
+                    >
+                      {disconnectingGmail ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Disconnecting...
+                        </>
+                      ) : (
+                        'Disconnect Gmail Account'
+                      )}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="p-3 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-[9px] text-gray-400 leading-relaxed">
+                      <span className="font-extrabold text-amber-400 uppercase block mb-0.5">Authorization Notice</span>
+                      Connecting your inbox allows Finor to scan emails from **Zerodha** matching subjects like **"contract note"** to automatically ingest trades. Your password is never shared.
+                    </div>
+                    <button
+                      onClick={handleConnectGmail}
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 text-white font-bold text-xs uppercase tracking-wider hover:from-emerald-500 hover:to-emerald-600 focus:outline-none active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-700/20"
+                    >
+                      Link Gmail Inbox
+                    </button>
                   </div>
                 )}
               </div>
-
             </div>
           </div>
 
         </div>
-
       </div>
     </div>
   );
