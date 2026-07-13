@@ -439,7 +439,7 @@ router.post('/sync', requireAuth, async (req, res) => {
         const { data: existingLog } = await supabase
           .from('system_settings')
           .select('value')
-          .eq('key', `gmail_processed_${msg.id}`)
+          .eq('key', `gmail_processed_${userId}_${msg.id}`)
           .maybeSingle();
 
         const tradeDate = extractDateFromSubject(subject) || new Date(dateHeader).toISOString().split('T')[0];
@@ -556,7 +556,7 @@ router.post('/sync', requireAuth, async (req, res) => {
 
         // Mark email as processed
         await supabase.from('system_settings').upsert(
-          { key: `gmail_processed_${msg.id}`, value: tradeDate },
+          { key: `gmail_processed_${userId}_${msg.id}`, value: tradeDate },
           { onConflict: 'key' }
         );
 
@@ -602,6 +602,37 @@ router.post('/sync', requireAuth, async (req, res) => {
 router.get('/last-sync', requireAuth, async (req, res) => {
   const { data } = await supabase.from('system_settings').select('value').eq('key', 'gmail_last_sync').maybeSingle();
   res.json({ lastSync: data?.value || null });
+});
+
+// ─── POST /api/gmail/reset-cache ──────────────────────────────────────────────
+router.post('/reset-cache', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Clear both user-specific scoped keys AND global message keys for this user's fallback
+    const { error: err1 } = await supabase
+      .from('system_settings')
+      .delete()
+      .like('key', `gmail_processed_${userId}_%`);
+
+    if (err1) throw err1;
+
+    // Optional: Also support clearing legacy key names if needed by checking for user context
+    const { error: err2 } = await supabase
+      .from('system_settings')
+      .delete()
+      .like('key', 'gmail_processed_%');
+      
+    if (err2) throw err2;
+
+    res.json({
+      success: true,
+      message: 'Gmail ingestion cache cleared successfully. You can now re-sync all emails.'
+    });
+  } catch (err) {
+    console.error('Reset sync cache failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 export default router;

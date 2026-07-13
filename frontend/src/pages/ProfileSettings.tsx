@@ -57,6 +57,7 @@ export const ProfileSettings = () => {
   const [showGmailSecret, setShowGmailSecret] = useState(false);
   const [savingGmailCredentials, setSavingGmailCredentials] = useState(false);
   const [savingGmailFilters, setSavingGmailFilters] = useState(false);
+  const [clearingCache, setClearingCache] = useState(false);
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
@@ -266,6 +267,21 @@ export const ProfileSettings = () => {
       useToastStore.getState().addToast(err.message || 'Failed to disconnect Gmail.', 'error');
     } finally {
       setDisconnectingGmail(false);
+    }
+  };
+  const handleResetSyncCache = async () => {
+    if (!window.confirm('This will reset your sync history. The next sync will re-process your emails from the last selected timeframe. Proceed?')) {
+      return;
+    }
+    setClearingCache(true);
+    try {
+      await apiRequest('/gmail/reset-cache', { method: 'POST' });
+      useToastStore.getState().addToast('Gmail sync history cache cleared! You can now re-run Gmail sync.', 'success');
+    } catch (err: any) {
+      console.error(err);
+      useToastStore.getState().addToast(err.message || 'Failed to clear sync cache.', 'error');
+    } finally {
+      setClearingCache(false);
     }
   };
 
@@ -966,20 +982,38 @@ export const ProfileSettings = () => {
                       </button>
                     </form>
 
-                    <button
-                      onClick={handleDisconnectGmail}
-                      disabled={disconnectingGmail}
-                      className="w-full py-2.5 px-4 rounded-xl border border-rose-500/30 hover:border-rose-500 text-rose-400 hover:text-white hover:bg-rose-500/10 font-bold text-xs uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer mt-2"
-                    >
-                      {disconnectingGmail ? (
-                        <>
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          Disconnecting...
-                        </>
-                      ) : (
-                        'Disconnect Gmail Account'
-                      )}
-                    </button>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <button
+                        onClick={handleResetSyncCache}
+                        disabled={clearingCache}
+                        className="py-2.5 px-3 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 text-indigo-400 hover:text-white border border-dark-border/40 font-bold text-[10px] uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                        title="Resets processed message history tags so you can re-run sync on older contract notes."
+                      >
+                        {clearingCache ? (
+                          <>
+                            <Loader2 className="w-3 animate-spin" />
+                            Resetting...
+                          </>
+                        ) : (
+                          'Reset Sync Cache'
+                        )}
+                      </button>
+
+                      <button
+                        onClick={handleDisconnectGmail}
+                        disabled={disconnectingGmail}
+                        className="py-2.5 px-3 rounded-xl border border-rose-500/30 hover:border-rose-500 text-rose-400 hover:text-white hover:bg-rose-500/10 font-bold text-[10px] uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        {disconnectingGmail ? (
+                          <>
+                            <Loader2 className="w-3 animate-spin" />
+                            Disconnecting...
+                          </>
+                        ) : (
+                          'Disconnect Inbox'
+                        )}
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-3">
