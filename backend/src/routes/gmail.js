@@ -422,9 +422,9 @@ router.post('/sync', requireAuth, async (req, res) => {
 
     const pdfPassword = profile?.zerodha_pdf_password || process.env.ZERODHA_PDF_PASSWORD || '';
 
-    // Dynamic search duration: limit to custom range (default 30, max 30)
+    // Dynamic search duration: limit to custom range (default 30, max 90)
     const daysParam = parseInt(req.body.days || req.query.days || 30);
-    const syncDays = Math.min(30, Math.max(1, daysParam));
+    const syncDays = Math.min(90, Math.max(1, daysParam));
     const syncTimeAgo = Math.floor((Date.now() - syncDays * 24 * 60 * 60 * 1000) / 1000);
     
     let messages = [];
@@ -460,7 +460,7 @@ router.post('/sync', requireAuth, async (req, res) => {
     if (messages.length === 0) {
       const userGmail = profile?.gmail_connected_email || req.user.email || 'your connected email address';
       return res.json({
-        message: `No contract note emails found in the last 90 days. Check if emails are forwarded to ${userGmail}.`,
+        message: `No contract note emails found in the last ${syncDays} days. Check if emails are forwarded to ${userGmail}.`,
         newTrades: 0,
         emailsFound: 0
       });
