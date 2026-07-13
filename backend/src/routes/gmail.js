@@ -5,6 +5,7 @@ import { createRequire } from 'module';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { encryptText, decryptText } from '../utils/encryption.js';
+import { recalculateHoldings } from './trades.js';
 
 const require = createRequire(import.meta.url);
 const pdfjsLib = require('pdfjs-dist/build/pdf.js');
@@ -351,53 +352,7 @@ const extractDateFromSubject = (subject) => {
 };
 
 // ─── Recalculate Holdings ─────────────────────────────────────────────────────
-const recalculateHoldingsForUser = async (userId) => {
-  const { data: allTrades } = await supabase
-    .from('trades')
-    .select('*')
-    .eq('user_id', userId)
-    .order('trade_date', { ascending: true });
-
-  if (!allTrades || allTrades.length === 0) return;
-
-  const symbolMap = {};
-  for (const trade of allTrades) {
-    const sym = trade.stock_symbol;
-    if (!symbolMap[sym]) symbolMap[sym] = [];
-    symbolMap[sym].push(trade);
-  }
-
-  await supabase.from('holdings').delete().eq('user_id', userId);
-
-  const holdingsToInsert = [];
-  for (const [symbol, trades] of Object.entries(symbolMap)) {
-    let qty = 0, totalCost = 0;
-    for (const t of trades) {
-      if (t.trade_type === 'BUY') {
-        totalCost += t.quantity * t.price;
-        qty += t.quantity;
-      } else {
-        const avgBuy = qty > 0 ? totalCost / qty : 0;
-        totalCost -= avgBuy * Math.min(t.quantity, qty);
-        qty = Math.max(0, qty - t.quantity);
-      }
-    }
-    if (qty > 0) {
-      holdingsToInsert.push({
-        user_id: userId,
-        stock_symbol: symbol,
-        stock_name: symbol,
-        average_buy_price: qty > 0 ? totalCost / qty : 0,
-        quantity: qty,
-        last_updated: new Date().toISOString()
-      });
-    }
-  }
-
-  if (holdingsToInsert.length > 0) {
-    await supabase.from('holdings').upsert(holdingsToInsert, { onConflict: 'user_id,stock_symbol' });
-  }
-};
+// ─── Recalculate Holdings ─────────────────────────────────────────────────────
 
 // ─── POST /api/gmail/sync ─────────────────────────────────────────────────────
 router.post('/sync', requireAuth, async (req, res) => {
@@ -620,14 +575,12 @@ router.post('/sync', requireAuth, async (req, res) => {
       }
     }
 
-    // Recalculate holdings if trades were added
-    if (totalNewTrades > 0) {
-      await recalculateHoldingsForUser(userId);
-      await supabase.from('system_settings').upsert(
-        { key: 'gmail_last_sync', value: new Date().toISOString() },
-        { onConflict: 'key' }
-      );
-    }
+    // Always recalculate holdings on sync to ensure trades are reflected correctly in holdings
+    await recalculateHoldings(userId);
+    await supabase.from('system_settings').upsert(
+      { key: 'gmail_last_sync', value: new Date().toISOString() },
+      { onConflict: 'key' }
+    );
 
     res.json({
       message: totalNewTrades > 0
