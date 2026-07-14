@@ -57,7 +57,7 @@ export const BuyConsiderations = () => {
           allSymbols.add(sym);
           if (t.stock_name) symbolNames[sym] = t.stock_name.split('|')[0];
           
-          if (t.transaction_type === 'BUY') {
+          if (t.trade_type === 'BUY' || t.transaction_type === 'BUY') {
             buyAmounts[sym] = (buyAmounts[sym] || 0) + (t.price * t.quantity);
             buyQuantities[sym] = (buyQuantities[sym] || 0) + t.quantity;
           }
@@ -73,6 +73,21 @@ export const BuyConsiderations = () => {
         });
       }
 
+      // Fetch live LTP values from Yahoo Finance for all symbols
+      const symbolsArray = Array.from(allSymbols);
+      const ltpMap: Record<string, number> = {};
+      
+      await Promise.all(symbolsArray.map(async (sym) => {
+        try {
+          const res = await apiRequest(`/holdings/ltp/${sym}`);
+          if (res && typeof res.ltp === 'number') {
+            ltpMap[sym] = res.ltp;
+          }
+        } catch (e) {
+          console.warn(`Could not fetch live price for ${sym}:`, e);
+        }
+      }));
+
       // Map mock/calculated fundamentals, dip reasons and conviction scores
       const parsedCandidates: Candidate[] = Array.from(allSymbols).map(sym => {
         // Find average buy price
@@ -87,8 +102,15 @@ export const BuyConsiderations = () => {
           avgPrice = 1200; // Fallback default average buy price if no trades found
         }
 
-        const currentPrice = currentHolding?.ltp || avgPrice * 0.85; // Dip fallback if no LTP
-        const athPrice = avgPrice * 1.35; // Estimate all time high relative to buy price
+        const currentPrice = ltpMap[sym] || currentHolding?.ltp || avgPrice * 0.85; // Dip fallback if no LTP
+        
+        // Map realistic or fallback ATH (All-Time High)
+        let athPrice = avgPrice * 1.35;
+        if (sym.includes('INFY')) athPrice = 1800;
+        else if (sym.includes('WIPRO')) athPrice = 720;
+        else if (sym.includes('RELIANCE')) athPrice = 3200;
+        else if (sym.includes('CDSL')) athPrice = 2500;
+        else if (sym.includes('HDFCBANK')) athPrice = 1750;
 
         // Dip calculation relative to average purchase price or ATH
         const dipPercent = ((currentPrice - avgPrice) / avgPrice) * 100;
