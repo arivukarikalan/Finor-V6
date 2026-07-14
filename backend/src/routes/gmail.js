@@ -523,6 +523,7 @@ router.post('/sync', requireAuth, async (req, res) => {
             user_id: userId,
             raw_data: {
               stock_symbol: trade.stock_symbol,
+              stock_name: trade.stock_symbol,
               trade_date: trade.trade_date,
               trade_type: trade.trade_type,
               quantity: trade.quantity,
@@ -624,6 +625,17 @@ router.post('/reset-cache', requireAuth, async (req, res) => {
       .like('key', 'gmail_processed_%');
       
     if (err2) throw err2;
+
+    // Delete failed staging trades for this user to allow reprocessing them
+    const { error: errStaging } = await supabase
+      .from('staging_trades')
+      .delete()
+      .eq('user_id', userId)
+      .eq('status', 'FAILED');
+      
+    if (errStaging) {
+      console.error('[GmailIngestion] Failed to clear failed staging trades:', errStaging.message);
+    }
 
     res.json({
       success: true,
