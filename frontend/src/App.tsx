@@ -11,6 +11,7 @@ import { More } from './pages/More';
 import { Finance } from './pages/Finance';
 import { AdminPortal } from './pages/AdminPortal';
 import { ProfileSettings } from './pages/ProfileSettings';
+import { BuyConsiderations } from './pages/BuyConsiderations';
 import { Loader2 } from 'lucide-react';
 import { ToastContainer } from './components/ToastContainer';
 import { useToastStore } from './context/toastStore';
@@ -121,6 +122,7 @@ function App() {
           )}
           {activeTab === 'admin' && role === 'SUPER_ADMIN' && <AdminPortal />}
           {activeTab === 'profile' && <ProfileSettings />}
+          {activeTab === 'buy-scanner' && <BuyConsiderations />}
         </div>
       </Navigation>
       <ToastContainer />

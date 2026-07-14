@@ -17,13 +17,14 @@ import {
   X,
   Menu,
   Landmark,
-  ShieldAlert
+  ShieldAlert,
+  Radar
 } from 'lucide-react';
 import { useAuthStore } from '../context/authStore';
 import { supabase } from '../services/supabase';
 import { apiRequest } from '../services/api';
 
-export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'finance' | 'more' | 'admin' | 'profile';
+export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'finance' | 'more' | 'admin' | 'profile' | 'buy-scanner';
 
 interface NavigationProps {
   activeTab: TabId;
@@ -203,6 +204,7 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'pnl' as TabId, label: 'P&L', icon: BarChart3 },
     { id: 'finance' as TabId, label: 'Finance', icon: Landmark },
     { id: 'ai-chat' as TabId, label: 'AI Assistant', icon: Brain },
+    { id: 'buy-scanner' as TabId, label: 'Buy Scanner', icon: Radar },
     { id: 'more' as TabId, label: 'More', icon: Grid },
   ];
 
@@ -381,7 +383,7 @@ export const Navigation: React.FC<NavigationProps> = ({
         <header className="hidden md:flex h-16 bg-dark-depth-1 border-b border-dark-border items-center justify-between px-8 flex-shrink-0 z-30">
           <div className="flex items-center gap-2">
             <span className="font-extrabold font-display text-sm tracking-widest uppercase bg-gradient-to-r from-brand-100 to-brand-500 bg-clip-text text-transparent">
-              {activeTab === 'ai-chat' ? 'AI Assistant' : activeTab === 'pnl' ? 'P&L Statement' : activeTab === 'finance' ? 'Finance Hub' : activeTab}
+              {activeTab === 'ai-chat' ? 'AI Assistant' : activeTab === 'pnl' ? 'P&L Statement' : activeTab === 'finance' ? 'Finance Hub' : activeTab === 'buy-scanner' ? 'Considerations for Buying' : activeTab}
             </span>
           </div>
 
@@ -482,7 +484,7 @@ export const Navigation: React.FC<NavigationProps> = ({
           return mobileBottomItems.map((item) => {
             const Icon = item.icon;
             const isActive = item.id === 'menu'
-              ? ['orders', 'ai-chat', 'admin', 'profile'].includes(activeTab)
+              ? ['orders', 'ai-chat', 'admin', 'profile', 'buy-scanner'].includes(activeTab)
               : activeTab === item.id;
 
             return (

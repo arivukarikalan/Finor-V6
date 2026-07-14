@@ -21,10 +21,6 @@ import {
   HelpCircle,
   Activity,
   Calendar,
-  TrendingUp,
-  TrendingDown,
-  ArrowUpDown,
-  Layers,
   Info,
   X
 } from 'lucide-react';
@@ -112,13 +108,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
       return [];
     }
   });
-  const [trades, setTrades] = useState<any[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('finor_cached_trades') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  // trades state removed
   const [loading, setLoading] = useState(() => {
     return !localStorage.getItem('finor_cached_holdings');
   });
@@ -157,15 +147,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
     }
   };
 
-  const fetchTradesData = async () => {
-    try {
-      const tradesData = await apiRequest('/trades');
-      setTrades(tradesData || []);
-      localStorage.setItem('finor_cached_trades', JSON.stringify(tradesData || []));
-    } catch (err) {
-      console.error('Failed to load trades:', err);
-    }
-  };
+  // fetchTradesData removed
 
   const fetchHistoryData = async () => {
     const hasCache = localStorage.getItem('finor_cached_dashboard_history');
@@ -192,15 +174,12 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
   useEffect(() => {
     fetchHoldingsData();
     fetchEventsData();
-    fetchTradesData();
 
     const handleCacheUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
       const endpoint = customEvent.detail?.endpoint;
       if (endpoint === '/holdings') {
         fetchHoldingsData();
-      } else if (endpoint === '/trades') {
-        fetchTradesData();
       } else if (endpoint === '/holdings/events') {
         fetchEventsData();
       }
@@ -261,7 +240,6 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
       fetchHoldingsData();
       fetchHistoryData();
       fetchEventsData();
-      fetchTradesData();
     };
 
     window.addEventListener('portfolio-sync-complete', handleSyncComplete);
@@ -291,33 +269,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
   }, 0);
 
   const daysGainPercent = totalPrevCloseValue > 0 ? (daysGain / totalPrevCloseValue) * 100 : 0;
-  // ─── Swing Trading Switch Opportunity Calculations ──────────────────────
-  const exitCandidates = holdings
-    .map(h => {
-      const avg = h.average_buy_price || 0;
-      const current = h.ltp || avg;
-      const roi = avg > 0 ? ((current - avg) / avg) * 100 : 0;
-      return { ...h, roi };
-    })
-    .filter(h => h.roi >= 10.0)
-    .sort((a, b) => b.roi - a.roi);
-
-  // Dip accumulation candidates (Active holdings currently down by 5% or more)
-  const dipCandidates = holdings
-    .map(h => {
-      const avg = h.average_buy_price || 0;
-      const current = h.ltp || avg;
-      const roi = avg > 0 ? ((current - avg) / avg) * 100 : 0;
-      return { ...h, roi };
-    })
-    .filter(h => h.roi <= -5.0)
-    .sort((a, b) => a.roi - b.roi);
-
-  // Historically traded symbols that are NOT in active holdings (fully closed)
-  const activeSymbolsSet = new Set(holdings.map(h => h.stock_symbol.toUpperCase()));
-  const closedCandidates = Array.isArray(trades) ? [...new Set(trades.map(t => t.stock_symbol.toUpperCase()))]
-    .filter(symbol => !activeSymbolsSet.has(symbol))
-    .slice(0, 5) : [];
+  // Calculations completed
 
   return (
     <div className="space-y-6">
@@ -558,14 +510,13 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
               </ResponsiveContainer>
             </div>
           </div>
-
         </div>
       )}
 
-      {/* Dynamic Swing Trade & Corporate Events Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Expanded Corporate Events Calendar Grid */}
+      <div className="grid grid-cols-1 gap-6">
         
-        {/* Left Column: Upcoming Corporate Events */}
+        {/* Full-width Upcoming Corporate Events */}
         <div className="glass-panel rounded-3xl p-6 border border-dark-border flex flex-col h-full">
           <div className="flex items-center justify-between border-b border-dark-border/40 pb-4 mb-4">
             <div className="flex items-center gap-2.5">
@@ -574,40 +525,40 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-white tracking-wide">Corporate Events Calendar</h3>
-                <p className="text-[10px] text-gray-400">Upcoming dividends, results & board meetings</p>
+                <p className="text-[10px] text-gray-400">Upcoming dividends, results & board meetings for your holdings</p>
               </div>
             </div>
           </div>
 
           {loadingEvents ? (
-            <div className="flex-grow flex flex-col items-center justify-center py-8">
-              <Activity className="w-5 h-5 animate-spin text-indigo-400 mb-2" />
-              <p className="text-[10px] text-gray-400">Fetching corporate actions...</p>
+            <div className="flex-grow flex flex-col items-center justify-center py-12">
+              <Activity className="w-6 h-6 animate-spin text-indigo-400 mb-2" />
+              <p className="text-xs text-gray-400">Fetching corporate actions...</p>
             </div>
           ) : upcomingEvents.length === 0 ? (
-            <div className="flex-grow flex items-center justify-center py-8 text-center bg-dark-depth-2/30 rounded-2xl border border-dashed border-dark-border/40">
+            <div className="flex-grow flex items-center justify-center py-12 text-center bg-dark-depth-2/30 rounded-2xl border border-dashed border-dark-border/40">
               <div>
-                <Calendar className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                <p className="text-[10px] text-gray-400">No upcoming events scheduled for your holdings.</p>
+                <Calendar className="w-10 h-10 text-gray-600 mx-auto mb-2" />
+                <p className="text-xs text-gray-400">No upcoming events scheduled for your holdings.</p>
               </div>
             </div>
           ) : (
             <div className="overflow-x-auto flex-grow">
-              <table className="w-full text-left text-[11px]">
+              <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="text-gray-400 uppercase tracking-wider border-b border-dark-border/30 pb-2">
-                    <th className="pb-2 font-bold">Company</th>
-                    <th className="pb-2 font-bold">Event Type</th>
-                    <th className="pb-2 font-bold">Details</th>
-                    <th className="pb-2 font-bold text-right">Date</th>
+                  <tr className="text-gray-400 uppercase tracking-wider border-b border-dark-border/30 pb-2 text-[10px] font-bold">
+                    <th className="pb-3">Company</th>
+                    <th className="pb-3">Event Type</th>
+                    <th className="pb-3">Details</th>
+                    <th className="pb-3 text-right">Date</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-border/20">
-                  {upcomingEvents.slice(0, 5).map((event: any, idx: number) => (
+                  {upcomingEvents.slice(0, 10).map((event: any, idx: number) => (
                     <tr key={idx} className="hover:bg-white/5 transition-colors">
-                      <td className="py-2.5 font-extrabold text-white">{event.stock_symbol}</td>
-                      <td className="py-2.5">
-                        <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${
+                      <td className="py-3.5 font-extrabold text-white">{event.stock_symbol}</td>
+                      <td className="py-3.5">
+                        <span className={`text-[9px] font-extrabold px-2.5 py-0.5 rounded-full border ${
                           event.type === 'DIVIDEND' 
                             ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
                             : event.type === 'RESULTS' 
@@ -617,19 +568,19 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
                           {event.type}
                         </span>
                       </td>
-                      <td className="py-2.5 text-gray-300 font-medium">
+                      <td className="py-3.5 text-gray-300 font-medium">
                         <div className="flex items-center gap-1.5">
-                          <span className="truncate max-w-[120px] block">{event.details || 'View details'}</span>
+                          <span className="truncate max-w-[280px] block">{event.details || 'View details'}</span>
                           <button
                             onClick={() => setSelectedEventDetails(event)}
                             className="p-1 rounded-lg text-brand-400 hover:text-white hover:bg-brand-500/10 transition-all cursor-pointer flex-shrink-0"
                             title="View Event Details"
                           >
-                            <Info className="w-3 h-3" />
+                            <Info className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
-                      <td className="py-2.5 text-right text-gray-400 font-semibold">
+                      <td className="py-3.5 text-right text-gray-400 font-semibold">
                         {event.date ? new Date(event.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-'}
                       </td>
                     </tr>
@@ -638,106 +589,6 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
               </table>
             </div>
           )}
-        </div>
-
-        {/* Right Column: Swing Trading Switch Opportunities */}
-        <div className="glass-panel rounded-3xl p-6 border border-dark-border flex flex-col h-full">
-          <div className="flex items-center justify-between border-b border-dark-border/40 pb-4 mb-4">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
-                <ArrowUpDown className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-white tracking-wide">Swing Trading Scanner</h3>
-                <p className="text-[10px] text-gray-400">Intelligent exit (book profit) & entry suggestions</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4 flex-grow flex flex-col justify-between">
-            
-            {/* Suggestions list */}
-            {exitCandidates.length === 0 ? (
-              <div className="flex-grow flex items-center justify-center py-8 text-center bg-dark-depth-2/30 rounded-2xl border border-dashed border-dark-border/40">
-                <div>
-                  <TrendingUp className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-                  <p className="text-[10px] text-gray-400 flex flex-col gap-1 items-center">
-                    <span>No positions with returns &gt; 10% found.</span>
-                    <span className="text-[9px] text-gray-500">Holdings returns are evaluated in real-time.</span>
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3 flex-grow">
-                {exitCandidates.slice(0, 2).map((exit: any, idx: number) => {
-                  // Pair with a dip candidate or a past favorite closed candidate
-                  const bestDip = dipCandidates[idx] || dipCandidates[0];
-                  const bestClosed = closedCandidates[idx] || closedCandidates[0];
-                  
-                  return (
-                    <div key={idx} className="bg-dark-depth-2/40 border border-dark-border/40 p-4 rounded-2xl space-y-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wide">Opportunity #{idx + 1}</span>
-                        <span className="text-[9px] text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full font-extrabold">BOOK PROFIT SIGNAL</span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between gap-2 border-b border-dark-border/20 pb-2">
-                        <div>
-                          <span className="text-xs font-black text-white">{exit.stock_symbol}</span>
-                          <span className="text-[10px] text-gray-500 block">Current holding</span>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-xs font-black text-emerald-400">+{exit.roi.toFixed(1)}% Return</span>
-                          <span className="text-[10px] text-gray-500 block">Target hit</span>
-                        </div>
-                      </div>
-
-                      {/* Recommend entry */}
-                      {bestDip ? (
-                        <div className="flex items-center justify-between gap-2 pt-1">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1 rounded bg-rose-500/10 text-rose-400">
-                              <TrendingDown className="w-3 h-3" />
-                            </div>
-                            <div>
-                              <span className="text-xs font-bold text-gray-200">Re-allocate to {bestDip.stock_symbol}</span>
-                              <span className="text-[9px] text-gray-500 block">Currently down by {bestDip.roi.toFixed(1)}% (discount accumulation)</span>
-                            </div>
-                          </div>
-                          <ArrowRight className="w-3.5 h-3.5 text-gray-500" />
-                        </div>
-                      ) : bestClosed ? (
-                        <div className="flex items-center justify-between gap-2 pt-1">
-                          <div className="flex items-center gap-2">
-                            <div className="p-1 rounded bg-brand-500/10 text-brand-400">
-                              <Layers className="w-3 h-3" />
-                            </div>
-                            <div>
-                              <span className="text-xs font-bold text-gray-200">Re-enter past favorite {bestClosed}</span>
-                              <span className="text-[9px] text-gray-500 block">Currently fully sold (re-entry watchlist)</span>
-                            </div>
-                          </div>
-                          <ArrowRight className="w-3.5 h-3.5 text-gray-500" />
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-gray-400 italic">
-                          Book profits on {exit.stock_symbol} and wait for dip entry signals on your watchlisted positions.
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            
-            {/* Quick Swing Stats Footer */}
-            <div className="flex items-center justify-between text-[9px] text-gray-500 border-t border-dark-border/20 pt-3 mt-2">
-              <span>Exit candidates (ROI &gt; 10%): <strong>{exitCandidates.length}</strong></span>
-              <span>Dip candidates (&lt; -5%): <strong>{dipCandidates.length}</strong></span>
-              <span>Past closed assets: <strong>{closedCandidates.length}</strong></span>
-            </div>
-
-          </div>
         </div>
 
       </div>
