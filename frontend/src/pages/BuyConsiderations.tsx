@@ -9,7 +9,11 @@ import {
   Sliders, 
   AlertTriangle,
   RotateCw,
-  Coins
+  Coins,
+  X,
+  Newspaper,
+  Calendar,
+  ArrowUpRight
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 
@@ -19,10 +23,32 @@ interface Candidate {
   avgBuyPrice: number;
   currentPrice: number;
   allTimeHigh: number;
+  fiftyTwoWeekHigh: number | null;
+  fiftyTwoWeekLow: number | null;
   dipPercent: number;
   convictionScore: number;
   reason: string;
   sector: string;
+}
+
+interface Article {
+  title: string;
+  description: string;
+  source: string;
+  url: string;
+  publishedAt: string;
+  sentiment: 'POSITIVE' | 'NEGATIVE' | 'NEUTRAL';
+  category: string;
+  stock_symbol: string;
+}
+
+interface CorporateAction {
+  stock_symbol: string;
+  type: string;
+  description: string;
+  date: string;
+  date_type: string;
+  is_upcoming: boolean;
 }
 
 export const BuyConsiderations = () => {
@@ -31,16 +57,29 @@ export const BuyConsiderations = () => {
   const [riskProfile, setRiskProfile] = useState<'conservative' | 'moderate' | 'aggressive'>('moderate');
   const [searchQuery, setSearchQuery] = useState('');
   const [scanning, setScanning] = useState(false);
+  
+  // News and Corporate Actions Cache for Modal display
+  const [newsFeed, setNewsFeed] = useState<Article[]>([]);
+  const [corporateActions, setCorporateActions] = useState<{ upcoming: CorporateAction[]; past: CorporateAction[] }>({ upcoming: [], past: [] });
+  
+  // Selected Stock for Details Modal
+  const [selectedStock, setSelectedStock] = useState<Candidate | null>(null);
+  const [modalTab, setModalTab] = useState<'news' | 'actions'>('news');
 
   const fetchAndScanStocks = async () => {
     setScanning(true);
     setLoading(true);
     try {
-      // Fetch both current holdings and past trades to extract all historical assets
-      const [holdingsData, tradesData] = await Promise.all([
+      // Fetch current holdings, trades, news feed, and corporate actions concurrently
+      const [holdingsData, tradesData, newsData, actionsData] = await Promise.all([
         apiRequest('/holdings').catch(() => []),
-        apiRequest('/trades').catch(() => [])
+        apiRequest('/trades').catch(() => []),
+        apiRequest('/news').catch(() => []),
+        apiRequest('/news/corporate-actions').catch(() => ({ upcoming: [], past: [] }))
       ]);
+
+      setNewsFeed(newsData || []);
+      setCorporateActions(actionsData || { upcoming: [], past: [] });
 
       // Collect all unique symbols we ever traded
       const allSymbols = new Set<string>();
@@ -75,22 +114,25 @@ export const BuyConsiderations = () => {
 
       // Fetch live LTP values from Yahoo Finance for all symbols
       const symbolsArray = Array.from(allSymbols);
-      const ltpMap: Record<string, number> = {};
+      const ltpMap: Record<string, { ltp: number; high52: number | null; low52: number | null }> = {};
       
       await Promise.all(symbolsArray.map(async (sym) => {
         try {
           const res = await apiRequest(`/holdings/ltp/${sym}`);
-          if (res && typeof res.ltp === 'number') {
-            ltpMap[sym] = res.ltp;
+          if (res) {
+            ltpMap[sym] = {
+              ltp: typeof res.ltp === 'number' ? res.ltp : 0,
+              high52: typeof res.fiftyTwoWeekHigh === 'number' ? res.fiftyTwoWeekHigh : null,
+              low52: typeof res.fiftyTwoWeekLow === 'number' ? res.fiftyTwoWeekLow : null
+            };
           }
         } catch (e) {
-          console.warn(`Could not fetch live price for ${sym}:`, e);
+          console.warn(`Could not fetch live price info for ${sym}:`, e);
         }
       }));
 
-      // Map mock/calculated fundamentals, dip reasons and conviction scores
+      // Map fundamentals, dip reasons and conviction scores
       const parsedCandidates: Candidate[] = Array.from(allSymbols).map(sym => {
-        // Find average buy price
         const currentHolding = holdingsData?.find((h: any) => h.stock_symbol.toUpperCase() === sym);
         
         let avgPrice = 0;
@@ -102,17 +144,13 @@ export const BuyConsiderations = () => {
           avgPrice = 1200; // Fallback default average buy price if no trades found
         }
 
-        const currentPrice = ltpMap[sym] || currentHolding?.ltp || avgPrice * 0.85; // Dip fallback if no LTP
-        
-        // Map realistic or fallback ATH (All-Time High)
-        let athPrice = avgPrice * 1.35;
-        if (sym.includes('INFY')) athPrice = 1800;
-        else if (sym.includes('WIPRO')) athPrice = 720;
-        else if (sym.includes('RELIANCE')) athPrice = 3200;
-        else if (sym.includes('CDSL')) athPrice = 2500;
-        else if (sym.includes('HDFCBANK')) athPrice = 1750;
+        const quote = ltpMap[sym];
+        const currentPrice = quote?.ltp || currentHolding?.ltp || avgPrice * 0.85;
+        const fiftyTwoWeekHigh = quote?.high52 || currentHolding?.fiftyTwoWeekHigh || avgPrice * 1.35;
+        const fiftyTwoWeekLow = quote?.low52 || currentHolding?.fiftyTwoWeekLow || avgPrice * 0.75;
+        const athPrice = fiftyTwoWeekHigh;
 
-        // Dip calculation relative to average purchase price or ATH
+        // Dip calculation relative to average purchase price
         const dipPercent = ((currentPrice - avgPrice) / avgPrice) * 100;
 
         // Smart DIP reason mapping
@@ -138,7 +176,6 @@ export const BuyConsiderations = () => {
           baseScore = 75;
         }
 
-        // Adjust conviction score dynamically based on the size of the dip (larger dip = higher potential recovery score)
         const dipBonus = Math.abs(Math.min(0, dipPercent)) * 0.8;
         const convictionScore = Math.min(98, Math.round(baseScore + dipBonus));
 
@@ -148,13 +185,14 @@ export const BuyConsiderations = () => {
           avgBuyPrice: avgPrice,
           currentPrice,
           allTimeHigh: athPrice,
+          fiftyTwoWeekHigh,
+          fiftyTwoWeekLow,
           dipPercent,
           convictionScore,
           reason,
           sector
         };
       })
-      // Only keep stocks that are currently at a discount / dip
       .filter(c => c.dipPercent < 0)
       .sort((a, b) => b.convictionScore - a.convictionScore);
 
@@ -162,11 +200,10 @@ export const BuyConsiderations = () => {
     } catch (err) {
       console.error('Failed to load considerations:', err);
     } finally {
-      // Hold scanning animation for 1.8 seconds for a premium, high-tech UX feel
       setTimeout(() => {
         setLoading(false);
         setScanning(false);
-      }, 1800);
+      }, 1500);
     }
   };
 
@@ -213,6 +250,19 @@ export const BuyConsiderations = () => {
     c => c.symbol.toLowerCase().includes(searchQuery.toLowerCase()) || 
          c.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // Filter News & Corporate Actions for Selected Stock Modal
+  const selectedNews = selectedStock 
+    ? newsFeed.filter(art => art.stock_symbol.toUpperCase() === selectedStock.symbol)
+    : [];
+
+  const selectedUpcomingEvents = selectedStock
+    ? corporateActions.upcoming.filter(ca => ca.stock_symbol.toUpperCase() === selectedStock.symbol)
+    : [];
+
+  const selectedPastEvents = selectedStock
+    ? corporateActions.past.filter(ca => ca.stock_symbol.toUpperCase() === selectedStock.symbol)
+    : [];
 
   return (
     <div className="space-y-6">
@@ -316,9 +366,13 @@ export const BuyConsiderations = () => {
                 {/* Header */}
                 <div>
                   <div className="flex items-start justify-between">
-                    <div>
+                    <div 
+                      onClick={() => { setSelectedStock(c); setModalTab('news'); }}
+                      className="cursor-pointer group-hover:text-brand-400 transition-colors"
+                      title="Tap to see news and events history"
+                    >
                       <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-black text-white">{c.symbol}</h3>
+                        <h3 className="text-lg font-black text-white group-hover:text-brand-400 transition-colors">{c.symbol}</h3>
                         <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-dark-depth-2 text-gray-400 border border-dark-border">
                           {c.sector}
                         </span>
@@ -352,6 +406,18 @@ export const BuyConsiderations = () => {
                         <TrendingDown className="w-3 h-3" />
                         {c.dipPercent.toFixed(1)}%
                       </span>
+                    </div>
+                  </div>
+
+                  {/* 52-Week High & Low Section */}
+                  <div className="grid grid-cols-2 gap-2 mt-2 bg-dark-depth-2/20 border border-dark-border/20 px-3.5 py-2 rounded-xl text-[10px] text-gray-400 select-none">
+                    <div className="flex justify-between border-r border-dark-border/30 pr-2">
+                      <span>52W Low</span>
+                      <strong className="text-white">₹{c.fiftyTwoWeekLow ? c.fiftyTwoWeekLow.toFixed(2) : '-'}</strong>
+                    </div>
+                    <div className="flex justify-between pl-2">
+                      <span>52W High</span>
+                      <strong className="text-white">₹{c.fiftyTwoWeekHigh ? c.fiftyTwoWeekHigh.toFixed(2) : '-'}</strong>
                     </div>
                   </div>
 
@@ -418,6 +484,167 @@ export const BuyConsiderations = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ─── News and Corporate actions Modal details panel ─── */}
+      {selectedStock && (
+        <div
+          className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setSelectedStock(null)}
+        >
+          <div
+            className="relative w-full max-w-xl rounded-3xl border border-dark-border bg-dark-depth-1 p-6 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-dark-border/40 pb-4 flex-shrink-0 select-none">
+              <div>
+                <h3 className="text-lg font-extrabold text-white tracking-tight flex items-center gap-2">
+                  {selectedStock.symbol} News & Corporate Action Updates
+                </h3>
+                <span className="text-[10px] text-gray-500 mt-1 block font-semibold uppercase tracking-wider">
+                  {selectedStock.name}
+                </span>
+              </div>
+              <button
+                onClick={() => setSelectedStock(null)}
+                className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-dark-depth-2/60 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Navigation tabs */}
+            <div className="flex bg-dark-depth-2/60 p-1 rounded-xl gap-1 mt-4 flex-shrink-0 select-none">
+              <button
+                onClick={() => setModalTab('news')}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  modalTab === 'news'
+                    ? 'bg-brand-500 text-white shadow-md'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Newspaper className="w-4 h-4" />
+                Recent News Articles ({selectedNews.length})
+              </button>
+              <button
+                onClick={() => setModalTab('actions')}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  modalTab === 'actions'
+                    ? 'bg-brand-500 text-white shadow-md'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                Events Calendar ({selectedUpcomingEvents.length + selectedPastEvents.length})
+              </button>
+            </div>
+
+            {/* Modal Body Contents scroll zone */}
+            <div className="mt-4 flex-grow overflow-y-auto space-y-4 pr-1">
+              
+              {modalTab === 'news' && (
+                selectedNews.length === 0 ? (
+                  <div className="py-12 text-center text-gray-500 select-none">
+                    <Newspaper className="w-10 h-10 text-gray-600 mx-auto mb-2" />
+                    <p className="text-xs">No recent news reports cached for {selectedStock.symbol}.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {selectedNews.map((art, idx) => (
+                      <a
+                        key={idx}
+                        href={art.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block bg-dark-depth-2/45 border border-dark-border/40 p-4 rounded-2xl hover:border-brand-500/35 transition-all select-none"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <span className="text-[9px] font-extrabold uppercase text-brand-400 tracking-wider">
+                              {art.source || 'Media Report'}
+                            </span>
+                            <h4 className="text-xs font-extrabold text-white leading-snug pr-4">
+                              {art.title}
+                            </h4>
+                          </div>
+                          <ArrowUpRight className="w-4 h-4 text-gray-500 shrink-0 group-hover:text-white" />
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">
+                          {art.description}
+                        </p>
+                        <div className="flex items-center justify-between text-[8px] text-gray-500 mt-3 pt-2 border-t border-dark-border/10 font-bold uppercase">
+                          <span>
+                            {new Date(art.publishedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded ${
+                            art.sentiment === 'POSITIVE'
+                              ? 'bg-emerald-500/10 text-emerald-400'
+                              : art.sentiment === 'NEGATIVE'
+                                ? 'bg-rose-500/10 text-rose-450'
+                                : 'bg-gray-500/10 text-gray-400'
+                          }`}>
+                            {art.sentiment}
+                          </span>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                )
+              )}
+
+              {modalTab === 'actions' && (
+                (selectedUpcomingEvents.length === 0 && selectedPastEvents.length === 0) ? (
+                  <div className="py-12 text-center text-gray-500 select-none">
+                    <Calendar className="w-10 h-10 text-gray-600 mx-auto mb-2" />
+                    <p className="text-xs">No board meetings or corporate events on record.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Upcoming Events */}
+                    {selectedUpcomingEvents.length > 0 && (
+                      <div className="space-y-2">
+                        <span className="text-[10px] text-brand-400 font-extrabold uppercase tracking-widest block">Upcoming Corporate Actions</span>
+                        {selectedUpcomingEvents.map((ca, idx) => (
+                          <div key={idx} className="bg-emerald-500/5 border border-emerald-500/10 p-4 rounded-2xl select-none">
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="text-xs font-black text-white">{ca.type}</span>
+                              <span className="text-[9px] text-emerald-400 font-extrabold">UPCOMING</span>
+                            </div>
+                            <p className="text-[10px] text-gray-400 leading-relaxed">{ca.description}</p>
+                            <span className="text-[8px] text-gray-500 font-bold uppercase block mt-2">
+                              Date: {new Date(ca.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Past Events */}
+                    {selectedPastEvents.length > 0 && (
+                      <div className="space-y-2">
+                        <span className="text-[10px] text-gray-500 font-extrabold uppercase tracking-widest block">Past Corporate Actions</span>
+                        {selectedPastEvents.map((ca, idx) => (
+                          <div key={idx} className="bg-dark-depth-2/45 border border-dark-border/40 p-4 rounded-2xl select-none">
+                            <div className="flex justify-between items-start mb-1">
+                              <span className="text-xs font-black text-white">{ca.type}</span>
+                              <span className="text-[9px] text-gray-500 font-extrabold">HISTORICAL</span>
+                            </div>
+                            <p className="text-[10px] text-gray-400 leading-relaxed">{ca.description}</p>
+                            <span className="text-[8px] text-gray-500 font-bold uppercase block mt-2">
+                              Date: {new Date(ca.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              )}
+
+            </div>
+          </div>
         </div>
       )}
 

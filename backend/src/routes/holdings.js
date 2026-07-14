@@ -222,7 +222,14 @@ router.get('/ltp/:symbol', requireAuth, async (req, res) => {
     const symbol = req.params.symbol.toUpperCase().trim();
     const ltpData = await fetchMultipleLTPs([symbol]);
     const price = ltpData[symbol]?.ltp || null;
-    res.json({ symbol, ltp: price });
+    const high52 = ltpData[symbol]?.fiftyTwoWeekHigh || null;
+    const low52 = ltpData[symbol]?.fiftyTwoWeekLow || null;
+    res.json({ 
+      symbol, 
+      ltp: price,
+      fiftyTwoWeekHigh: high52,
+      fiftyTwoWeekLow: low52
+    });
   } catch (err) {
     console.error(`[HoldingsRoute] Single LTP fetch failed for ${req.params.symbol}:`, err.message);
     res.status(500).json({ error: err.message });

@@ -51,12 +51,35 @@ export async function fetchLTPYahoo(symbol) {
     if (ltp === undefined || ltp === null) {
       throw new Error(`LTP is undefined for ${ticker}`);
     }
+
+    let fiftyTwoWeekHigh = null;
+    let fiftyTwoWeekLow = null;
+    try {
+      const quoteUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`;
+      const qRes = await fetchWithTimeout(quoteUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      }, 5000);
+      if (qRes.ok) {
+        const qJson = await qRes.json();
+        const quote = qJson?.quoteResponse?.result?.[0];
+        if (quote) {
+          fiftyTwoWeekHigh = quote.fiftyTwoWeekHigh || null;
+          fiftyTwoWeekLow = quote.fiftyTwoWeekLow || null;
+        }
+      }
+    } catch (e) {
+      console.warn(`[YahooFinance Quote] Failed to fetch quote details for ${ticker}:`, e.message);
+    }
     
     return {
       symbol,
       ticker,
       ltp: parseFloat(ltp),
-      previousClose: previousClose ? parseFloat(previousClose) : null
+      previousClose: previousClose ? parseFloat(previousClose) : null,
+      fiftyTwoWeekHigh: fiftyTwoWeekHigh ? parseFloat(fiftyTwoWeekHigh) : null,
+      fiftyTwoWeekLow: fiftyTwoWeekLow ? parseFloat(fiftyTwoWeekLow) : null
     };
   } catch (error) {
     console.error(`[YahooFinance Fallback] Error fetching price for ${symbol}:`, error.message);
@@ -88,12 +111,16 @@ export async function fetchMultipleLTPs(symbols) {
       const data = await fetchLTP(symbol);
       results[symbol] = {
         ltp: data.ltp,
-        previousClose: data.previousClose
+        previousClose: data.previousClose,
+        fiftyTwoWeekHigh: data.fiftyTwoWeekHigh,
+        fiftyTwoWeekLow: data.fiftyTwoWeekLow
       };
     } catch (err) {
       results[symbol] = {
         ltp: null,
         previousClose: null,
+        fiftyTwoWeekHigh: null,
+        fiftyTwoWeekLow: null,
         error: err.message
       };
     }
