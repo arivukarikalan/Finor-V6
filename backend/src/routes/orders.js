@@ -126,8 +126,10 @@ router.get('/live', requireAuth, async (req, res) => {
           const qty = o.quantity || 0;
           const price = o.average_price || o.price || 0;
           const orderId = o.order_id || '';
-          const rawDate = o.order_timestamp || new Date().toISOString();
-          const txDateStr = rawDate.split('T')[0];
+          const rawDate = o.order_timestamp || new Date();
+          const txDateStr = (rawDate instanceof Date)
+            ? rawDate.toISOString().split('T')[0]
+            : String(rawDate).split('T')[0];
 
           // Stable md5 hash to avoid duplicate trade imports
           const amountStr = parseFloat(price).toFixed(2);
