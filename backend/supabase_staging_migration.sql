@@ -153,6 +153,7 @@ DECLARE
     failed_count INT := 0;
     t_user_id UUID;
     t_symbol VARCHAR(50);
+    t_name VARCHAR(100);
     t_date TIMESTAMPTZ;
     t_type VARCHAR(20);
     t_qty INT;
@@ -172,6 +173,7 @@ BEGIN
         BEGIN
             t_user_id := rec.user_id;
             t_symbol := UPPER(rec.raw_data->>'stock_symbol');
+            t_name := COALESCE(rec.raw_data->>'stock_name', t_symbol);
             t_date := COALESCE((rec.raw_data->>'trade_date')::TIMESTAMPTZ, NOW());
             t_type := UPPER(rec.raw_data->>'trade_type');
             t_qty := (rec.raw_data->>'quantity')::INT;
@@ -218,9 +220,9 @@ BEGIN
                 duplicate_count := duplicate_count + 1;
             ELSE
                 INSERT INTO public.trades (
-                    user_id, stock_symbol, trade_date, trade_type, quantity, price, order_id
+                    user_id, stock_symbol, stock_name, trade_date, trade_type, quantity, price, order_id
                 ) VALUES (
-                    t_user_id, t_symbol, t_date, t_type, t_qty, t_price, COALESCE(t_order_id, comp_hash)
+                    t_user_id, t_symbol, t_name, t_date, t_type, t_qty, t_price, COALESCE(t_order_id, comp_hash)
                 );
 
                 UPDATE public.staging_trades
