@@ -368,6 +368,8 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
   );
 };
 
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
 export const PnL = () => {
   const [summary, setSummary] = useState<PnLSummary>({ total_realized_pnl: 0, stcg: 0, ltcg: 0 });
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
@@ -502,6 +504,7 @@ export const PnL = () => {
   const [viewMode, setViewMode] = useState<'expand' | 'collapse_cycle' | 'all_time'>('all_time');
   const [startDateFilter, setStartDateFilter] = useState('');
   const [endDateFilter, setEndDateFilter] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   
   // Sort State
   const [sortBy, setSortBy] = useState<string>('sell_date');
@@ -513,6 +516,7 @@ export const PnL = () => {
     setOutcomeFilter('all');
     setStartDateFilter('');
     setEndDateFilter('');
+    setSelectedMonth(null);
   };
 
   const fetchSnapshots = async () => {
@@ -580,12 +584,11 @@ export const PnL = () => {
   // Format closed trades for monthly bar chart
   const getMonthlyChartData = () => {
     const monthsMap: Record<string, { month: string; pnl: number; timestamp: number }> = {};
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
     closedTrades.forEach(trade => {
       const date = new Date(trade.sell_date);
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const label = `${monthNames[date.getMonth()]} ${String(date.getFullYear()).slice(-2)}`;
+      const label = `${MONTH_NAMES[date.getMonth()]} ${String(date.getFullYear()).slice(-2)}`;
 
       if (!monthsMap[key]) {
         monthsMap[key] = {
@@ -610,8 +613,17 @@ export const PnL = () => {
 
   // Consolidated group helper
   const getProcessedTrades = () => {
+    let sourceTrades = closedTrades;
+    if (selectedMonth) {
+      sourceTrades = closedTrades.filter(t => {
+        const date = new Date(t.sell_date);
+        const label = `${MONTH_NAMES[date.getMonth()]} ${String(date.getFullYear()).slice(-2)}`;
+        return label === selectedMonth;
+      });
+    }
+
     if (viewMode === 'expand') {
-      return closedTrades.map(t => ({
+      return sourceTrades.map(t => ({
         ...t,
         buy_date_display: new Date(t.buy_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
         sell_date_display: new Date(t.sell_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
@@ -630,7 +642,7 @@ export const PnL = () => {
         total_holding_days_qty: number;
       }> = {};
 
-      closedTrades.forEach(t => {
+      sourceTrades.forEach(t => {
         const key = `${t.stock_symbol}_${t.sell_date.substring(0, 10)}`;
         if (!groups[key]) {
           groups[key] = {
@@ -693,7 +705,7 @@ export const PnL = () => {
         total_holding_days_qty: number;
       }> = {};
 
-      closedTrades.forEach(t => {
+      sourceTrades.forEach(t => {
         const key = t.stock_symbol;
         if (!groups[key]) {
           groups[key] = {
@@ -757,6 +769,30 @@ export const PnL = () => {
   };
 
   const processedTrades = getProcessedTrades();
+
+  const getBestAndWorstTrades = () => {
+    let sourceTrades = closedTrades;
+    if (selectedMonth) {
+      sourceTrades = closedTrades.filter(t => {
+        const date = new Date(t.sell_date);
+        const label = `${MONTH_NAMES[date.getMonth()]} ${String(date.getFullYear()).slice(-2)}`;
+        return label === selectedMonth;
+      });
+    }
+
+    if (sourceTrades.length === 0) return { best: null, worst: null };
+
+    const sorted = [...sourceTrades].sort((a, b) => b.realized_pnl - a.realized_pnl);
+    const best = sorted[0];
+    const worst = sorted[sorted.length - 1];
+
+    return {
+      best: best && best.realized_pnl > 0 ? best : null,
+      worst: worst && worst.realized_pnl < 0 ? worst : null
+    };
+  };
+
+  const { best: bestTrade, worst: worstTrade } = getBestAndWorstTrades();
 
   // Filters & sorts closed trades list
   const filteredTrades = processedTrades
@@ -1009,14 +1045,20 @@ export const PnL = () => {
                     cursor={{ fill: 'rgba(255, 255, 255, 0.04)', radius: 6 }} 
                   />
                   <Bar dataKey="pnl" radius={0}>
-                    {monthlyChartData.map((entry, index) => (
-                      <Cell 
-                        key={`cell-${index}`} 
-                        fill={entry.pnl >= 0 ? '#10b981' : '#f43f5e'} 
-                        fillOpacity={0.85}
-                        className="transition-all duration-200 cursor-pointer pnl-bar-cell"
-                      />
-                    ))}
+                    {monthlyChartData.map((entry, index) => {
+                      const isSelected = selectedMonth === entry.month;
+                      return (
+                        <Cell 
+                          key={`cell-${index}`} 
+                          fill={entry.pnl >= 0 ? '#10b981' : '#f43f5e'} 
+                          fillOpacity={selectedMonth ? (isSelected ? 1.0 : 0.35) : 0.85}
+                          onClick={() => {
+                            setSelectedMonth(selectedMonth === entry.month ? null : entry.month);
+                          }}
+                          className="transition-all duration-200 cursor-pointer pnl-bar-cell"
+                        />
+                      );
+                    })}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -1099,6 +1141,71 @@ export const PnL = () => {
 
           {/* Trade History Ledger Section */}
           <div className="space-y-4">
+
+            {/* Active Month filter banner & Best/Worst performing trades */}
+            {selectedMonth && (
+              <div className="glass-panel border border-dark-border rounded-3xl p-5 space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-brand-500 animate-ping" />
+                    <span className="text-xs font-black text-white uppercase tracking-wider">
+                      Showing performance for {selectedMonth}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedMonth(null)}
+                    className="flex items-center gap-1.5 text-[10px] font-bold text-rose-400 hover:text-rose-350 bg-rose-500/10 border border-rose-500/20 hover:border-rose-500/40 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                    Reset Month Filter
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Best trade card */}
+                  <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block">Best Trade in {selectedMonth}</span>
+                      {bestTrade ? (
+                        <>
+                          <span className="text-sm font-black text-white">{bestTrade.stock_symbol}</span>
+                          <span className="text-[10px] text-gray-400 block font-medium">Qty: {bestTrade.quantity} • Buy: ₹{bestTrade.buy_price.toFixed(2)}</span>
+                        </>
+                      ) : (
+                        <span className="text-xs font-bold text-gray-400 block">No profitable trades</span>
+                      )}
+                    </div>
+                    {bestTrade && (
+                      <div className="text-right">
+                        <span className="text-xs font-bold text-emerald-500 block">+₹{bestTrade.realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">{bestTrade.holding_days} Days Hold</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Worst trade card */}
+                  <div className="bg-dark-depth-2 border border-dark-border/40 p-4 rounded-2xl flex items-center justify-between">
+                    <div className="space-y-1">
+                      <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block">Worst Trade in {selectedMonth}</span>
+                      {worstTrade ? (
+                        <>
+                          <span className="text-sm font-black text-white">{worstTrade.stock_symbol}</span>
+                          <span className="text-[10px] text-gray-400 block font-medium">Qty: {worstTrade.quantity} • Buy: ₹{worstTrade.buy_price.toFixed(2)}</span>
+                        </>
+                      ) : (
+                        <span className="text-xs font-bold text-gray-400 block">No loss-making trades</span>
+                      )}
+                    </div>
+                    {worstTrade && (
+                      <div className="text-right">
+                        <span className="text-xs font-bold text-rose-500 block">₹{worstTrade.realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">{worstTrade.holding_days} Days Hold</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             
             {/* View Mode Segmented Controls */}
             <div className="flex items-center gap-1.5 bg-dark-depth-2/45 p-1 rounded-2xl border border-dark-border/60 self-start inline-flex">
@@ -1200,7 +1307,7 @@ export const PnL = () => {
                 </div>
 
                 {/* Reset button */}
-                {(searchQuery || taxFilter !== 'all' || outcomeFilter !== 'all' || startDateFilter || endDateFilter) && (
+                {(searchQuery || taxFilter !== 'all' || outcomeFilter !== 'all' || startDateFilter || endDateFilter || selectedMonth) && (
                   <button
                     onClick={resetFilters}
                     className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"

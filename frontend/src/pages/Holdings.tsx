@@ -25,7 +25,10 @@ import {
   Loader2,
   Calendar,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  LayoutGrid,
+  Table,
+  List
 } from 'lucide-react';
 
 interface Holding {
@@ -85,6 +88,13 @@ export const Holdings = () => {
   const [savingSettings, setSavingSettings] = useState(false);
 
   const [avgPriceMode, setAvgPriceMode] = useState<'FIFO' | 'WEIGHTED'>(() => (sessionStorage.getItem('finor_holdings_avg_price_mode') as any) || 'FIFO');
+  const [layoutMode, setLayoutMode] = useState<'card' | 'table' | 'list'>(() => {
+    return (localStorage.getItem('finor_holdings_layout_mode') as 'card' | 'table' | 'list') || 'card';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('finor_holdings_layout_mode', layoutMode);
+  }, [layoutMode]);
 
   useEffect(() => {
     sessionStorage.setItem('finor_holdings_avg_price_mode', avgPriceMode);
@@ -1653,6 +1663,43 @@ export const Holdings = () => {
 
         {/* Buttons Toolbar */}
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {/* Layout Switcher */}
+          <div className="flex items-center bg-dark-depth-2/65 border border-dark-border p-1 rounded-xl gap-1">
+            <button
+              onClick={() => setLayoutMode('card')}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                layoutMode === 'card' 
+                  ? 'bg-brand-500 text-white shadow-md' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+              title="Card Grid View"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setLayoutMode('table')}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                layoutMode === 'table' 
+                  ? 'bg-brand-500 text-white shadow-md' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+              title="Table View"
+            >
+              <Table className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setLayoutMode('list')}
+              className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+                layoutMode === 'list' 
+                  ? 'bg-brand-500 text-white shadow-md' 
+                  : 'text-gray-400 hover:text-white'
+              }`}
+              title="List View"
+            >
+              <List className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           <button
             onClick={handleSyncPrices}
             disabled={syncing || forceRebuilding || holdings.length === 0}
@@ -1901,110 +1948,100 @@ export const Holdings = () => {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredHoldings.map((h) => {
-            const activeAvgPrice = getActiveAvgPrice(h);
-            const currentLTP = h.ltp || activeAvgPrice;
-            const investedVal = activeAvgPrice * h.quantity;
-            const currentVal = currentLTP * h.quantity;
-            const pl = currentVal - investedVal;
-            const roi = investedVal > 0 ? (pl / investedVal) * 100 : 0;
-            const isProfit = pl >= 0;
-            const holdingDays = getHoldingDays(h.stock_symbol);
-            
-            const settings = stockSettings[h.stock_symbol] || { stoploss_price: null, position_tag: 'TRADING' };
-            const isCoreHold = settings.position_tag === 'CORE_HOLD';
-            const exitFlag = considerExits.find(ce => ce.symbol === h.stock_symbol);
-            const [stockNameOnly, weightedAvgStr] = h.stock_name.split('|');
-
-            return (
-              <div 
-                key={h.id} 
-                onClick={() => handleOpenStockDetails(h.stock_symbol)}
-                className="glass-panel rounded-2xl p-5 border border-dark-border flex flex-col justify-between cursor-pointer transition-all hover:border-brand-500/30 hover:scale-[1.01]"
-                style={exitFlag ? { borderColor: 'rgba(239, 68, 68, 0.3)', boxShadow: '0 0 10px rgba(239, 68, 68, 0.05)' } : {}}
-              >
+        <>
+          {layoutMode === 'card' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-in fade-in duration-200">
+              {filteredHoldings.map((h) => {
+                const activeAvgPrice = getActiveAvgPrice(h);
+                const currentLTP = h.ltp || activeAvgPrice;
+                const investedVal = activeAvgPrice * h.quantity;
+                const currentVal = currentLTP * h.quantity;
+                const pl = currentVal - investedVal;
+                const roi = investedVal > 0 ? (pl / investedVal) * 100 : 0;
+                const isProfit = pl >= 0;
+                const holdingDays = getHoldingDays(h.stock_symbol);
                 
-                {/* Top Section: Ticker and PNL badge */}
-                <div className="flex items-start justify-between border-b border-dark-border/40 pb-3 mb-4">
-                  <div>
-                    <h4 className="text-lg font-bold text-white font-display tracking-tight flex items-center flex-wrap gap-1.5">
-                      {h.stock_symbol}
-                      {isCoreHold && (
-                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#D4AF37', borderColor: 'rgba(212, 175, 55, 0.2)', backgroundColor: 'rgba(212, 175, 55, 0.08)', border: '1px solid rgba(212, 175, 55, 0.2)' }}>
-                          ★ Core Hold
-                        </span>
-                      )}
-                      {h.ltp === null && (
-                        <span className="text-[9px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
-                          LTP Pending
-                        </span>
-                      )}
-                    </h4>
-                    <span className="text-[10px] text-gray-500 mt-0.5 block font-semibold uppercase tracking-wider">
-                      {stockNameOnly}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border flex items-center gap-1 ${
-                      isProfit 
-                        ? 'bg-emerald-500/10 border-emerald-500/10 text-emerald-500' 
-                        : 'bg-rose-500/10 border-rose-500/10 text-rose-500'
-                    }`}>
-                      {isProfit ? '+' : ''}{roi.toFixed(2)}%
-                    </span>
+                const settings = stockSettings[h.stock_symbol] || { stoploss_price: null, position_tag: 'TRADING' };
+                const isCoreHold = settings.position_tag === 'CORE_HOLD';
+                const exitFlag = considerExits.find(ce => ce.symbol === h.stock_symbol);
+                const [stockNameOnly, weightedAvgStr] = h.stock_name.split('|');
+
+                return (
+                  <div 
+                    key={h.id} 
+                    onClick={() => handleOpenStockDetails(h.stock_symbol)}
+                    className="glass-panel rounded-2xl p-5 border border-dark-border flex flex-col justify-between cursor-pointer transition-all hover:border-brand-500/30 hover:scale-[1.01]"
+                    style={exitFlag ? { borderColor: 'rgba(239, 68, 68, 0.3)', boxShadow: '0 0 10px rgba(239, 68, 68, 0.05)' } : {}}
+                  >
                     
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingStock(h);
-                        setEditStoploss(settings.stoploss_price !== null ? String(settings.stoploss_price) : '');
-                        setEditTag(settings.position_tag);
-                      }}
-                      className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-dark-depth-2 transition-all cursor-pointer"
-                      title="Edit stop-loss & tag"
-                    >
-                      <SlidersHorizontal className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* exit warning inline */}
-                {exitFlag && (
-                  <div className="mb-4 p-2.5 text-[10px] font-semibold text-rose-500 bg-rose-500/10 border border-rose-500/25 rounded-xl flex items-center gap-1.5">
-                    <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-500" />
-                    <span>Consider Exit: Down 30%+ over 90+ days & negative news.</span>
-                  </div>
-                )}
-
-                {/* Simplified Metrics Grid */}
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Quantity & LTP</span>
-                    <span className="text-xs font-extrabold text-white mt-1 block">
-                      {h.quantity} @ <LtpPriceText value={currentLTP} />
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Current Value</span>
-                    <span className="text-xs font-extrabold text-white mt-1 block">
-                      ₹{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Collapsible details container */}
-                {expandedSymbols[h.stock_symbol] && (
-                  <div className="mt-4 pt-3.5 border-t border-dark-border/40 space-y-4 animate-in fade-in duration-200">
-                    <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-xs">
+                    {/* Top Section: Ticker and PNL badge */}
+                    <div className="flex items-start justify-between border-b border-dark-border/40 pb-3 mb-4">
                       <div>
-                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Avg Price & Return %</span>
-                        <div className="space-y-0.5 mt-1 text-[11px] leading-tight">
+                        <h4 className="text-lg font-bold text-white font-display tracking-tight flex items-center flex-wrap gap-1.5">
+                          {h.stock_symbol}
+                          {isCoreHold && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full" style={{ color: '#D4AF37', borderColor: 'rgba(212, 175, 55, 0.2)', backgroundColor: 'rgba(212, 175, 55, 0.08)', border: '1px solid rgba(212, 175, 55, 0.2)' }}>
+                              ★ Core Hold
+                            </span>
+                          )}
+                          {h.ltp === null && (
+                            <span className="text-[9px] font-medium bg-amber-500/10 text-amber-500 border border-amber-500/20 px-1.5 py-0.5 rounded-full">
+                              No LTP
+                            </span>
+                          )}
+                        </h4>
+                        <span className="text-[10px] text-gray-500 block mt-1 font-medium">{stockNameOnly}</span>
+                      </div>
+
+                      <div className="text-right">
+                        <span className={`text-xs font-extrabold px-3 py-1 rounded-xl flex items-center gap-1 ${
+                          isProfit 
+                            ? 'bg-emerald-500/10 text-emerald-450 border border-emerald-500/20' 
+                            : 'bg-rose-500/10 text-rose-450 border border-rose-500/20'
+                        }`}>
+                          {isProfit ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                          {isProfit ? '+' : ''}{roi.toFixed(2)}%
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Middle Section: Quantity and Value Grid */}
+                    <div className="grid grid-cols-2 gap-y-4 gap-x-2 border-b border-dark-border/40 pb-4 mb-4 select-none">
+                      <div>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Quantity</span>
+                        <span className="text-sm font-black text-white mt-1 block">{h.quantity} Shares</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Current Value</span>
+                        <span className="text-sm font-black text-white mt-1 block">
+                          ₹{currentVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Avg Buy Price</span>
+                        <span className="text-xs font-bold text-gray-300 mt-1 block">
+                          ₹{activeAvgPrice.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Last Traded Price</span>
+                        <span className="text-xs font-bold text-white mt-1 block flex items-center gap-1">
+                          <LtpPriceText value={currentLTP} />
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Expandable details wrapper */}
+                    {expandedSymbols[h.stock_symbol] && (
+                      <div className="space-y-4 border-b border-dark-border/45 pb-4 mb-4 select-none animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-[11px] text-gray-400">
                           <div>
-                            <span className="text-gray-500">FIFO:</span> <span className="font-bold text-white">₹{h.average_buy_price.toFixed(2)}</span>
-                            <span className={`ml-1 font-bold ${currentLTP - h.average_buy_price >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              ({((currentLTP - h.average_buy_price) / h.average_buy_price * 100).toFixed(1)}%)
+                            <span className="text-gray-500">Invested:</span> <span className="font-bold text-white">₹{investedVal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">P&L Amount:</span> 
+                            <span className={`ml-1 font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {isProfit ? '+' : ''}₹{pl.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                             </span>
                           </div>
                           {weightedAvgStr && (
@@ -2016,117 +2053,267 @@ export const Holdings = () => {
                             </div>
                           )}
                         </div>
+                        <div>
+                          <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Stop-Loss Price</span>
+                          <span className="text-xs font-bold text-white mt-1 block">
+                            {settings.stoploss_price !== null ? `₹${settings.stoploss_price.toFixed(2)}` : 'Not Set'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Holding Period</span>
+                          <span className="text-xs font-bold text-white mt-1 block">{holdingDays} Days</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Position Type</span>
+                          <span className={`text-[11px] font-bold mt-1 block ${isCoreHold ? 'text-amber-500 font-extrabold' : 'text-gray-300'}`}>
+                            {isCoreHold ? 'Core Hold' : 'Trading Position'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {expandedSymbols[h.stock_symbol] && (() => {
+                        const targetPct = isCoreHold ? 20 : 10;
+                        const progress = Math.max(0, Math.min(100, roi > 0 ? (roi / targetPct) * 100 : 0));
+                        const isNearTarget = roi > 0 && (targetPct - roi) <= 1.5;
+                        const targetValue = activeAvgPrice * (1 + targetPct / 100);
+
+                        return (
+                          <div className="space-y-2 select-none">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="text-gray-500 font-bold uppercase tracking-wider">Target Progress</span>
+                              <span className={`font-black ${isNearTarget ? 'text-indigo-400 animate-pulse' : 'text-gray-300'}`}>
+                                {roi > 0 ? roi.toFixed(1) : '0.0'}% / {targetPct}%
+                              </span>
+                            </div>
+                            
+                            <div className="w-full bg-dark-depth-3/60 rounded-full h-1.5 border border-dark-border/40 overflow-hidden relative">
+                              <div 
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  isNearTarget 
+                                    ? 'bg-indigo-500 shadow-md shadow-indigo-500/20' 
+                                    : roi >= targetPct 
+                                    ? 'bg-emerald-500 shadow-md shadow-emerald-500/20' 
+                                    : 'bg-brand-500'
+                                }`}
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+
+                            {isNearTarget && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  window.dispatchEvent(new CustomEvent('finor-switch-tab', {
+                                    detail: {
+                                      tab: 'orders',
+                                      symbol: h.stock_symbol,
+                                      action: 'SELL',
+                                      quantity: h.quantity,
+                                      price: targetValue.toFixed(2)
+                                    }
+                                  }));
+                                }}
+                                className="w-full py-1.5 px-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 text-[9px] font-extrabold text-indigo-400 hover:text-indigo-300 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                              >
+                                <Sparkles className="w-3 h-3 text-indigo-400 animate-pulse" />
+                                Target Near! Click to Sell GTT at ₹{targetValue.toFixed(2)}
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                    {expandedSymbols[h.stock_symbol] && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedAiStock({
+                            stock: h,
+                            roi,
+                            holdingDays
+                          });
+                        }}
+                        className="w-full py-2 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-[9px] font-extrabold uppercase tracking-wider flex items-center justify-center gap-1 text-gray-300 hover:text-white transition-all cursor-pointer select-none"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-brand-400" />
+                        AI Conviction Audit
+                      </button>
+                    )}
+
+                    {/* Toggle details trigger */}
+                    <button
+                      onClick={(e) => toggleExpandSymbol(h.stock_symbol, e)}
+                      className="mt-4 w-full py-1.5 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-[9px] font-extrabold uppercase tracking-wider text-gray-400 hover:text-white flex items-center justify-center gap-1 transition-all cursor-pointer select-none"
+                    >
+                      {expandedSymbols[h.stock_symbol] ? (
+                        <>
+                          <span>Hide Details</span>
+                          <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
+                        </>
+                      ) : (
+                        <>
+                          <span>Show Details</span>
+                          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
+                        </>
+                      )}
+                    </button>
+
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {layoutMode === 'table' && (
+            <div className="glass-panel rounded-3xl border border-dark-border overflow-hidden select-none animate-in fade-in duration-200">
+              <div className="overflow-x-auto font-sans">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-dark-border bg-dark-depth-1/40 text-[10px] text-gray-400 uppercase font-bold tracking-wider">
+                      <th className="px-6 py-4">Stock</th>
+                      <th className="px-6 py-4 text-right">Quantity</th>
+                      <th className="px-6 py-4 text-right">Avg Buy Price</th>
+                      <th className="px-6 py-4 text-right">LTP</th>
+                      <th className="px-6 py-4 text-right">Current Value</th>
+                      <th className="px-6 py-4 text-right">P&L</th>
+                      <th className="px-6 py-4 text-right">ROI</th>
+                      <th className="px-6 py-4 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredHoldings.map((h) => {
+                      const activeAvgPrice = getActiveAvgPrice(h);
+                      const currentLTP = h.ltp || activeAvgPrice;
+                      const investedVal = activeAvgPrice * h.quantity;
+                      const currentVal = currentLTP * h.quantity;
+                      const pl = currentVal - investedVal;
+                      const roi = investedVal > 0 ? (pl / investedVal) * 100 : 0;
+                      const isProfit = pl >= 0;
+                      const holdingDays = getHoldingDays(h.stock_symbol);
+                      const settings = stockSettings[h.stock_symbol] || { stoploss_price: null, position_tag: 'TRADING' };
+                      const isCoreHold = settings.position_tag === 'CORE_HOLD';
+
+                      return (
+                        <tr
+                          key={h.id}
+                          onClick={() => handleOpenStockDetails(h.stock_symbol)}
+                          className="border-b border-dark-border/40 hover:bg-dark-depth-2/30 transition-colors cursor-pointer text-xs"
+                        >
+                          <td className="px-6 py-4 font-bold text-white">
+                            <div className="flex items-center gap-2">
+                              <span>{h.stock_symbol}</span>
+                              {isCoreHold && (
+                                <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                                  ★ Core
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-gray-500 block font-normal mt-0.5">{h.stock_name.split('|')[0]}</span>
+                          </td>
+                          <td className="px-6 py-4 text-right font-semibold text-gray-300">{h.quantity}</td>
+                          <td className="px-6 py-4 text-right font-semibold text-gray-300">₹{activeAvgPrice.toFixed(2)}</td>
+                          <td className="px-6 py-4 text-right font-bold text-white">
+                            <LtpPriceText value={currentLTP} />
+                          </td>
+                          <td className="px-6 py-4 text-right font-black text-white">₹{currentVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className={`px-6 py-4 text-right font-bold ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            {isProfit ? '+' : ''}₹{pl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                          <td className={`px-6 py-4 text-right font-extrabold ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                            {isProfit ? '+' : ''}{roi.toFixed(2)}%
+                          </td>
+                          <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                onClick={() => setSelectedAiStock({ stock: h, roi, holdingDays })}
+                                className="p-1 rounded bg-dark-depth-3 hover:bg-brand-500/10 border border-dark-border text-gray-400 hover:text-brand-400 transition-colors cursor-pointer"
+                                title="AI Conviction Audit"
+                              >
+                                <Sparkles className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingStock(h);
+                                  setEditStoploss(settings.stoploss_price !== null ? String(settings.stoploss_price) : '');
+                                  setEditTag(settings.position_tag);
+                                }}
+                                className="p-1 rounded bg-dark-depth-3 hover:bg-white/10 border border-dark-border text-gray-400 hover:text-white transition-colors cursor-pointer"
+                                title="Edit Settings"
+                              >
+                                <SlidersHorizontal className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {layoutMode === 'list' && (
+            <div className="glass-panel rounded-3xl border border-dark-border overflow-hidden select-none divide-y divide-dark-border/40 animate-in fade-in duration-200">
+              {filteredHoldings.map((h) => {
+                const activeAvgPrice = getActiveAvgPrice(h);
+                const currentLTP = h.ltp || activeAvgPrice;
+                const investedVal = activeAvgPrice * h.quantity;
+                const currentVal = currentLTP * h.quantity;
+                const pl = currentVal - investedVal;
+                const roi = investedVal > 0 ? (pl / investedVal) * 100 : 0;
+                const isProfit = pl >= 0;
+                const holdingDays = getHoldingDays(h.stock_symbol);
+                const settings = stockSettings[h.stock_symbol] || { stoploss_price: null, position_tag: 'TRADING' };
+                const isCoreHold = settings.position_tag === 'CORE_HOLD';
+
+                return (
+                  <div
+                    key={h.id}
+                    onClick={() => handleOpenStockDetails(h.stock_symbol)}
+                    className="p-4 flex items-center justify-between hover:bg-dark-depth-2/20 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-xl bg-dark-depth-3 flex items-center justify-center border border-dark-border font-extrabold text-white text-xs select-none">
+                        {h.stock_symbol.slice(0, 2)}
                       </div>
                       <div>
-                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Stop-Loss Price</span>
-                        <span className="text-xs font-bold text-white mt-1 block">
-                          {settings.stoploss_price !== null ? `₹${settings.stoploss_price.toFixed(2)}` : 'Not Set'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Holding Period</span>
-                        <span className="text-xs font-bold text-white mt-1 block">{holdingDays} Days</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Position Type</span>
-                        <span className={`text-[11px] font-bold mt-1 block ${isCoreHold ? 'text-amber-500 font-extrabold' : 'text-gray-300'}`}>
-                          {isCoreHold ? 'Core Hold' : 'Trading Position'}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-white text-sm">{h.stock_symbol}</span>
+                          {isCoreHold && (
+                            <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                              ★ Core
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-gray-500 block mt-0.5">{h.quantity} Shares @ ₹{activeAvgPrice.toFixed(2)}</span>
                       </div>
                     </div>
 
-                    {(() => {
-                      const targetPct = isCoreHold ? 20 : 10;
-                      const progress = Math.max(0, Math.min(100, roi > 0 ? (roi / targetPct) * 100 : 0));
-                      const isNearTarget = roi > 0 && (targetPct - roi) <= 1.5;
-                      const targetValue = activeAvgPrice * (1 + targetPct / 100);
-
-                      return (
-                        <div className="space-y-2 select-none">
-                          <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-gray-500 font-bold uppercase tracking-wider">Target Progress</span>
-                            <span className={`font-black ${isNearTarget ? 'text-indigo-400 animate-pulse' : 'text-gray-300'}`}>
-                              {roi > 0 ? roi.toFixed(1) : '0.0'}% / {targetPct}%
-                            </span>
-                          </div>
-                          
-                          <div className="w-full bg-dark-depth-3/60 rounded-full h-1.5 border border-dark-border/40 overflow-hidden relative">
-                            <div 
-                              className={`h-full rounded-full transition-all duration-500 ${
-                                isNearTarget 
-                                  ? 'bg-indigo-500 shadow-md shadow-indigo-500/20' 
-                                  : roi >= targetPct 
-                                  ? 'bg-emerald-500 shadow-md shadow-emerald-500/20' 
-                                  : 'bg-brand-500'
-                              }`}
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-
-                          {isNearTarget && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                window.dispatchEvent(new CustomEvent('finor-switch-tab', {
-                                  detail: {
-                                    tab: 'orders',
-                                    symbol: h.stock_symbol,
-                                    action: 'SELL',
-                                    quantity: h.quantity,
-                                    price: targetValue.toFixed(2)
-                                  }
-                                }));
-                              }}
-                              className="w-full py-1.5 px-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 text-[9px] font-extrabold text-indigo-400 hover:text-indigo-300 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                            >
-                              <Sparkles className="w-3 h-3 text-indigo-400 animate-pulse" />
-                              Target Near! Click to Sell GTT at ₹{targetValue.toFixed(2)}
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* AI Conviction Audit Button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedAiStock({
-                          stock: h,
-                          roi,
-                          holdingDays
-                        });
-                      }}
-                      className="w-full py-2 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-[9px] font-extrabold uppercase tracking-wider flex items-center justify-center gap-1 text-gray-300 hover:text-white transition-all cursor-pointer select-none"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-brand-400" />
-                      AI Conviction Audit
-                    </button>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <span className="font-black text-white text-sm block">₹{currentVal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                        <span className={`text-[10px] font-bold ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {isProfit ? '+' : ''}{roi.toFixed(1)}%
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setSelectedAiStock({ stock: h, roi, holdingDays })}
+                          className="p-1.5 rounded-lg bg-dark-depth-3 hover:bg-brand-500/10 border border-dark-border text-gray-400 hover:text-brand-400 transition-colors cursor-pointer"
+                          title="AI conviction audit"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                )}
-
-                {/* Toggle details trigger */}
-                <button
-                  onClick={(e) => toggleExpandSymbol(h.stock_symbol, e)}
-                  className="mt-4 w-full py-1.5 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-[9px] font-extrabold uppercase tracking-wider text-gray-400 hover:text-white flex items-center justify-center gap-1 transition-all cursor-pointer select-none"
-                >
-                  {expandedSymbols[h.stock_symbol] ? (
-                    <>
-                      <span>Hide Details</span>
-                      <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
-                    </>
-                  ) : (
-                    <>
-                      <span>Show Details</span>
-                      <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-                    </>
-                  )}
-                </button>
-
-              </div>
-            );
-          })}
-        </div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
         </>
