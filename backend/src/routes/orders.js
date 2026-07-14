@@ -1,5 +1,6 @@
 import express from 'express';
 import pkg from 'kiteconnect';
+import crypto from 'crypto';
 import { supabase } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
@@ -114,6 +115,62 @@ router.get('/live', requireAuth, async (req, res) => {
         access_token: session.access_token
       });
       const kiteOrders = await kc.getOrders();
+      
+      const userId = req.user.id;
+      let newTradesAdded = 0;
+
+      for (const o of (Array.isArray(kiteOrders) ? kiteOrders : [])) {
+        if (o.status && o.status.toUpperCase() === 'COMPLETE') {
+          const symbol = o.tradingsymbol || '';
+          const tradeType = o.transaction_type === 'BUY' ? 'BUY' : 'SELL';
+          const qty = o.quantity || 0;
+          const price = o.average_price || o.price || 0;
+          const orderId = o.order_id || '';
+          const rawDate = o.order_timestamp || new Date().toISOString();
+          const txDateStr = rawDate.split('T')[0];
+
+          // Stable md5 hash to avoid duplicate trade imports
+          const amountStr = parseFloat(price).toFixed(2);
+          const defaultHash = crypto
+            .createHash('md5')
+            .update(`${userId}_${symbol}_${txDateStr}_${tradeType}_${qty}_${amountStr}`)
+            .digest('hex');
+
+          const stagingPayload = {
+            user_id: userId,
+            raw_data: {
+              stock_symbol: symbol,
+              stock_name: symbol,
+              trade_date: txDateStr,
+              trade_type: tradeType,
+              quantity: qty,
+              price: price,
+              order_id: `KITE_${orderId}`
+            },
+            raw_data_hash: defaultHash,
+            status: 'PENDING'
+          };
+
+          const { error: insertError } = await supabase
+            .from('staging_trades')
+            .insert(stagingPayload);
+
+          if (!insertError) {
+            newTradesAdded++;
+          }
+        }
+      }
+
+      if (newTradesAdded > 0) {
+        // Run database reconciliation to move pending staged orders to public.trades
+        const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+        if (rErr) console.error('[KiteSync] Staging reconciliation failed:', rErr.message);
+
+        // Standardized recalculation of user active positions
+        const { recalculateHoldings } = await import('./trades.js');
+        await recalculateHoldings(userId);
+      }
+
       const mappedOrders = (Array.isArray(kiteOrders) ? kiteOrders : []).map(o => {
         let mappedStatus = 'OPEN';
         const uStatus = o.status ? o.status.toUpperCase() : '';
