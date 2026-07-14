@@ -17,7 +17,8 @@ import {
   Smartphone, 
   Landmark,
   HelpCircle,
-  Info
+  Info,
+  AlertCircle
 } from 'lucide-react';
 
 export const ProfileSettings = () => {
@@ -58,6 +59,23 @@ export const ProfileSettings = () => {
   const [savingGmailCredentials, setSavingGmailCredentials] = useState(false);
   const [savingGmailFilters, setSavingGmailFilters] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
+
+  // Custom Confirmation Modal state
+  interface ConfirmModalState {
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    confirmText?: string;
+    cancelText?: string;
+    isDanger?: boolean;
+  }
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmModalState>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   const [savingProfile, setSavingProfile] = useState(false);
   const [updatingPassword, setUpdatingPassword] = useState(false);
@@ -164,23 +182,30 @@ export const ProfileSettings = () => {
     }
   };
 
-  const handleRegenerateSmsKey = async () => {
-    if (!window.confirm('Are you sure you want to regenerate your SMS Ingestion API Key? Any devices currently using your old key will stop syncing.')) {
-      return;
-    }
-    setRegeneratingKey(true);
-    try {
-      await apiRequest('/auth/regenerate-sms-key', {
-        method: 'POST'
-      });
-      await fetchProfile();
-      useToastStore.getState().addToast('SMS Ingestion Key rotated successfully!', 'success');
-    } catch (err: any) {
-      console.error(err);
-      useToastStore.getState().addToast(err.message || 'Failed to rotate SMS key.', 'error');
-    } finally {
-      setRegeneratingKey(false);
-    }
+  const handleRegenerateSmsKey = () => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Regenerate SMS Ingestion Key',
+      message: 'Are you sure you want to regenerate your SMS Ingestion API Key? Any devices currently using your old key will stop syncing.',
+      confirmText: 'Regenerate',
+      cancelText: 'Cancel',
+      isDanger: true,
+      onConfirm: async () => {
+        setRegeneratingKey(true);
+        try {
+          await apiRequest('/auth/regenerate-sms-key', {
+            method: 'POST'
+          });
+          await fetchProfile();
+          useToastStore.getState().addToast('SMS Ingestion Key rotated successfully!', 'success');
+        } catch (err: any) {
+          console.error(err);
+          useToastStore.getState().addToast(err.message || 'Failed to rotate SMS key.', 'error');
+        } finally {
+          setRegeneratingKey(false);
+        }
+      }
+    });
   };
 
   const handleUpdateZerodha = async (e: React.FormEvent) => {
@@ -253,36 +278,51 @@ export const ProfileSettings = () => {
     window.open(`${base}/api/gmail/auth?userId=${profile?.id}`, '_self');
   };
 
-  const handleDisconnectGmail = async () => {
-    if (!window.confirm('Are you sure you want to disconnect your Gmail integration? Auto-syncing of trades will stop.')) {
-      return;
-    }
-    setDisconnectingGmail(true);
-    try {
-      await apiRequest('/auth/disconnect-gmail', { method: 'POST' });
-      await fetchProfile();
-      useToastStore.getState().addToast('Gmail connection disconnected successfully!', 'success');
-    } catch (err: any) {
-      console.error(err);
-      useToastStore.getState().addToast(err.message || 'Failed to disconnect Gmail.', 'error');
-    } finally {
-      setDisconnectingGmail(false);
-    }
+  const handleDisconnectGmail = () => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Disconnect Gmail Integration',
+      message: 'Are you sure you want to disconnect your Gmail integration? Auto-syncing of trades will stop.',
+      confirmText: 'Disconnect',
+      cancelText: 'Cancel',
+      isDanger: true,
+      onConfirm: async () => {
+        setDisconnectingGmail(true);
+        try {
+          await apiRequest('/auth/disconnect-gmail', { method: 'POST' });
+          await fetchProfile();
+          useToastStore.getState().addToast('Gmail connection disconnected successfully!', 'success');
+        } catch (err: any) {
+          console.error(err);
+          useToastStore.getState().addToast(err.message || 'Failed to disconnect Gmail.', 'error');
+        } finally {
+          setDisconnectingGmail(false);
+        }
+      }
+    });
   };
-  const handleResetSyncCache = async () => {
-    if (!window.confirm('This will reset your sync history. The next sync will re-process your emails from the last selected timeframe. Proceed?')) {
-      return;
-    }
-    setClearingCache(true);
-    try {
-      await apiRequest('/gmail/reset-cache', { method: 'POST' });
-      useToastStore.getState().addToast('Gmail sync history cache cleared! You can now re-run Gmail sync.', 'success');
-    } catch (err: any) {
-      console.error(err);
-      useToastStore.getState().addToast(err.message || 'Failed to clear sync cache.', 'error');
-    } finally {
-      setClearingCache(false);
-    }
+
+  const handleResetSyncCache = () => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Reset Gmail Sync Cache',
+      message: 'This will reset your sync history. The next sync will re-process your emails from the last selected timeframe. Proceed?',
+      confirmText: 'Reset Cache',
+      cancelText: 'Cancel',
+      isDanger: false,
+      onConfirm: async () => {
+        setClearingCache(true);
+        try {
+          await apiRequest('/gmail/reset-cache', { method: 'POST' });
+          useToastStore.getState().addToast('Gmail sync history cache cleared! You can now re-run Gmail sync.', 'success');
+        } catch (err: any) {
+          console.error(err);
+          useToastStore.getState().addToast(err.message || 'Failed to clear sync cache.', 'error');
+        } finally {
+          setClearingCache(false);
+        }
+      }
+    });
   };
 
   const backendBaseUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
@@ -1075,6 +1115,47 @@ export const ProfileSettings = () => {
             </div>
           </div>
         </div>
+
+        {confirmConfig.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="glass-panel w-full max-w-sm rounded-3xl border border-dark-border p-6 space-y-4 shadow-2xl bg-dark-depth-3/95 animate-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-2xl ${confirmConfig.isDanger ? 'bg-rose-500/10 text-rose-400' : 'bg-brand-500/10 text-brand-400'}`}>
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">{confirmConfig.title}</h3>
+              </div>
+              
+              <p className="text-xs text-gray-300 leading-relaxed">
+                {confirmConfig.message}
+              </p>
+              
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 py-2.5 px-4 rounded-xl border border-dark-border bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-350 hover:text-white font-bold text-xs uppercase tracking-wider focus:outline-none transition-all cursor-pointer"
+                >
+                  {confirmConfig.cancelText || 'Cancel'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+                    confirmConfig.onConfirm();
+                  }}
+                  className={`flex-1 py-2.5 px-4 rounded-xl text-white font-bold text-xs uppercase tracking-wider focus:outline-none transition-all cursor-pointer ${
+                    confirmConfig.isDanger 
+                      ? 'bg-rose-650 hover:bg-rose-500 shadow-lg shadow-rose-650/20' 
+                      : 'bg-indigo-650 hover:bg-indigo-500 shadow-lg shadow-indigo-650/20'
+                  }`}
+                >
+                  {confirmConfig.confirmText || 'Proceed'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
