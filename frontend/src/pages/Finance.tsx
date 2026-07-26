@@ -393,15 +393,26 @@ export const Finance: React.FC = () => {
            t.category !== 'Lent/Friends';
   };
 
+  // Robust current month check helper
+  const isCurrentMonth = (dateStr: string) => {
+    if (!dateStr) return false;
+    const now = new Date();
+    const dObj = new Date(dateStr);
+    if (!isNaN(dObj.getTime())) {
+      return dObj.getFullYear() === now.getFullYear() && dObj.getMonth() === now.getMonth();
+    }
+    const thisMonthStr = now.toISOString().substring(0, 7);
+    return dateStr.startsWith(thisMonthStr);
+  };
+
   // Monthly metrics
-  const thisMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
   const monthlyExpenses = transactions
-    .filter(t => isConsumptionExpense(t) && t.date.startsWith(thisMonth))
-    .reduce((sum, t) => sum + t.amount, 0);
+    .filter(t => isConsumptionExpense(t) && isCurrentMonth(t.date))
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
   const monthlyIncome = transactions
-    .filter(t => t.type === 'INCOME' && t.date.startsWith(thisMonth))
-    .reduce((sum, t) => sum + t.amount, 0);
+    .filter(t => t.type === 'INCOME' && isCurrentMonth(t.date))
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
   // Category wise breakdown (only consumption expenses)
   const categoryExpensesMap: { [key: string]: number } = {};
@@ -409,7 +420,7 @@ export const Finance: React.FC = () => {
     .filter(isConsumptionExpense)
     .forEach(t => {
       const cat = t.category || 'Uncategorized';
-      categoryExpensesMap[cat] = (categoryExpensesMap[cat] || 0) + t.amount;
+      categoryExpensesMap[cat] = (categoryExpensesMap[cat] || 0) + Number(t.amount || 0);
     });
 
   const categoryExpensesChartData = Object.keys(categoryExpensesMap).map(cat => ({
@@ -420,19 +431,20 @@ export const Finance: React.FC = () => {
   // Daily Spending Trajectory Data for current month
   const dailySpendingsData = useMemo(() => {
     const daysMap: { [day: number]: number } = {};
-    const currentMonthStr = new Date().toISOString().substring(0, 7);
-    const daysInMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+    const now = new Date();
+    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
     for (let d = 1; d <= daysInMonth; d++) {
       daysMap[d] = 0;
     }
 
     transactions
-      .filter(t => isConsumptionExpense(t) && t.date.startsWith(currentMonthStr))
+      .filter(t => isConsumptionExpense(t) && isCurrentMonth(t.date))
       .forEach(t => {
-        const dayNum = parseInt(t.date.substring(8, 10), 10);
+        const dObj = new Date(t.date);
+        const dayNum = !isNaN(dObj.getTime()) ? dObj.getDate() : parseInt((t.date || '').substring(8, 10), 10);
         if (!isNaN(dayNum) && daysMap[dayNum] !== undefined) {
-          daysMap[dayNum] += t.amount;
+          daysMap[dayNum] += Number(t.amount || 0);
         }
       });
 

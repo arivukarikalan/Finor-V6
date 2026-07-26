@@ -1,6 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { google } from 'googleapis';
 import { fetchLTPYahoo } from '../services/yahooFinance.js';
@@ -51,7 +51,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
     const userId = req.user.id;
 
     // 1. Fetch transactions
-    const { data: transactions, error: tErr } = await supabase
+    const { data: transactions, error: tErr } = await supabaseAdmin
       .from('finance_transactions')
       .select('*')
       .eq('user_id', userId)
@@ -59,7 +59,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
     if (tErr) throw tErr;
 
     // 2. Fetch debts
-    const { data: debts, error: dErr } = await supabase
+    const { data: debts, error: dErr } = await supabaseAdmin
       .from('finance_debts')
       .select('*')
       .eq('user_id', userId)
@@ -67,14 +67,14 @@ router.get('/dashboard', requireAuth, async (req, res) => {
     if (dErr) throw dErr;
 
     // 3. Fetch goals
-    const { data: goals, error: gErr } = await supabase
+    const { data: goals, error: gErr } = await supabaseAdmin
       .from('finance_goals')
       .select('*')
       .eq('user_id', userId);
     if (gErr) throw gErr;
 
     // 4. Fetch stock holdings to auto-calculate equity and ETF values
-    const { data: holdings, error: hErr } = await supabase
+    const { data: holdings, error: hErr } = await supabaseAdmin
       .from('holdings')
       .select('*')
       .eq('user_id', userId);
@@ -163,7 +163,7 @@ router.post('/transaction', requireAuth, async (req, res) => {
     let result;
     if (id && !id.startsWith('temp_')) {
       // Update existing record
-      let { data, error } = await supabase
+      let { data, error } = await supabaseAdmin
         .from('finance_transactions')
         .update(payload)
         .eq('id', id)
@@ -184,7 +184,7 @@ router.post('/transaction', requireAuth, async (req, res) => {
           description: payload.description,
           source: payload.source
         };
-        const fallbackRes = await supabase
+        const fallbackRes = await supabaseAdmin
           .from('finance_transactions')
           .update(fallbackPayload)
           .eq('id', id)
@@ -221,7 +221,7 @@ router.post('/transaction', requireAuth, async (req, res) => {
         status: 'PENDING'
       };
 
-      const { error: insertError } = await supabase
+      const { error: insertError } = await supabaseAdmin
         .from('staging_transactions')
         .insert(stagingPayload);
 
@@ -230,13 +230,13 @@ router.post('/transaction', requireAuth, async (req, res) => {
       }
 
       // Immediately reconcile
-      const { error: reconcileError } = await supabase.rpc('reconcile_staging_transactions');
+      const { error: reconcileError } = await supabaseAdmin.rpc('reconcile_staging_transactions');
       if (reconcileError) {
         console.error('[FinanceRoute] Immediate manual reconciliation failed:', reconcileError.message);
       }
 
       // Fetch back the reconciled transaction
-      const { data: insertedTx, error: fetchError } = await supabase
+      const { data: insertedTx, error: fetchError } = await supabaseAdmin
         .from('finance_transactions')
         .select('*')
         .eq('user_id', userId)
@@ -265,7 +265,7 @@ router.post('/transaction/:id/toggle-claim', requireAuth, async (req, res) => {
     const { id } = req.params;
     const { is_claimable, claim_status } = req.body;
 
-    const { data: tx, error: fetchErr } = await supabase
+    const { data: tx, error: fetchErr } = await supabaseAdmin
       .from('finance_transactions')
       .select('*')
       .eq('id', id)
@@ -279,7 +279,7 @@ router.post('/transaction/:id/toggle-claim', requireAuth, async (req, res) => {
     const updatedClaimable = typeof is_claimable === 'boolean' ? is_claimable : tx.is_claimable;
     const updatedStatus = claim_status || (tx.claim_status === 'CLAIMED' ? 'UNCLAIMED' : 'CLAIMED');
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('finance_transactions')
       .update({
         is_claimable: updatedClaimable,
@@ -304,7 +304,7 @@ router.delete('/transaction/:id', requireAuth, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('finance_transactions')
       .delete()
       .eq('id', id)
@@ -329,7 +329,7 @@ router.post('/transaction/bulk-delete', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Missing or invalid list of transaction IDs.' });
     }
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('finance_transactions')
       .delete()
       .in('id', ids)
@@ -361,7 +361,7 @@ router.post('/transaction/bulk-map-category', requireAuth, async (req, res) => {
       return res.json({ message: 'No valid stored transaction IDs to map.', transactions: [] });
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('finance_transactions')
       .update({ category })
       .in('id', validIds)
@@ -404,7 +404,7 @@ router.post('/debt', requireAuth, async (req, res) => {
     let result;
     if (id) {
       // Update
-      const { data: oldDebt } = await supabase
+      const { data: oldDebt } = await supabaseAdmin
         .from('finance_debts')
         .select('amount, remaining_amount')
         .eq('id', id)
@@ -414,7 +414,7 @@ router.post('/debt', requireAuth, async (req, res) => {
       const diff = parsedAmount - (oldDebt ? oldDebt.amount : 0);
       payload.remaining_amount = Math.max(0, (oldDebt ? oldDebt.remaining_amount : 0) + diff);
 
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAdmin
         .from('finance_debts')
         .update(payload)
         .eq('id', id)
@@ -426,7 +426,7 @@ router.post('/debt', requireAuth, async (req, res) => {
     } else {
       // Insert
       payload.remaining_amount = parsedAmount;
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAdmin
         .from('finance_debts')
         .insert(payload)
         .select()
@@ -452,7 +452,7 @@ router.post('/debt/:id/repay', requireAuth, async (req, res) => {
 
     const repayAmt = parseFloat(amount);
 
-    const { data: debt, error: fetchErr } = await supabase
+    const { data: debt, error: fetchErr } = await supabaseAdmin
       .from('finance_debts')
       .select('*')
       .eq('id', id)
@@ -466,7 +466,7 @@ router.post('/debt/:id/repay', requireAuth, async (req, res) => {
     const newStatus = newRemaining === 0 ? 'SETTLED' : 'ACTIVE';
 
     // 1. Update debt
-    const { data: updatedDebt, error: updateErr } = await supabase
+    const { data: updatedDebt, error: updateErr } = await supabaseAdmin
       .from('finance_debts')
       .update({
         remaining_amount: newRemaining,
@@ -487,7 +487,7 @@ router.post('/debt/:id/repay', requireAuth, async (req, res) => {
       : `Repaid debt to ${debt.person_name}`
     );
 
-    const { error: txErr } = await supabase
+    const { error: txErr } = await supabaseAdmin
       .from('finance_transactions')
       .insert({
         user_id: userId,
@@ -516,7 +516,7 @@ router.delete('/debt/:id', requireAuth, async (req, res) => {
     const userId = req.user.id;
     const { id } = req.params;
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('finance_debts')
       .delete()
       .eq('id', id)
@@ -548,7 +548,7 @@ router.post('/goals', requireAuth, async (req, res) => {
     };
 
     // Check if goal settings already exist for this user & asset class
-    const { data: existing } = await supabase
+    const { data: existing } = await supabaseAdmin
       .from('finance_goals')
       .select('id')
       .eq('user_id', userId)
@@ -557,7 +557,7 @@ router.post('/goals', requireAuth, async (req, res) => {
 
     let result;
     if (existing) {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAdmin
         .from('finance_goals')
         .update(payload)
         .eq('id', existing.id)
@@ -566,7 +566,7 @@ router.post('/goals', requireAuth, async (req, res) => {
       if (error) throw error;
       result = data;
     } else {
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAdmin
         .from('finance_goals')
         .insert(payload)
         .select()
@@ -600,7 +600,7 @@ router.post('/sms-webhook', async (req, res) => {
     }
 
     // 1. Get userId dynamically by looking up key in profiles table
-    const { data: profile, error: profileError } = await supabase
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('id')
       .eq('sms_api_key', apiKeyHeader)
@@ -671,7 +671,7 @@ router.post('/sms-webhook', async (req, res) => {
       status: 'PENDING'
     };
 
-    const { error: insertError } = await supabase
+    const { error: insertError } = await supabaseAdmin
       .from('staging_transactions')
       .insert(stagingPayload);
 
@@ -680,13 +680,13 @@ router.post('/sms-webhook', async (req, res) => {
     }
 
     // Immediately trigger reconciliation
-    const { error: reconcileError } = await supabase.rpc('reconcile_staging_transactions');
+    const { error: reconcileError } = await supabaseAdmin.rpc('reconcile_staging_transactions');
     if (reconcileError) {
       console.error('[SMSWebhookRoute] Immediate reconciliation failed:', reconcileError.message);
     }
 
     // Retrieve the processed transaction by its external_ref_id
-    const { data: insertedTx } = await supabase
+    const { data: insertedTx } = await supabaseAdmin
       .from('finance_transactions')
       .select('*')
       .eq('user_id', userId)
@@ -749,7 +749,7 @@ router.post('/import-staging', requireAuth, async (req, res) => {
       };
     });
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('staging_transactions')
       .insert(stagingPayload)
       .select('id');
@@ -782,7 +782,7 @@ async function syncTransactionToDebts(tx) {
       if (tx.type === 'EXPENSE') {
         // 1. Check if debt already exists for this tx
         const noteTag = `tx_id: ${tx.id}`;
-        const { data: existing } = await supabase
+        const { data: existing } = await supabaseAdmin
           .from('finance_debts')
           .select('id')
           .eq('user_id', userId)
@@ -810,7 +810,7 @@ async function syncTransactionToDebts(tx) {
           }
 
           // Insert new Lent entry
-          const { error } = await supabase
+          const { error } = await supabaseAdmin
             .from('finance_debts')
             .insert({
               user_id: userId,
@@ -828,7 +828,7 @@ async function syncTransactionToDebts(tx) {
         // Repayment received!
         // 1. Check if repayment tag already exists
         const noteTag = `repayment_tx_id: ${tx.id}`;
-        const { data: existing } = await supabase
+        const { data: existing } = await supabaseAdmin
           .from('finance_debts')
           .select('id')
           .eq('user_id', userId)
@@ -837,7 +837,7 @@ async function syncTransactionToDebts(tx) {
 
         if (!existing) {
           // Find the oldest active LENT debt for this user
-          const { data: activeDebts } = await supabase
+          const { data: activeDebts } = await supabaseAdmin
             .from('finance_debts')
             .select('*')
             .eq('user_id', userId)
@@ -858,7 +858,7 @@ async function syncTransactionToDebts(tx) {
               const updatedNotes = `${debt.notes || ''}\n[Repayment of ₹${deduct.toFixed(2)} received - ${noteTag}]`;
               const updatedStatus = newRemaining === 0 ? 'SETTLED' : 'ACTIVE';
 
-              const { error } = await supabase
+              const { error } = await supabaseAdmin
                 .from('finance_debts')
                 .update({
                   remaining_amount: newRemaining,
