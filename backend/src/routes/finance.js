@@ -161,16 +161,42 @@ router.post('/transaction', requireAuth, async (req, res) => {
     };
 
     let result;
-    if (id) {
-      // Update
-      const { data, error } = await supabase
+    if (id && !id.startsWith('temp_')) {
+      // Update existing record
+      let { data, error } = await supabase
         .from('finance_transactions')
         .update(payload)
         .eq('id', id)
         .eq('user_id', userId)
         .select()
         .maybeSingle();
-      if (error) throw error;
+
+      if (error && error.message && error.message.includes('column')) {
+        // Fallback for legacy DB schema missing newly added columns
+        console.warn('[FinanceRoute] Legacy DB schema detected, stripping optional columns for update:', error.message);
+        const fallbackPayload = {
+          user_id: userId,
+          date: payload.date,
+          amount: payload.amount,
+          type: payload.type,
+          category: payload.category,
+          method: payload.method,
+          description: payload.description,
+          source: payload.source
+        };
+        const fallbackRes = await supabase
+          .from('finance_transactions')
+          .update(fallbackPayload)
+          .eq('id', id)
+          .eq('user_id', userId)
+          .select()
+          .maybeSingle();
+        if (fallbackRes.error) throw fallbackRes.error;
+        data = fallbackRes.data;
+      } else if (error) {
+        throw error;
+      }
+
       result = data;
     } else {
       // Insert via staging
@@ -329,10 +355,16 @@ router.post('/transaction/bulk-map-category', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Invalid payload.' });
     }
 
+    const validIds = ids.filter(id => id && !id.startsWith('temp_'));
+
+    if (validIds.length === 0) {
+      return res.json({ message: 'No valid stored transaction IDs to map.', transactions: [] });
+    }
+
     const { data, error } = await supabase
       .from('finance_transactions')
       .update({ category })
-      .in('id', ids)
+      .in('id', validIds)
       .eq('user_id', userId)
       .select();
 
@@ -343,7 +375,7 @@ router.post('/transaction/bulk-map-category', requireAuth, async (req, res) => {
       await syncTransactionToDebts(tx);
     }
 
-    res.json({ message: `Successfully mapped ${ids.length} transactions to ${category}.`, transactions: data });
+    res.json({ message: `Successfully mapped ${validIds.length} transactions to ${category}.`, transactions: data });
   } catch (err) {
     console.error('[FinanceRoute] Bulk map category failed:', err.message);
     res.status(500).json({ error: err.message });
