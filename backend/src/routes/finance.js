@@ -144,7 +144,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
 router.post('/transaction', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { id, date, amount, type, category, method, description, source, linked_tx_id } = req.body;
+    const { id, date, amount, type, category, method, description, source, linked_tx_id, is_claimable, claim_status } = req.body;
 
     const payload = {
       user_id: userId,
@@ -155,7 +155,9 @@ router.post('/transaction', requireAuth, async (req, res) => {
       method: method || 'Cash',
       description,
       source: source || 'MANUAL',
-      linked_tx_id: linked_tx_id || null
+      linked_tx_id: linked_tx_id || null,
+      is_claimable: typeof is_claimable === 'boolean' ? is_claimable : false,
+      claim_status: claim_status || 'UNCLAIMED'
     };
 
     let result;
@@ -226,6 +228,46 @@ router.post('/transaction', requireAuth, async (req, res) => {
 
   } catch (err) {
     console.error('[FinanceRoute] Save transaction failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/finance/transaction/:id/toggle-claim ─────────────────────────
+router.post('/transaction/:id/toggle-claim', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { is_claimable, claim_status } = req.body;
+
+    const { data: tx, error: fetchErr } = await supabase
+      .from('finance_transactions')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (fetchErr || !tx) {
+      return res.status(404).json({ error: 'Transaction not found.' });
+    }
+
+    const updatedClaimable = typeof is_claimable === 'boolean' ? is_claimable : tx.is_claimable;
+    const updatedStatus = claim_status || (tx.claim_status === 'CLAIMED' ? 'UNCLAIMED' : 'CLAIMED');
+
+    const { data, error } = await supabase
+      .from('finance_transactions')
+      .update({
+        is_claimable: updatedClaimable,
+        claim_status: updatedStatus
+      })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    res.json({ message: 'Claim status updated.', transaction: data });
+  } catch (err) {
+    console.error('[FinanceRoute] Toggle claim failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
