@@ -14,6 +14,7 @@ import { ProfileSettings } from './pages/ProfileSettings';
 import { BuyConsiderations } from './pages/BuyConsiderations';
 import { Loader2 } from 'lucide-react';
 import { ToastContainer } from './components/ToastContainer';
+import { FloatingAssistantBar } from './components/FloatingAssistantBar';
 import { useToastStore } from './context/toastStore';
 
 import { SystemLogger } from './utils/logger';
@@ -125,6 +126,7 @@ function App() {
           {activeTab === 'buy-scanner' && <BuyConsiderations />}
         </div>
       </Navigation>
+      <FloatingAssistantBar setActiveTab={setActiveTab} />
       <ToastContainer />
     </>
   );

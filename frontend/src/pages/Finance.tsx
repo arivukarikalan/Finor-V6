@@ -2,12 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
   Edit2, UserMinus, UserPlus, Users, X, Link2, Briefcase,
-  Receipt, TrendingUp, BarChart3, Check, Search
+  Receipt, TrendingUp, BarChart3, Check, Search, AlertTriangle, Sparkles
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
-  AreaChart, Area, XAxis, YAxis, CartesianGrid
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid
 } from 'recharts';
 
 interface Transaction {
@@ -79,7 +79,6 @@ const fmt = (val: number) => `₹${val.toLocaleString('en-IN', { maximumFraction
 const formatTxDateTime = (dateStr: string) => {
   if (!dateStr) return { date: '-', time: '-' };
 
-  // YYYY-MM-DD date string without time
   if (dateStr.length === 10 && dateStr.includes('-') && !dateStr.includes('T')) {
     const [year, month, day] = dateStr.split('-');
     const dObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
@@ -112,6 +111,35 @@ const getCategoryIcon = (cat: string) => {
   return '💳';
 };
 
+// Finor AI Expense Classification Helper (Essential vs Avoidable / Impulse)
+const isAvoidableExpense = (category: string, description: string) => {
+  const cat = (category || '').toLowerCase();
+  const desc = (description || '').toLowerCase();
+  
+  // Unhealthy food / snacks / junk / dining out
+  if (cat.includes('snack') || desc.includes('zomato') || desc.includes('swiggy') || 
+      desc.includes('pizza') || desc.includes('bakery') || desc.includes('snack') || 
+      desc.includes('chai') || desc.includes('coffee') || desc.includes('starbucks') || 
+      desc.includes('beer') || desc.includes('pub') || desc.includes('bar') || 
+      desc.includes('liquor') || desc.includes('wine') || desc.includes('fast food') || desc.includes('junk')) {
+    return true;
+  }
+  // Impulse shopping
+  if (cat.includes('shopping') || desc.includes('myntra') || desc.includes('zara') || 
+      desc.includes('clothes') || desc.includes('fashion') || desc.includes('mall') || 
+      desc.includes('footwear') || desc.includes('amazon')) {
+    return true;
+  }
+  // Movies / Theatre / Entertainment
+  if (desc.includes('theatre') || desc.includes('movie') || desc.includes('cinema') || 
+      desc.includes('pvr') || desc.includes('inox') || desc.includes('bookmyshow') || 
+      desc.includes('netflix') || desc.includes('gaming') || desc.includes('concert') || 
+      desc.includes('party')) {
+    return true;
+  }
+  return false;
+};
+
 export const Finance: React.FC = () => {
   const [subTab, setSubTab] = useState<'wealth' | 'expenses' | 'debts'>('wealth');
   
@@ -119,6 +147,9 @@ export const Finance: React.FC = () => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [activeQuickMapTxId, setActiveQuickMapTxId] = useState<string | null>(null);
   const [popoverTab, setPopoverTab] = useState<'category' | 'link'>('category');
+
+  // Chart Mode: Daily Spending View (default) vs Cumulative Trajectory View
+  const [chartMode, setChartMode] = useState<'daily' | 'cumulative'>('daily');
 
   const handleQuickMapCategory = async (tx: Transaction, newCat: string) => {
     setActiveQuickMapTxId(null);
@@ -241,7 +272,7 @@ export const Finance: React.FC = () => {
   const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>(() => (sessionStorage.getItem('finor_filter_type') as any) || 'ALL');
   const [filterCategory, setFilterCategory] = useState(() => sessionStorage.getItem('finor_filter_category') || 'ALL');
   const [filterMethod, setFilterMethod] = useState(() => sessionStorage.getItem('finor_filter_method') || 'ALL');
-  const [filterClaimable, setFilterClaimable] = useState<'ALL' | 'UNCLAIMED' | 'CLAIMED' | 'PERSONAL'>(() => (sessionStorage.getItem('finor_filter_claimable') as any) || 'ALL');
+  const [filterClaimable, setFilterClaimable] = useState<'ALL' | 'UNCLAIMED' | 'CLAIMED' | 'PERSONAL' | 'AVOIDABLE' | 'ESSENTIAL'>(() => (sessionStorage.getItem('finor_filter_claimable') as any) || 'ALL');
   const [filterStartDate, setFilterStartDate] = useState(() => sessionStorage.getItem('finor_filter_start_date') || '');
   const [filterEndDate, setFilterEndDate] = useState(() => sessionStorage.getItem('finor_filter_end_date') || '');
 
@@ -380,11 +411,11 @@ export const Finance: React.FC = () => {
   // Reimbursable Company Claims Summary
   const unclaimedReimbursable = transactions
     .filter(t => t.is_claimable && (t.claim_status === 'UNCLAIMED' || !t.claim_status))
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
   const claimedReimbursable = transactions
     .filter(t => t.is_claimable && t.claim_status === 'CLAIMED')
-    .reduce((sum, t) => sum + t.amount, 0);
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
   // Exclude Investments and Lent/Friends from standard consumption expenses
   const isConsumptionExpense = (t: Transaction) => {
@@ -414,6 +445,13 @@ export const Finance: React.FC = () => {
     .filter(t => t.type === 'INCOME' && isCurrentMonth(t.date))
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
+  // Avoidable vs Essential Expense Breakdown Metrics for current month
+  const avoidableExpenses = transactions
+    .filter(t => isConsumptionExpense(t) && isCurrentMonth(t.date) && isAvoidableExpense(t.category, t.description))
+    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+  const essentialExpenses = Math.max(0, monthlyExpenses - avoidableExpenses);
+
   // Category wise breakdown (only consumption expenses)
   const categoryExpensesMap: { [key: string]: number } = {};
   transactions
@@ -428,7 +466,7 @@ export const Finance: React.FC = () => {
     value: categoryExpensesMap[cat]
   })).sort((a, b) => b.value - a.value);
 
-  // Daily Spending Trajectory Data for current month
+  // Daily Spending Trajectory & Per-day view Data for current month
   const dailySpendingsData = useMemo(() => {
     const daysMap: { [day: number]: number } = {};
     const now = new Date();
@@ -476,6 +514,10 @@ export const Finance: React.FC = () => {
       matchesClaimable = Boolean(tx.is_claimable) && tx.claim_status === 'CLAIMED';
     } else if (filterClaimable === 'PERSONAL') {
       matchesClaimable = !tx.is_claimable;
+    } else if (filterClaimable === 'AVOIDABLE') {
+      matchesClaimable = isAvoidableExpense(tx.category, tx.description);
+    } else if (filterClaimable === 'ESSENTIAL') {
+      matchesClaimable = !isAvoidableExpense(tx.category, tx.description);
     }
 
     let matchesDate = true;
@@ -802,7 +844,7 @@ export const Finance: React.FC = () => {
             <h3 className="text-sm font-extrabold text-white uppercase tracking-wider">Asset Allocation</h3>
             
             {chartData.length > 0 ? (
-              <div className="h-[200px] my-4">
+              <div className="h-[200px] my-4" style={{ minWidth: 0 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
@@ -918,44 +960,147 @@ export const Finance: React.FC = () => {
       {subTab === 'expenses' && (
         <div className="space-y-6">
           
+          {/* AI Finor Essential vs Avoidable Expense Smart Breakdown Banner */}
+          <div className="glass-panel rounded-3xl p-6 border border-amber-500/30 bg-gradient-to-r from-amber-500/5 via-dark-depth-1 to-brand-500/5 space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-dark-border/40 pb-4">
+              <div>
+                <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
+                  Finor AI Expense Segregation (Essential vs Avoidable)
+                </h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">AI automatically tags junk food, snacks, impulse shopping & movies as avoidable expenses.</p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="bg-dark-depth-2 px-3 py-1.5 rounded-xl border border-emerald-500/30 text-right">
+                  <span className="text-[9px] font-bold text-gray-400 block uppercase">🟢 Essential Spend</span>
+                  <span className="text-xs font-black text-emerald-400">{fmt(essentialExpenses)}</span>
+                </div>
+                <div className="bg-dark-depth-2 px-3 py-1.5 rounded-xl border border-rose-500/30 text-right">
+                  <span className="text-[9px] font-bold text-rose-400 block uppercase flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-rose-400" />
+                    ⚠️ Avoidable Spend
+                  </span>
+                  <span className="text-xs font-black text-rose-400">{fmt(avoidableExpenses)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Essential vs Avoidable Visual Ratio Bar */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[10px] font-extrabold">
+                <span className="text-emerald-400">Essential Needs ({monthlyExpenses > 0 ? Math.round((essentialExpenses / monthlyExpenses) * 100) : 100}%)</span>
+                <span className="text-rose-400">Avoidable / Impulse ({monthlyExpenses > 0 ? Math.round((avoidableExpenses / monthlyExpenses) * 100) : 0}%)</span>
+              </div>
+              <div className="w-full h-3 bg-dark-depth-2 rounded-full overflow-hidden flex border border-dark-border/60">
+                <div 
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full transition-all duration-500" 
+                  style={{ width: `${monthlyExpenses > 0 ? Math.round((essentialExpenses / monthlyExpenses) * 100) : 100}%` }} 
+                />
+                <div 
+                  className="bg-gradient-to-r from-rose-500 to-amber-500 h-full transition-all duration-500" 
+                  style={{ width: `${monthlyExpenses > 0 ? Math.round((avoidableExpenses / monthlyExpenses) * 100) : 0}%` }} 
+                />
+              </div>
+            </div>
+
+            {/* AI Smart Advice Tip */}
+            {avoidableExpenses > 0 && (
+              <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-2xl flex items-center justify-between gap-3 text-xs text-amber-300">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
+                  <span>
+                    <strong>Finor AI Tip:</strong> You spent <strong>{fmt(avoidableExpenses)}</strong> on snacks, impulse shopping or movies this month. Cutting this by 50% could add <strong>{fmt(avoidableExpenses / 2)}</strong> to your equity goals!
+                  </span>
+                </div>
+                <button
+                  onClick={() => setFilterClaimable('AVOIDABLE')}
+                  className="px-3 py-1 rounded-xl bg-amber-500 text-black text-[10px] font-extrabold hover:bg-amber-400 shrink-0 cursor-pointer"
+                >
+                  View Avoidable List
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Analytics Visual Dashboard Header Charts */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* Monthly Trajectory Outlook Area Chart */}
+            {/* Daily Spending View Chart (with Daily / Cumulative Toggle) */}
             <div className="lg:col-span-2 glass-panel rounded-3xl p-6 border border-dark-border flex flex-col justify-between space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
                     <TrendingUp className="w-4 h-4 text-brand-400" />
-                    Monthly Spending Outlook & Cumulative Trajectory
+                    {chartMode === 'daily' ? 'Daily Spending Breakdown' : 'Cumulative Spending Trajectory'}
                   </h3>
-                  <p className="text-[10px] text-gray-400 mt-0.5">Daily burn rate accumulation across current month ({new Date().toLocaleString('default', { month: 'long', year: 'numeric' })})</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">
+                    {chartMode === 'daily' ? 'Exact amount spent per day across current month' : 'Daily burn rate accumulation across current month'} ({new Date().toLocaleString('default', { month: 'long', year: 'numeric' })})
+                  </p>
                 </div>
-                <div className="text-right">
-                  <span className="text-[9px] font-bold text-gray-400 uppercase block">Total Month Spend</span>
-                  <span className="text-sm font-black text-rose-400">{fmt(monthlyExpenses)}</span>
+
+                <div className="flex items-center gap-3">
+                  {/* Mode Toggle Switch */}
+                  <div className="flex bg-dark-depth-2 p-1 rounded-xl border border-dark-border/60">
+                    <button
+                      onClick={() => setChartMode('daily')}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
+                        chartMode === 'daily' ? 'bg-brand-500 text-white shadow' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Daily Spend
+                    </button>
+                    <button
+                      onClick={() => setChartMode('cumulative')}
+                      className={`px-3 py-1 rounded-lg text-[10px] font-extrabold transition-all cursor-pointer ${
+                        chartMode === 'cumulative' ? 'bg-brand-500 text-white shadow' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Cumulative
+                    </button>
+                  </div>
+
+                  <div className="text-right hidden sm:block">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase block">Total Month Spend</span>
+                    <span className="text-sm font-black text-rose-400">{fmt(monthlyExpenses)}</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="h-[210px] w-full pt-2">
+              {/* Chart Render Container with minWidth: 0 to prevent Recharts console size warnings */}
+              <div className="h-[210px] w-full pt-2 min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={dailySpendingsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="spendGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4}/>
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 9 }} interval={4} />
-                    <YAxis tick={{ fill: '#64748b', fontSize: 9 }} tickFormatter={(val) => `₹${val}`} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#0f141f', borderColor: '#1e293b', borderRadius: '12px' }}
-                      itemStyle={{ color: '#fff', fontSize: '11px', fontWeight: 'bold' }}
-                      formatter={(val: any) => fmt(Number(val))}
-                    />
-                    <Area type="monotone" dataKey="cumulative" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#spendGradient)" name="Cumulative Spend" />
-                  </AreaChart>
+                  {chartMode === 'daily' ? (
+                    <BarChart data={dailySpendingsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 9 }} interval={4} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 9 }} tickFormatter={(val) => `₹${val}`} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#0f141f', borderColor: '#1e293b', borderRadius: '12px' }}
+                        itemStyle={{ color: '#fff', fontSize: '11px', fontWeight: 'bold' }}
+                        formatter={(val: any) => fmt(Number(val))}
+                      />
+                      <Bar dataKey="daily" fill="#6366f1" radius={[4, 4, 0, 0]} name="Daily Spend" />
+                    </BarChart>
+                  ) : (
+                    <AreaChart data={dailySpendingsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="spendGradient" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4}/>
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 9 }} interval={4} />
+                      <YAxis tick={{ fill: '#64748b', fontSize: 9 }} tickFormatter={(val) => `₹${val}`} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#0f141f', borderColor: '#1e293b', borderRadius: '12px' }}
+                        itemStyle={{ color: '#fff', fontSize: '11px', fontWeight: 'bold' }}
+                        formatter={(val: any) => fmt(Number(val))}
+                      />
+                      <Area type="monotone" dataKey="cumulative" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#spendGradient)" name="Cumulative Spend" />
+                    </AreaChart>
+                  )}
                 </ResponsiveContainer>
               </div>
             </div>
@@ -971,7 +1116,7 @@ export const Finance: React.FC = () => {
               </div>
 
               {categoryExpensesChartData.length > 0 ? (
-                <div className="h-[170px] my-2">
+                <div className="h-[170px] my-2" style={{ minWidth: 0 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
@@ -1085,10 +1230,12 @@ export const Finance: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Company Claimable Filter Pills */}
-                <div className="flex bg-dark-depth-2 border border-dark-border p-1 rounded-xl gap-1 overflow-x-auto">
+                {/* Company Claimable & Essential/Avoidable Filter Pills */}
+                <div className="flex bg-dark-depth-2 border border-dark-border p-1 rounded-xl gap-1 overflow-x-auto scrollbar-none">
                   {[
                     { id: 'ALL', label: 'All Expenses' },
+                    { id: 'AVOIDABLE', label: '⚠️ Avoidable' },
+                    { id: 'ESSENTIAL', label: '🟢 Essential' },
                     { id: 'UNCLAIMED', label: '💼 Unclaimed' },
                     { id: 'CLAIMED', label: '✅ Claimed' },
                     { id: 'PERSONAL', label: 'Personal' }
@@ -1096,8 +1243,10 @@ export const Finance: React.FC = () => {
                     <button
                       key={p.id}
                       onClick={() => setFilterClaimable(p.id as any)}
-                      className={`flex-1 py-1 px-2 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${
-                        filterClaimable === p.id ? 'bg-indigo-600 text-white shadow' : 'text-gray-400 hover:text-white'
+                      className={`flex-1 py-1 px-2.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${
+                        filterClaimable === p.id 
+                          ? p.id === 'AVOIDABLE' ? 'bg-rose-600 text-white shadow' : 'bg-indigo-600 text-white shadow'
+                          : 'text-gray-400 hover:text-white'
                       }`}
                     >
                       {p.label}
@@ -1219,6 +1368,7 @@ export const Finance: React.FC = () => {
                     <>
                       {filteredTransactions.map((tx) => {
                         const dt = formatTxDateTime(tx.date);
+                        const isAvoidable = isAvoidableExpense(tx.category, tx.description);
 
                         return (
                           <tr key={tx.id} className={`hover:bg-dark-depth-2/20 transition-colors ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
@@ -1296,7 +1446,15 @@ export const Finance: React.FC = () => {
 
                             <td className="p-4 text-gray-300 truncate max-w-xs" title={tx.description}>
                               <div>
-                                <span className="font-medium">{tx.description || '-'}</span>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-medium">{tx.description || '-'}</span>
+                                  {isAvoidable && (
+                                    <span className="px-1.5 py-0.5 rounded bg-rose-500/10 border border-rose-500/20 text-[8px] font-bold text-rose-400 flex items-center gap-0.5 shrink-0">
+                                      <AlertTriangle className="w-2.5 h-2.5" /> Avoidable
+                                    </span>
+                                  )}
+                                </div>
+
                                 {tx.linked_tx_id && (() => {
                                   const linked = transactions.find(t => t.id === tx.linked_tx_id);
                                   if (linked) {
@@ -1369,6 +1527,7 @@ export const Finance: React.FC = () => {
                 <>
                   {filteredTransactions.map((tx) => {
                     const dt = formatTxDateTime(tx.date);
+                    const isAvoidable = isAvoidableExpense(tx.category, tx.description);
 
                     return (
                       <div key={tx.id} className={`p-4 space-y-3 hover:bg-dark-depth-2/20 transition-all ${selectedTxIds.includes(tx.id) ? 'bg-brand-500/5' : ''}`}>
@@ -1392,6 +1551,7 @@ export const Finance: React.FC = () => {
                               {dt.time && <span className="text-gray-500 ml-1.5 font-mono">⏰ {dt.time}</span>}
                             </span>
                           </div>
+
                           <div className="flex items-center gap-1.5">
                             <button
                               onClick={() => {
@@ -1435,10 +1595,24 @@ export const Finance: React.FC = () => {
 
                         {/* Footer Badges */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                          <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-bold text-[9px] text-gray-200 flex items-center gap-1">
-                            <span>{getCategoryIcon(tx.category)}</span>
-                            {tx.category}
-                          </span>
+                          {/* Category Badge + Quick Link Button */}
+                          <div className="flex items-center gap-1">
+                            <span className="bg-dark-depth-2 px-2 py-0.5 rounded-lg border border-dark-border/60 font-bold text-[9px] text-gray-200 flex items-center gap-1">
+                              <span>{getCategoryIcon(tx.category)}</span>
+                              {tx.category}
+                            </span>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPopoverTab('category');
+                                setActiveQuickMapTxId(tx.id);
+                              }}
+                              className="text-gray-400 hover:text-brand-400 p-1 rounded bg-dark-depth-2/80 border border-dark-border/60 cursor-pointer"
+                              title="Quick Link / Map Category"
+                            >
+                              <Link2 className="w-3 h-3" />
+                            </button>
+                          </div>
 
                           <span className="bg-dark-depth-2/40 px-2 py-0.5 rounded-lg border border-dark-border/20 text-[9px] text-gray-400">
                             {tx.method}
@@ -1456,7 +1630,33 @@ export const Finance: React.FC = () => {
                               {tx.claim_status === 'CLAIMED' ? '✅ CLAIMED' : '💼 UNCLAIMED'}
                             </button>
                           )}
+
+                          {isAvoidable && (
+                            <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-0.5">
+                              <AlertTriangle className="w-2.5 h-2.5" /> AVOIDABLE
+                            </span>
+                          )}
                         </div>
+
+                        {/* Mobile Linked Transaction Badge */}
+                        {tx.linked_tx_id && (() => {
+                          const linked = transactions.find(t => t.id === tx.linked_tx_id);
+                          if (linked) {
+                            return (
+                              <div className="pt-1">
+                                <span className={`text-[9px] font-bold px-2 py-1 rounded-lg border block truncate ${
+                                  tx.type === 'EXPENSE' 
+                                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                                    : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                }`}>
+                                  🔗 {tx.type === 'EXPENSE' ? 'Recouped' : 'Part of'}: {linked.description || linked.category} ({linked.type === 'INCOME' ? '+' : '-'}₹{linked.amount})
+                                </span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+
                       </div>
                     );
                   })}
