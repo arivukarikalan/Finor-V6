@@ -1906,20 +1906,33 @@ export const More = ({
                   ref={scrollRef}
                   onScroll={handleScroll}
                   className={`flex-1 overflow-y-auto px-4 md:px-6 py-4 space-y-4 scrollbar-thin select-text ${
-                    isLightMode ? 'bg-white' : 'bg-dark-depth-1'
+                    isLightMode ? 'bg-slate-50/80' : 'bg-dark-depth-1'
                   }`}
                 >
                   {messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-center py-10 space-y-7 select-none animate-fadeIn max-w-3xl mx-auto w-full">
+                    <div className="flex flex-col items-center justify-center h-full text-center py-10 space-y-7 select-none animate-in fade-in zoom-in-95 duration-300 max-w-3xl mx-auto w-full relative">
+                      {/* Ambient Animated Glow Blob */}
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 rounded-full bg-brand-500/10 blur-[100px] pointer-events-none animate-pulse" />
+
                       {/* Welcome Section */}
-                      <div>
-                        <h4 className="text-4xl sm:text-5xl font-medium tracking-tight text-slate-100 font-display py-2">
+                      <div className="relative z-10 space-y-2">
+                        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-500 text-xs font-extrabold tracking-wider uppercase mb-2 animate-bounce">
+                          <Sparkles className="w-3.5 h-3.5" /> Finor AI Assistant
+                        </div>
+                        <h4 className={`text-4xl sm:text-5xl font-black tracking-tight font-display py-2 ${
+                          isLightMode 
+                            ? 'bg-gradient-to-r from-slate-950 via-indigo-950 to-purple-900 bg-clip-text text-transparent drop-shadow-sm' 
+                            : 'bg-gradient-to-r from-white via-indigo-100 to-purple-300 bg-clip-text text-transparent'
+                        }`}>
                           {greetingText}
                         </h4>
+                        <p className={`text-xs sm:text-sm font-medium ${isLightMode ? 'text-slate-600' : 'text-gray-400'}`}>
+                          Ask anything about your stock portfolio, transactions, risk metrics, or market outlook.
+                        </p>
                       </div>
 
                       {/* Gemini Center Input Box */}
-                      <div className="w-full max-w-2xl px-4 pt-1">
+                      <div className="w-full max-w-2xl px-4 pt-1 relative z-10">
                         {renderInputForm(true)}
                       </div>
                     </div>
@@ -1928,24 +1941,30 @@ export const More = ({
                       {messages.map((msg, idx) => {
                         const time = msg.timestamp || new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
                         return (
-                          <div key={idx} className="w-full">
+                          <div key={idx} className="w-full animate-in fade-in slide-in-from-bottom-3 duration-200">
                             {msg.role === 'user' ? (
                               <div className="flex justify-end w-full py-2.5">
-                                <div className="max-w-[70%] bg-neutral-800/60 border border-neutral-700/20 text-white rounded-3xl px-5 py-3 text-sm select-text leading-relaxed whitespace-pre-wrap shadow-sm">
-                                  <p className="select-text font-medium text-slate-100 tracking-wide">{msg.content}</p>
+                                <div className={`max-w-[80%] sm:max-w-[70%] rounded-3xl px-5 py-3 text-sm select-text leading-relaxed whitespace-pre-wrap shadow-md ${
+                                  isLightMode 
+                                    ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-indigo-200' 
+                                    : 'bg-neutral-800/60 border border-neutral-700/20 text-white'
+                                }`}>
+                                  <p className="select-text font-medium tracking-wide">{msg.content}</p>
                                 </div>
                               </div>
                             ) : (
-                              <div className="flex justify-start w-full py-5 items-start gap-4 border-b border-dark-border/10">
+                              <div className={`flex justify-start w-full py-5 items-start gap-4 border-b ${
+                                isLightMode ? 'border-slate-200/60' : 'border-dark-border/10'
+                              }`}>
                                 {/* Avatar Sparkle Logo */}
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg shrink-0 select-none bg-gradient-to-tr from-blue-600 via-indigo-500 to-purple-500 border border-white/10 text-white`}>
+                                <div className="w-8 h-8 rounded-2xl flex items-center justify-center shadow-lg shrink-0 select-none bg-gradient-to-tr from-brand-500 via-indigo-500 to-purple-500 border border-white/20 text-white">
                                   <Sparkles className="w-4.5 h-4.5 animate-pulse" />
                                 </div>
                                 
-                                {/* Message Content Container (No bubble, no card background!) */}
+                                {/* Message Content Container */}
                                 <div className="flex-1 space-y-2.5 min-w-0 select-text">
                                   <div className="flex items-center gap-2">
-                                    <span className="text-xs font-black text-white tracking-wide">
+                                    <span className={`text-xs font-black tracking-wide ${isLightMode ? 'text-slate-900 font-extrabold' : 'text-white'}`}>
                                       Finor AI Coach
                                     </span>
                                     {msg.engine && (
