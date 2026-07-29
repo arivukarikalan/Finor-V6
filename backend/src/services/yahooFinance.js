@@ -52,25 +52,29 @@ export async function fetchLTPYahoo(symbol) {
       throw new Error(`LTP is undefined for ${ticker}`);
     }
 
-    let fiftyTwoWeekHigh = null;
-    let fiftyTwoWeekLow = null;
-    try {
-      const quoteUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}`;
-      const qRes = await fetchWithTimeout(quoteUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    let fiftyTwoWeekHigh = result.meta?.fiftyTwoWeekHigh || null;
+    let fiftyTwoWeekLow = result.meta?.fiftyTwoWeekLow || null;
+
+    if (!fiftyTwoWeekHigh || !fiftyTwoWeekLow) {
+      try {
+        const y1Url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y`;
+        const y1Res = await fetchWithTimeout(y1Url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          }
+        }, 6000);
+        if (y1Res.ok) {
+          const y1Json = await y1Res.json();
+          const y1Meta = y1Json?.chart?.result?.[0]?.meta;
+          const quoteHighs = (y1Json?.chart?.result?.[0]?.indicators?.quote?.[0]?.high || []).filter((v) => typeof v === 'number' && !isNaN(v) && v > 0);
+          const quoteLows = (y1Json?.chart?.result?.[0]?.indicators?.quote?.[0]?.low || []).filter((v) => typeof v === 'number' && !isNaN(v) && v > 0);
+
+          fiftyTwoWeekHigh = y1Meta?.fiftyTwoWeekHigh || (quoteHighs.length > 0 ? Math.max(...quoteHighs) : null);
+          fiftyTwoWeekLow = y1Meta?.fiftyTwoWeekLow || (quoteLows.length > 0 ? Math.min(...quoteLows) : null);
         }
-      }, 5000);
-      if (qRes.ok) {
-        const qJson = await qRes.json();
-        const quote = qJson?.quoteResponse?.result?.[0];
-        if (quote) {
-          fiftyTwoWeekHigh = quote.fiftyTwoWeekHigh || null;
-          fiftyTwoWeekLow = quote.fiftyTwoWeekLow || null;
-        }
+      } catch (e) {
+        console.warn(`[YahooFinance 1Y Fetch] Failed for ${ticker}:`, e.message);
       }
-    } catch (e) {
-      console.warn(`[YahooFinance Quote] Failed to fetch quote details for ${ticker}:`, e.message);
     }
     
     return {

@@ -13,7 +13,7 @@ import {
   X,
   Newspaper,
   Calendar,
-  ArrowUpRight
+  Briefcase
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 
@@ -22,13 +22,22 @@ interface Candidate {
   name: string;
   avgBuyPrice: number;
   currentPrice: number;
-  allTimeHigh: number;
+  allTimeHigh: number | null;
   fiftyTwoWeekHigh: number | null;
   fiftyTwoWeekLow: number | null;
   dipPercent: number;
   convictionScore: number;
   reason: string;
   sector: string;
+  // Holding & 10% Portfolio Weight fields
+  heldQuantity: number;
+  heldAvgPrice: number;
+  heldCurrentValue: number;
+  portfolioWeightPct: number;
+  maxAllowedAmount10Pct: number;
+  remainingCapacity10Pct: number;
+  maxAccumulateQty10Pct: number;
+  isMaxAllocationReached: boolean;
 }
 
 interface Article {
@@ -57,6 +66,7 @@ export const BuyConsiderations = () => {
   const [riskProfile, setRiskProfile] = useState<'conservative' | 'moderate' | 'aggressive'>('moderate');
   const [searchQuery, setSearchQuery] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [totalPortfolioValue, setTotalPortfolioValue] = useState<number>(0);
   
   // News and Corporate Actions Cache for Modal display
   const [newsFeed, setNewsFeed] = useState<Article[]>([]);
@@ -81,7 +91,18 @@ export const BuyConsiderations = () => {
       setNewsFeed(newsData || []);
       setCorporateActions(actionsData || { upcoming: [], past: [] });
 
-      // Collect all unique symbols we ever traded
+      // Calculate Total Active Portfolio Value
+      let totalPortfolioVal = 0;
+      if (Array.isArray(holdingsData)) {
+        holdingsData.forEach((h: any) => {
+          const qty = h.quantity || 0;
+          const price = h.ltp || h.average_buy_price || 0;
+          totalPortfolioVal += qty * price;
+        });
+      }
+      setTotalPortfolioValue(totalPortfolioVal);
+
+      // Collect all unique symbols we ever traded or currently hold
       const allSymbols = new Set<string>();
       const symbolNames: Record<string, string> = {};
       
@@ -112,7 +133,7 @@ export const BuyConsiderations = () => {
         });
       }
 
-      // Fetch live LTP values from Yahoo Finance for all symbols
+      // Fetch live LTP, 52W High & Low values from Yahoo Finance for all symbols
       const symbolsArray = Array.from(allSymbols);
       const ltpMap: Record<string, { ltp: number; high52: number | null; low52: number | null }> = {};
       
@@ -131,7 +152,7 @@ export const BuyConsiderations = () => {
         }
       }));
 
-      // Map fundamentals, dip reasons and conviction scores
+      // Map fundamentals, dip reasons, conviction scores & 10% portfolio weighting limit
       const parsedCandidates: Candidate[] = Array.from(allSymbols).map(sym => {
         const currentHolding = holdingsData?.find((h: any) => h.stock_symbol.toUpperCase() === sym);
         
@@ -141,17 +162,33 @@ export const BuyConsiderations = () => {
         } else if (buyQuantities[sym] > 0) {
           avgPrice = buyAmounts[sym] / buyQuantities[sym];
         } else {
-          avgPrice = 1200; // Fallback default average buy price if no trades found
+          avgPrice = 1200;
         }
 
         const quote = ltpMap[sym];
-        const currentPrice = quote?.ltp || currentHolding?.ltp || avgPrice * 0.85;
-        const fiftyTwoWeekHigh = quote?.high52 || currentHolding?.fiftyTwoWeekHigh || avgPrice * 1.35;
-        const fiftyTwoWeekLow = quote?.low52 || currentHolding?.fiftyTwoWeekLow || avgPrice * 0.75;
+        const currentPrice = quote?.ltp || currentHolding?.ltp || avgPrice;
+        
+        // Exact 52-Week High & Low (null if unavailable, no fake multipliers)
+        const fiftyTwoWeekHigh = quote?.high52 ?? currentHolding?.fiftyTwoWeekHigh ?? null;
+        const fiftyTwoWeekLow = quote?.low52 ?? currentHolding?.fiftyTwoWeekLow ?? null;
         const athPrice = fiftyTwoWeekHigh;
 
+        // Existing holdings details
+        const heldQuantity = currentHolding ? (currentHolding.quantity || 0) : 0;
+        const heldAvgPrice = currentHolding ? (currentHolding.average_buy_price || avgPrice) : avgPrice;
+        const heldCurrentValue = heldQuantity * currentPrice;
+        
+        // Portfolio weight percentage
+        const portfolioWeightPct = totalPortfolioVal > 0 ? (heldCurrentValue / totalPortfolioVal) * 100 : 0;
+        
+        // 10% Portfolio Weighting Limit Rules
+        const maxAllowedAmount10Pct = totalPortfolioVal > 0 ? totalPortfolioVal * 0.10 : 50000;
+        const remainingCapacity10Pct = Math.max(0, maxAllowedAmount10Pct - heldCurrentValue);
+        const maxAccumulateQty10Pct = currentPrice > 0 ? Math.floor(remainingCapacity10Pct / currentPrice) : 0;
+        const isMaxAllocationReached = heldQuantity > 0 && portfolioWeightPct >= 10.0;
+
         // Dip calculation relative to average purchase price
-        const dipPercent = ((currentPrice - avgPrice) / avgPrice) * 100;
+        const dipPercent = avgPrice > 0 ? ((currentPrice - avgPrice) / avgPrice) * 100 : 0;
 
         // Smart DIP reason mapping
         let reason = "Profit booking and short-term market consolidation.";
@@ -190,7 +227,15 @@ export const BuyConsiderations = () => {
           dipPercent,
           convictionScore,
           reason,
-          sector
+          sector,
+          heldQuantity,
+          heldAvgPrice,
+          heldCurrentValue,
+          portfolioWeightPct,
+          maxAllowedAmount10Pct,
+          remainingCapacity10Pct,
+          maxAccumulateQty10Pct,
+          isMaxAllocationReached
         };
       })
       .filter(c => c.dipPercent < 0)
@@ -203,7 +248,7 @@ export const BuyConsiderations = () => {
       setTimeout(() => {
         setLoading(false);
         setScanning(false);
-      }, 1500);
+      }, 1200);
     }
   };
 
@@ -219,31 +264,37 @@ export const BuyConsiderations = () => {
 
   const getSimulatedSuggestion = (c: Candidate) => {
     const mult = getRiskMultiplier();
-    const suggestedQty = Math.round((5000 / c.currentPrice) * mult);
-    
-    if (riskProfile === 'conservative') {
-      const waitPrice = c.currentPrice * 0.95;
+    let baseQty = Math.max(1, Math.round((5000 / c.currentPrice) * mult));
+
+    if (c.isMaxAllocationReached) {
       return {
-        action: 'WAIT & ACCUMULATE',
-        qty: suggestedQty,
-        price: waitPrice,
-        text: `Suggest waiting for a deeper discount around ₹${waitPrice.toFixed(2)} to minimize downside risk.`
-      };
-    } else if (riskProfile === 'aggressive') {
-      return {
-        action: 'BUY NOW',
-        qty: suggestedQty,
+        action: 'MAX ALLOCATION (10% CAP)',
+        qty: 0,
         price: c.currentPrice,
-        text: `Asset heavily discounted. Buy ${suggestedQty} QTY immediately at LTP to capture fast recovery.`
-      };
-    } else {
-      return {
-        action: 'ACCUMULATE HALF NOW',
-        qty: Math.max(1, Math.round(suggestedQty / 2)),
-        price: c.currentPrice,
-        text: `Buy 50% now at ₹${c.currentPrice.toFixed(2)} and add remaining if price slides to ₹${(c.currentPrice * 0.97).toFixed(2)}.`
+        isCapReached: true,
+        text: `⚠️ Max 10% portfolio allocation cap reached (Weight: ${c.portfolioWeightPct.toFixed(1)}%). Do not add more shares to maintain risk diversification.`
       };
     }
+
+    const safeQty = c.maxAccumulateQty10Pct > 0 ? Math.min(baseQty, c.maxAccumulateQty10Pct) : baseQty;
+
+    if (c.heldQuantity > 0) {
+      return {
+        action: 'ACCUMULATE MORE',
+        qty: safeQty,
+        price: c.currentPrice,
+        isCapReached: false,
+        text: `⚡ Existing Position: ${c.heldQuantity} QTY (Weight: ${c.portfolioWeightPct.toFixed(1)}%). Accumulate up to +${c.maxAccumulateQty10Pct} additional shares (Max ₹${c.remainingCapacity10Pct.toFixed(0)}) before reaching 10% portfolio limit.`
+      };
+    }
+
+    return {
+      action: 'BUY FRESH POSITION',
+      qty: safeQty,
+      price: c.currentPrice,
+      isCapReached: false,
+      text: `Fresh position opportunity. Recommended initial entry of ${safeQty} shares at ₹${c.currentPrice.toFixed(2)} (Limit: ${c.maxAccumulateQty10Pct} shares for 10% portfolio cap).`
+    };
   };
 
   const filteredCandidates = candidates.filter(
@@ -272,7 +323,7 @@ export const BuyConsiderations = () => {
         <div>
           <h1 className="text-3xl font-extrabold font-display text-white tracking-tight">Considerations for Buying</h1>
           <p className="text-xs text-gray-400 mt-1">
-            Analyzing your past traded assets currently trading at a discount.
+            Analyzing active holdings {totalPortfolioValue > 0 ? `(Portfolio Value: ₹${totalPortfolioValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })})` : ''} trading at a discount with a 10% max single-stock cap.
           </p>
         </div>
 
@@ -338,9 +389,9 @@ export const BuyConsiderations = () => {
             </div>
           </div>
           <div className="text-center space-y-2">
-            <h3 className="text-sm font-bold text-white uppercase tracking-widest animate-pulse">Running Deep Value Scanner</h3>
+            <h3 className="text-sm font-bold text-white uppercase tracking-widest animate-pulse">Running Deep Value & Allocation Scanner</h3>
             <p className="text-[10px] text-gray-400 max-w-xs mx-auto leading-relaxed">
-              Evaluating trade histories, previous average buy prices, current Ltp values, and sector trends to locate undervalued opportunities.
+              Evaluating live quotes, 52W High/Low metrics, existing holdings weight, and 10% portfolio caps.
             </p>
           </div>
         </div>
@@ -390,8 +441,52 @@ export const BuyConsiderations = () => {
                     </div>
                   </div>
 
+                  {/* Existing Holding Status & 10% Allocation Progress Bar */}
+                  <div className="mt-4 bg-dark-depth-2/60 border border-dark-border/60 p-3 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-extrabold">
+                      <span className="text-gray-300 flex items-center gap-1.5">
+                        <Briefcase className="w-3.5 h-3.5 text-brand-400" />
+                        {c.heldQuantity > 0 ? (
+                          <span>In Portfolio: <strong>{c.heldQuantity} Qty</strong> (₹{c.heldCurrentValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })})</span>
+                        ) : (
+                          <span className="text-gray-400">Not currently in portfolio (Fresh Buy)</span>
+                        )}
+                      </span>
+
+                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
+                        c.isMaxAllocationReached
+                          ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                          : c.heldQuantity > 0
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                          : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20'
+                      }`}>
+                        {c.isMaxAllocationReached ? '10% Cap Reached' : c.heldQuantity > 0 ? 'Accumulate Available' : 'Fresh Entry'}
+                      </span>
+                    </div>
+
+                    {/* 10% Allocation Weight Bar */}
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[9px] text-gray-400 font-bold">
+                        <span>Portfolio Weight: {c.portfolioWeightPct.toFixed(1)}%</span>
+                        <span>Max Cap: 10.0%</span>
+                      </div>
+                      <div className="w-full h-2 bg-dark-depth-1 rounded-full overflow-hidden border border-dark-border/40">
+                        <div 
+                          className={`h-full transition-all duration-500 ${
+                            c.portfolioWeightPct >= 10.0 
+                              ? 'bg-rose-500' 
+                              : c.portfolioWeightPct >= 7.5 
+                              ? 'bg-amber-500' 
+                              : 'bg-brand-500'
+                          }`}
+                          style={{ width: `${Math.min(100, (c.portfolioWeightPct / 10.0) * 100)}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Prices & Dip bar */}
-                  <div className="grid grid-cols-3 gap-2 bg-dark-depth-2/40 border border-dark-border/40 p-3.5 rounded-2xl mt-4 select-none">
+                  <div className="grid grid-cols-3 gap-2 bg-dark-depth-2/40 border border-dark-border/40 p-3.5 rounded-2xl mt-3 select-none">
                     <div>
                       <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider block">Avg Buy Price</span>
                       <span className="text-xs font-bold text-gray-300 mt-1 block">₹{c.avgBuyPrice.toFixed(2)}</span>
@@ -409,20 +504,24 @@ export const BuyConsiderations = () => {
                     </div>
                   </div>
 
-                  {/* 52-Week High & Low Section */}
+                  {/* Real 52-Week High & Low Section */}
                   <div className="grid grid-cols-2 gap-2 mt-2 bg-dark-depth-2/20 border border-dark-border/20 px-3.5 py-2 rounded-xl text-[10px] text-gray-400 select-none">
                     <div className="flex justify-between border-r border-dark-border/30 pr-2">
                       <span>52W Low</span>
-                      <strong className="text-white">₹{c.fiftyTwoWeekLow ? c.fiftyTwoWeekLow.toFixed(2) : '-'}</strong>
+                      <strong className="text-white">
+                        {c.fiftyTwoWeekLow !== null ? `₹${c.fiftyTwoWeekLow.toFixed(2)}` : 'N/A'}
+                      </strong>
                     </div>
                     <div className="flex justify-between pl-2">
                       <span>52W High</span>
-                      <strong className="text-white">₹{c.fiftyTwoWeekHigh ? c.fiftyTwoWeekHigh.toFixed(2) : '-'}</strong>
+                      <strong className="text-white">
+                        {c.fiftyTwoWeekHigh !== null ? `₹${c.fiftyTwoWeekHigh.toFixed(2)}` : 'N/A'}
+                      </strong>
                     </div>
                   </div>
 
                   {/* Fall Reason */}
-                  <div className="mt-4 p-3 rounded-2xl bg-rose-500/5 border border-rose-500/10 flex gap-2.5 items-start text-xs select-none">
+                  <div className="mt-3 p-3 rounded-2xl bg-rose-500/5 border border-rose-500/10 flex gap-2.5 items-start text-xs select-none">
                     <Info className="w-4 h-4 text-rose-450 shrink-0 mt-0.5" />
                     <div>
                       <span className="font-extrabold text-white block uppercase text-[9px] tracking-wide">Dip Reason</span>
@@ -436,11 +535,11 @@ export const BuyConsiderations = () => {
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wide flex items-center gap-1.5">
                       <Coins className="w-3.5 h-3.5 text-brand-400" />
-                      Buy Simulation Trigger
+                      Accumulation Strategy Trigger
                     </span>
                     <span className={`text-[9px] font-black px-2.5 py-0.5 rounded-full border ${
-                      riskProfile === 'conservative' 
-                        ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' 
+                      c.isMaxAllocationReached
+                        ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
                         : 'bg-brand-500/10 border-brand-500/20 text-brand-400'
                     }`}>
                       {simulated.action}
@@ -453,8 +552,10 @@ export const BuyConsiderations = () => {
 
                   <div className="flex items-center gap-3">
                     <div className="flex-1 bg-dark-depth-2/60 border border-dark-border p-3 rounded-2xl select-none">
-                      <span className="text-[8px] text-gray-500 font-bold uppercase block">Suggested Qty</span>
-                      <span className="text-sm font-black text-white mt-0.5 block">{simulated.qty} Shares</span>
+                      <span className="text-[8px] text-gray-500 font-bold uppercase block">Suggested Accumulate</span>
+                      <span className="text-sm font-black text-white mt-0.5 block">
+                        {simulated.qty > 0 ? `${simulated.qty} Shares` : '0 Shares (Cap)'}
+                      </span>
                     </div>
                     <div className="flex-1 bg-dark-depth-2/60 border border-dark-border p-3 rounded-2xl select-none">
                       <span className="text-[8px] text-gray-500 font-bold uppercase block">Target Price</span>
@@ -462,6 +563,7 @@ export const BuyConsiderations = () => {
                     </div>
 
                     <button
+                      disabled={simulated.qty === 0}
                       onClick={() => {
                         window.dispatchEvent(new CustomEvent('finor-switch-tab', {
                           detail: {
@@ -473,8 +575,8 @@ export const BuyConsiderations = () => {
                           }
                         }));
                       }}
-                      className="h-12 w-12 rounded-2xl bg-brand-600 hover:bg-brand-500 border border-brand-500/20 text-white flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-lg shadow-brand-700/15"
-                      title="Place GTT Limit Buy Order"
+                      className="h-12 w-12 rounded-2xl bg-brand-600 hover:bg-brand-500 disabled:opacity-40 disabled:hover:bg-brand-600 border border-brand-500/20 text-white flex items-center justify-center transition-all cursor-pointer shrink-0 shadow-lg shadow-brand-700/15"
+                      title={simulated.qty > 0 ? "Place Accumulation GTT Order" : "10% Allocation Cap Reached"}
                     >
                       <ArrowRight className="w-5 h-5" />
                     </button>
@@ -498,152 +600,105 @@ export const BuyConsiderations = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-start justify-between border-b border-dark-border/40 pb-4 flex-shrink-0 select-none">
+            <div className="flex items-center justify-between border-b border-dark-border/60 pb-4">
               <div>
-                <h3 className="text-lg font-extrabold text-white tracking-tight flex items-center gap-2">
-                  {selectedStock.symbol} News & Corporate Action Updates
+                <h3 className="text-lg font-black text-white flex items-center gap-2">
+                  {selectedStock.symbol}
+                  <span className="text-xs font-semibold text-gray-400 font-sans">({selectedStock.name})</span>
                 </h3>
-                <span className="text-[10px] text-gray-500 mt-1 block font-semibold uppercase tracking-wider">
-                  {selectedStock.name}
-                </span>
+                <p className="text-[10px] text-gray-400 mt-0.5">Live events, fundamental news & corporate action schedule</p>
               </div>
+
               <button
                 onClick={() => setSelectedStock(null)}
-                className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-dark-depth-2/60 transition-colors cursor-pointer"
+                className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-dark-depth-2 transition-all"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            {/* Modal Navigation tabs */}
-            <div className="flex bg-dark-depth-2/60 p-1 rounded-xl gap-1 mt-4 flex-shrink-0 select-none">
+            {/* Modal Tabs */}
+            <div className="flex border-b border-dark-border/40 my-3 gap-4 text-xs font-extrabold uppercase">
               <button
                 onClick={() => setModalTab('news')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  modalTab === 'news'
-                    ? 'bg-brand-500 text-white shadow-md'
-                    : 'text-gray-400 hover:text-white'
+                className={`py-2 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+                  modalTab === 'news' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
                 }`}
               >
-                <Newspaper className="w-4 h-4" />
-                Recent News Articles ({selectedNews.length})
+                <Newspaper className="w-3.5 h-3.5" />
+                Latest News ({selectedNews.length})
               </button>
               <button
                 onClick={() => setModalTab('actions')}
-                className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                  modalTab === 'actions'
-                    ? 'bg-brand-500 text-white shadow-md'
-                    : 'text-gray-400 hover:text-white'
+                className={`py-2 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+                  modalTab === 'actions' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
                 }`}
               >
-                <Calendar className="w-4 h-4" />
-                Events Calendar ({selectedUpcomingEvents.length + selectedPastEvents.length})
+                <Calendar className="w-3.5 h-3.5" />
+                Corporate Actions ({selectedUpcomingEvents.length + selectedPastEvents.length})
               </button>
             </div>
 
-            {/* Modal Body Contents scroll zone */}
-            <div className="mt-4 flex-grow overflow-y-auto space-y-4 pr-1">
-              
-              {modalTab === 'news' && (
-                selectedNews.length === 0 ? (
-                  <div className="py-12 text-center text-gray-500 select-none">
-                    <Newspaper className="w-10 h-10 text-gray-600 mx-auto mb-2" />
-                    <p className="text-xs">No recent news reports cached for {selectedStock.symbol}.</p>
-                  </div>
+            {/* Tab 1: News Articles */}
+            {modalTab === 'news' && (
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
+                {selectedNews.length > 0 ? (
+                  selectedNews.map((article, idx) => (
+                    <a
+                      key={idx}
+                      href={article.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-3.5 rounded-2xl bg-dark-depth-2/40 border border-dark-border/40 hover:border-brand-500/40 transition-all space-y-1.5 group"
+                    >
+                      <div className="flex items-center justify-between text-[9px] text-gray-400">
+                        <span className="font-bold text-brand-400">{article.source}</span>
+                        <span>{new Date(article.publishedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span>
+                      </div>
+                      <h4 className="font-bold text-white group-hover:text-brand-300 transition-colors line-clamp-2">{article.title}</h4>
+                      <p className="text-[10px] text-gray-400 line-clamp-2 leading-relaxed">{article.description}</p>
+                    </a>
+                  ))
                 ) : (
-                  <div className="space-y-3">
-                    {selectedNews.map((art, idx) => (
-                      <a
-                        key={idx}
-                        href={art.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block bg-dark-depth-2/45 border border-dark-border/40 p-4 rounded-2xl hover:border-brand-500/35 transition-all select-none"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="space-y-1">
-                            <span className="text-[9px] font-extrabold uppercase text-brand-400 tracking-wider">
-                              {art.source || 'Media Report'}
-                            </span>
-                            <h4 className="text-xs font-extrabold text-white leading-snug pr-4">
-                              {art.title}
-                            </h4>
-                          </div>
-                          <ArrowUpRight className="w-4 h-4 text-gray-500 shrink-0 group-hover:text-white" />
+                  <div className="p-8 text-center text-gray-500 text-xs font-semibold">
+                    No recent news articles logged for {selectedStock.symbol}.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab 2: Corporate Actions */}
+            {modalTab === 'actions' && (
+              <div className="flex-1 overflow-y-auto space-y-3 pr-1 text-xs">
+                {selectedUpcomingEvents.length > 0 || selectedPastEvents.length > 0 ? (
+                  <>
+                    {selectedUpcomingEvents.map((ca, idx) => (
+                      <div key={`up-${idx}`} className="p-3.5 rounded-2xl bg-brand-500/10 border border-brand-500/20 space-y-1">
+                        <div className="flex items-center justify-between text-[9px] font-bold text-brand-400">
+                          <span>UPCOMING: {ca.type}</span>
+                          <span>{ca.date}</span>
                         </div>
-                        <p className="text-[10px] text-gray-400 mt-2 leading-relaxed">
-                          {art.description}
-                        </p>
-                        <div className="flex items-center justify-between text-[8px] text-gray-500 mt-3 pt-2 border-t border-dark-border/10 font-bold uppercase">
-                          <span>
-                            {new Date(art.publishedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded ${
-                            art.sentiment === 'POSITIVE'
-                              ? 'bg-emerald-500/10 text-emerald-400'
-                              : art.sentiment === 'NEGATIVE'
-                                ? 'bg-rose-500/10 text-rose-450'
-                                : 'bg-gray-500/10 text-gray-400'
-                          }`}>
-                            {art.sentiment}
-                          </span>
-                        </div>
-                      </a>
+                        <p className="text-white font-semibold text-xs">{ca.description}</p>
+                      </div>
                     ))}
-                  </div>
-                )
-              )}
-
-              {modalTab === 'actions' && (
-                (selectedUpcomingEvents.length === 0 && selectedPastEvents.length === 0) ? (
-                  <div className="py-12 text-center text-gray-500 select-none">
-                    <Calendar className="w-10 h-10 text-gray-600 mx-auto mb-2" />
-                    <p className="text-xs">No board meetings or corporate events on record.</p>
-                  </div>
+                    {selectedPastEvents.map((ca, idx) => (
+                      <div key={`past-${idx}`} className="p-3.5 rounded-2xl bg-dark-depth-2/40 border border-dark-border/40 space-y-1">
+                        <div className="flex items-center justify-between text-[9px] font-bold text-gray-400">
+                          <span>{ca.type}</span>
+                          <span>{ca.date}</span>
+                        </div>
+                        <p className="text-gray-300 font-semibold text-xs">{ca.description}</p>
+                      </div>
+                    ))}
+                  </>
                 ) : (
-                  <div className="space-y-4">
-                    {/* Upcoming Events */}
-                    {selectedUpcomingEvents.length > 0 && (
-                      <div className="space-y-2">
-                        <span className="text-[10px] text-brand-400 font-extrabold uppercase tracking-widest block">Upcoming Corporate Actions</span>
-                        {selectedUpcomingEvents.map((ca, idx) => (
-                          <div key={idx} className="bg-emerald-500/5 border border-emerald-500/10 p-4 rounded-2xl select-none">
-                            <div className="flex justify-between items-start mb-1">
-                              <span className="text-xs font-black text-white">{ca.type}</span>
-                              <span className="text-[9px] text-emerald-400 font-extrabold">UPCOMING</span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 leading-relaxed">{ca.description}</p>
-                            <span className="text-[8px] text-gray-500 font-bold uppercase block mt-2">
-                              Date: {new Date(ca.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Past Events */}
-                    {selectedPastEvents.length > 0 && (
-                      <div className="space-y-2">
-                        <span className="text-[10px] text-gray-500 font-extrabold uppercase tracking-widest block">Past Corporate Actions</span>
-                        {selectedPastEvents.map((ca, idx) => (
-                          <div key={idx} className="bg-dark-depth-2/45 border border-dark-border/40 p-4 rounded-2xl select-none">
-                            <div className="flex justify-between items-start mb-1">
-                              <span className="text-xs font-black text-white">{ca.type}</span>
-                              <span className="text-[9px] text-gray-500 font-extrabold">HISTORICAL</span>
-                            </div>
-                            <p className="text-[10px] text-gray-400 leading-relaxed">{ca.description}</p>
-                            <span className="text-[8px] text-gray-500 font-bold uppercase block mt-2">
-                              Date: {new Date(ca.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                  <div className="p-8 text-center text-gray-500 text-xs font-semibold">
+                    No corporate actions listed for {selectedStock.symbol}.
                   </div>
-                )
-              )}
+                )}
+              </div>
+            )}
 
-            </div>
           </div>
         </div>
       )}
