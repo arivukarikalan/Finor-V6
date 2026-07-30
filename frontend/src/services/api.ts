@@ -31,25 +31,25 @@ class FinorDatabase extends Dexie {
 
 export const db = new FinorDatabase();
 
-async function saveToCache(key: string, data: any) {
+export async function saveSnapshot(key: string, data: any) {
   try {
     await db.apiCache.put({ key, data, timestamp: Date.now() });
   } catch (e) {
-    console.error('Failed to write to IndexedDB:', e);
+    console.error('Failed to write snapshot to IndexedDB:', e);
   }
 }
 
-async function getFromCache(key: string) {
+export async function getSnapshot<T = any>(key: string): Promise<T | null> {
   try {
     const entry = await db.apiCache.get(key);
-    return entry ? entry.data : null;
+    return entry ? (entry.data as T) : null;
   } catch (e) {
-    console.error('Failed to read from IndexedDB:', e);
+    console.error('Failed to read snapshot from IndexedDB:', e);
     return null;
   }
 }
 
-async function clearCache() {
+export async function clearCache() {
   try {
     await db.apiCache.clear();
   } catch (e) {
@@ -77,7 +77,7 @@ export async function apiRequest(endpoint: string, options: RequestInit & { bypa
     }
 
     // 2. Check IndexedDB cache
-    const dbCached = await getFromCache(cacheKey);
+    const dbCached = await getSnapshot(cacheKey);
     if (dbCached) {
       // Background revalidation fetch (non-blocking)
       (async () => {
@@ -92,7 +92,7 @@ export async function apiRequest(endpoint: string, options: RequestInit & { bypa
           if (response.ok) {
             const freshData = await response.json();
             apiCache.set(cacheKey, { data: freshData, expiry: Date.now() + 30000 });
-            await saveToCache(cacheKey, freshData);
+            await saveSnapshot(cacheKey, freshData);
 
             // Compare cached data with fresh data. If different, trigger global event
             if (JSON.stringify(dbCached) !== JSON.stringify(freshData)) {
@@ -167,7 +167,7 @@ export async function apiRequest(endpoint: string, options: RequestInit & { bypa
     // Cache GET requests for 30 seconds (in-memory) and persistently (IndexedDB)
     if (method === 'GET') {
       apiCache.set(cacheKey, { data, expiry: Date.now() + 30000 });
-      await saveToCache(cacheKey, data);
+      await saveSnapshot(cacheKey, data);
     }
 
     clearTimeout(timeoutId);

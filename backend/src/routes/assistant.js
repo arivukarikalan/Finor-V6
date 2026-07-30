@@ -534,22 +534,65 @@ async function buildPortfolioContext(userId, skipInsights = false) {
     console.error('[AI Assistant] Fetching profile metadata failed:', errProfile.message);
   }
 
-  // 6. Fetch 150 recent finance transactions
+  // 6. Fetch recent finance transactions & calculate summary aggregates
   try {
     const { data: recentTransactions } = await supabase
       .from('finance_transactions')
-      .select('date, description, amount, type, category')
+      .select('date, description, amount, type, category, is_claimable, claim_status')
       .eq('user_id', userId)
       .order('date', { ascending: false })
       .limit(150);
 
-    ctx += `\n## Recent Finance Ledger Transactions:\n`;
     if (recentTransactions && recentTransactions.length > 0) {
+      let totalExpense = 0;
+      let totalIncome = 0;
+      let totalClaimablePending = 0;
+      let totalClaimableClaimed = 0;
+      let totalAvoidable = 0;
+      let totalEssential = 0;
+
+      const avoidableCategories = ['Shopping', 'Entertainment', 'Dining', 'Snacks', 'Movies', 'Theatre', 'Impulse'];
+
       recentTransactions.forEach(t => {
-        ctx += `- **${t.date.substring(0, 10)}**: [${t.type}] ${t.description || 'No description'} - ₹${t.amount} (Category: ${t.category || 'Uncategorized'})\n`;
+        const amt = parseFloat(t.amount) || 0;
+        if (t.type === 'EXPENSE') {
+          totalExpense += amt;
+          const cat = t.category || '';
+          const desc = t.description || '';
+          const isAvoidable = avoidableCategories.some(c => cat.toLowerCase().includes(c.toLowerCase())) ||
+                              /snack|junk|movie|theatre|dress|shoe|swiggy|zomato/i.test(desc);
+          if (isAvoidable) {
+            totalAvoidable += amt;
+          } else {
+            totalEssential += amt;
+          }
+
+          if (t.is_claimable) {
+            if (t.claim_status === 'CLAIMED') {
+              totalClaimableClaimed += amt;
+            } else {
+              totalClaimablePending += amt;
+            }
+          }
+        } else if (t.type === 'INCOME') {
+          totalIncome += amt;
+        }
+      });
+
+      ctx += `\n## 💡 Finance Ledger & Expense Summary:\n`;
+      ctx += `- Total Expenses Logged: ₹${totalExpense.toLocaleString('en-IN')}\n`;
+      ctx += `- Total Income Logged: ₹${totalIncome.toLocaleString('en-IN')}\n`;
+      ctx += `- 🟢 Essential Expenses (Rent, Bills, Groceries, SIPs): ₹${totalEssential.toLocaleString('en-IN')}\n`;
+      ctx += `- ⚠️ Avoidable / Discretionary Spend (Junk Food, Shopping, Movies): ₹${totalAvoidable.toLocaleString('en-IN')} (${totalExpense > 0 ? ((totalAvoidable / totalExpense) * 100).toFixed(1) : 0}% of expenses)\n`;
+      ctx += `- 💼 Company Reimbursable Claims: Pending ₹${totalClaimablePending.toLocaleString('en-IN')} | Claimed ₹${totalClaimableClaimed.toLocaleString('en-IN')}\n`;
+
+      ctx += `\n## Recent Finance Ledger Transactions:\n`;
+      recentTransactions.slice(0, 50).forEach(t => {
+        const claimBadge = t.is_claimable ? ` [Reimbursable: ${t.claim_status || 'PENDING'}]` : '';
+        ctx += `- **${t.date ? t.date.substring(0, 10) : 'N/A'}**: [${t.type}] ${t.description || 'No description'} - ₹${t.amount} (Category: ${t.category || 'Uncategorized'})${claimBadge}\n`;
       });
     } else {
-      ctx += `No recent ledger transactions found.\n`;
+      ctx += `\n## Finance Ledger Transactions:\nNo recent ledger transactions found.\n`;
     }
   } catch (errTx) {
     console.error('[AI Assistant] Fetching finance transactions failed:', errTx.message);

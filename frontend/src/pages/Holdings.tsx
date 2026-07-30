@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { apiRequest } from '../services/api';
+import { priceSyncEngine } from '../services/priceSyncEngine';
 import { useToastStore } from '../context/toastStore';
 import { LtpPriceText } from '../components/LtpPriceText';
 import { CustomAlertModal } from '../components/CustomAlertModal';
@@ -193,6 +194,11 @@ export const Holdings = () => {
       const holdingsData = await apiRequest('/holdings');
       setHoldings(holdingsData);
       localStorage.setItem('finor_cached_holdings', JSON.stringify(holdingsData));
+
+      const symbols = (holdingsData || []).map((h: any) => h.stock_symbol);
+      if (symbols.length > 0) {
+        priceSyncEngine.trackSymbols(symbols);
+      }
       
       const tradesData = await apiRequest('/trades');
       setTrades(tradesData);
@@ -216,6 +222,53 @@ export const Holdings = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchCoreData();
+
+    // Subscribe to Zerodha-style live background price ticks
+    const unsubscribePriceSync = priceSyncEngine.subscribe(livePrices => {
+      setHoldings(prevHoldings => {
+        if (!prevHoldings || prevHoldings.length === 0) return prevHoldings;
+        let changed = false;
+        const updated = prevHoldings.map(h => {
+          const live = livePrices[h.stock_symbol.toUpperCase()];
+          if (live && live.ltp !== null && live.ltp !== h.ltp) {
+            changed = true;
+            return {
+              ...h,
+              ltp: live.ltp,
+              previousClose: live.previousClose ?? (h as any).previousClose,
+              fiftyTwoWeekHigh: live.fiftyTwoWeekHigh ?? (h as any).fiftyTwoWeekHigh,
+              fiftyTwoWeekLow: live.fiftyTwoWeekLow ?? (h as any).fiftyTwoWeekLow
+            };
+          }
+          return h;
+        });
+        return changed ? updated : prevHoldings;
+      });
+    });
+
+    const handleSyncComplete = () => {
+      fetchCoreData();
+    };
+
+    const handleCacheUpdate = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const endpoint = customEvent.detail?.endpoint;
+      if (endpoint === '/holdings' || endpoint === '/trades') {
+        fetchCoreData();
+      }
+    };
+
+    window.addEventListener('portfolio-sync-complete', handleSyncComplete);
+    window.addEventListener('finor-cache-updated', handleCacheUpdate);
+    return () => {
+      unsubscribePriceSync();
+      window.removeEventListener('portfolio-sync-complete', handleSyncComplete);
+      window.removeEventListener('finor-cache-updated', handleCacheUpdate);
+    };
+  }, []);
 
   const handleOpenStockDetails = async (symbol: string) => {
     activeDetailSymbolRef.current = symbol;
@@ -410,29 +463,6 @@ export const Holdings = () => {
       mergedTrades
     };
   };
-
-  useEffect(() => {
-    fetchCoreData();
-
-    const handleSyncComplete = () => {
-      fetchCoreData();
-    };
-
-    const handleCacheUpdate = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      const endpoint = customEvent.detail?.endpoint;
-      if (endpoint === '/holdings' || endpoint === '/trades') {
-        fetchCoreData();
-      }
-    };
-
-    window.addEventListener('portfolio-sync-complete', handleSyncComplete);
-    window.addEventListener('finor-cache-updated', handleCacheUpdate);
-    return () => {
-      window.removeEventListener('portfolio-sync-complete', handleSyncComplete);
-      window.removeEventListener('finor-cache-updated', handleCacheUpdate);
-    };
-  }, []);
 
   const handleAddTrade = async () => {
     if (!addTradeSymbol.trim() || !addTradeQty || !addTradePrice) {

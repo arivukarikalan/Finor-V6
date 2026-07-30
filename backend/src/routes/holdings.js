@@ -237,6 +237,46 @@ router.get('/ltp/:symbol', requireAuth, async (req, res) => {
 });
 
 /**
+ * POST /api/holdings/ltp-batch
+ * Fetch multiple stock quotes in parallel in a single batch request
+ */
+router.post('/ltp-batch', requireAuth, async (req, res) => {
+  try {
+    const { symbols = [] } = req.body;
+    if (!Array.isArray(symbols) || symbols.length === 0) {
+      return res.json({ prices: {} });
+    }
+
+    const cleanSymbols = Array.from(new Set(symbols.map(s => String(s).toUpperCase().trim())));
+    
+    // Check backend in-memory priceCache first
+    const cachedPrices = priceCache.getPrices(cleanSymbols);
+    const missingSymbols = cleanSymbols.filter(sym => !cachedPrices[sym]);
+
+    let freshPrices = {};
+    if (missingSymbols.length > 0) {
+      freshPrices = await fetchMultipleLTPs(missingSymbols);
+      priceCache.setPrices(freshPrices);
+    }
+
+    const combined = { ...cachedPrices };
+    Object.entries(freshPrices).forEach(([sym, item]) => {
+      combined[sym] = {
+        ltp: item.ltp,
+        previousClose: item.previousClose,
+        fiftyTwoWeekHigh: item.fiftyTwoWeekHigh,
+        fiftyTwoWeekLow: item.fiftyTwoWeekLow
+      };
+    });
+
+    res.json({ prices: combined, timestamp: Date.now() });
+  } catch (err) {
+    console.error('[HoldingsRoute] Batch LTP fetch failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/holdings/settings
  * Fetch all stock settings (tags and stop-losses) for user
  */
