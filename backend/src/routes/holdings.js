@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../config/supabase.js';
+import { supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
 import { recalculateHoldings } from './trades.js';
@@ -10,7 +10,7 @@ const router = express.Router();
 // Helper to get all previous closes from system_settings table
 async function getPreviousCloses() {
   try {
-    const { data } = await supabase
+    const { data } = await supabaseAdmin
       .from('system_settings')
       .select('value')
       .eq('key', 'previous_closes')
@@ -31,37 +31,22 @@ async function getPreviousCloses() {
   }
 }
 
-// Helper to save previous closes to system_settings table
+// Helper to save previous closes to system_settings table using atomic upsert
 async function savePreviousCloses(closes) {
   try {
     const valueString = JSON.stringify(closes);
-    const { data: existing, error: fetchErr } = await supabase
+    const { error } = await supabaseAdmin
       .from('system_settings')
-      .select('key')
-      .eq('key', 'previous_closes')
-      .maybeSingle();
-
-    if (fetchErr) throw fetchErr;
-
-    if (existing) {
-      const { error: updateErr } = await supabase
-        .from('system_settings')
-        .update({
-          value: valueString,
-          updated_at: new Date().toISOString()
-        })
-        .eq('key', 'previous_closes');
-      if (updateErr) throw updateErr;
-    } else {
-      const { error: insertErr } = await supabase
-        .from('system_settings')
-        .insert({
+      .upsert(
+        {
           key: 'previous_closes',
           value: valueString,
           updated_at: new Date().toISOString()
-        });
-      if (insertErr) throw insertErr;
-    }
+        },
+        { onConflict: 'key' }
+      );
+
+    if (error) throw error;
   } catch (err) {
     console.error('[Holdings] Failed to save previous closes:', err.message);
   }
@@ -75,7 +60,7 @@ router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('holdings')
       .select('*')
       .eq('user_id', userId)
@@ -128,7 +113,7 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
     const userId = req.user.id;
 
     // Fetch existing holdings symbols
-    const { data: holdings, error: fetchError } = await supabase
+    const { data: holdings, error: fetchError } = await supabaseAdmin
       .from('holdings')
       .select('stock_symbol')
       .eq('user_id', userId);
@@ -173,7 +158,7 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
           previousCloses[symbol.toUpperCase()] = data.previousClose;
           cacheChanged = true;
         }
-        await supabase
+        await supabaseAdmin
           .from('holdings')
           .update({
             ltp: data.ltp,
@@ -190,7 +175,7 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
     }
 
     // Fetch updated holdings
-    const { data: updatedHoldings, error: getError } = await supabase
+    const { data: updatedHoldings, error: getError } = await supabaseAdmin
       .from('holdings')
       .select('*')
       .eq('user_id', userId)
@@ -337,7 +322,7 @@ router.post('/sentiment', requireAuth, async (req, res) => {
     const stockSymbol = symbol.toUpperCase().trim();
 
     // 1. Fetch active holding
-    const { data: holding, error: holdError } = await supabase
+    const { data: holding, error: holdError } = await supabaseAdmin
       .from('holdings')
       .select('*')
       .eq('user_id', userId)
@@ -347,7 +332,7 @@ router.post('/sentiment', requireAuth, async (req, res) => {
     if (holdError) throw holdError;
 
     // 2. Fetch trade history for this symbol
-    const { data: trades, error: tradesError } = await supabase
+    const { data: trades, error: tradesError } = await supabaseAdmin
       .from('trades')
       .select('*')
       .eq('user_id', userId)
@@ -366,7 +351,7 @@ router.post('/sentiment', requireAuth, async (req, res) => {
     const totalRealizedPnL = pnlStats.summary.total_realized_pnl;
 
     // 4. Fetch news cache
-    const { data: newsCache, error: newsError } = await supabase
+    const { data: newsCache, error: newsError } = await supabaseAdmin
       .from('news_cache')
       .select('*')
       .eq('stock_symbol', stockSymbol)
@@ -384,7 +369,7 @@ router.post('/sentiment', requireAuth, async (req, res) => {
     }
 
     // 5. Fetch actions cache
-    const { data: actionsCache, error: actionsError } = await supabase
+    const { data: actionsCache, error: actionsError } = await supabaseAdmin
       .from('news_cache')
       .select('*')
       .eq('stock_symbol', `${stockSymbol}_ACTIONS`)
@@ -529,7 +514,7 @@ router.post('/force-recalculate', requireAuth, async (req, res) => {
 
     // 1. Delete all records from price_cache to force fresh Google Finance scrapings
     try {
-      const { error: clearErr } = await supabase
+      const { error: clearErr } = await supabaseAdmin
         .from('price_cache')
         .delete()
         .neq('stock_symbol', '');
@@ -542,7 +527,7 @@ router.post('/force-recalculate', requireAuth, async (req, res) => {
 
     // 2. Clear previous closes settings
     try {
-      const { error: settErr } = await supabase
+      const { error: settErr } = await supabaseAdmin
         .from('system_settings')
         .delete()
         .eq('key', 'previous_closes');

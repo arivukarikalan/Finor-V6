@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../config/supabase.js';
+import { supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { computeInsightsReport } from '../services/insightsEngine.js';
 import crypto from 'crypto';
@@ -43,7 +43,7 @@ function getDailyHistoryKey(userId, dateKey) {
  */
 async function getDailyUsage(userId, dateKey) {
   const key = getDailyUsageKey(userId, dateKey);
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('news_cache')
     .select('news_content')
     .eq('stock_symbol', key)
@@ -65,7 +65,7 @@ async function incrementDailyUsage(userId, dateKey, currentCount) {
   const content = { userId, dateKey, count: newCount };
 
   try {
-    const { data: existing, error: findErr } = await supabase
+    const { data: existing, error: findErr } = await supabaseAdmin
       .from('news_cache')
       .select('id')
       .eq('stock_symbol', key)
@@ -74,7 +74,7 @@ async function incrementDailyUsage(userId, dateKey, currentCount) {
     if (findErr) throw findErr;
 
     if (existing) {
-      const { error: updateErr } = await supabase
+      const { error: updateErr } = await supabaseAdmin
         .from('news_cache')
         .update({
           news_content: content,
@@ -84,7 +84,7 @@ async function incrementDailyUsage(userId, dateKey, currentCount) {
         .eq('stock_symbol', key);
       if (updateErr) throw updateErr;
     } else {
-      const { error: insertErr } = await supabase
+      const { error: insertErr } = await supabaseAdmin
         .from('news_cache')
         .insert({
           stock_symbol: key,
@@ -105,7 +105,7 @@ async function incrementDailyUsage(userId, dateKey, currentCount) {
  */
 async function getDailyChatHistory(userId, dateKey) {
   const key = getDailyHistoryKey(userId, dateKey);
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('news_cache')
     .select('news_content')
     .eq('stock_symbol', key)
@@ -126,7 +126,7 @@ async function saveDailyChatHistory(userId, dateKey, messages) {
   const content = { userId, dateKey, messages };
 
   try {
-    const { data: existing, error: findErr } = await supabase
+    const { data: existing, error: findErr } = await supabaseAdmin
       .from('news_cache')
       .select('id')
       .eq('stock_symbol', key)
@@ -135,7 +135,7 @@ async function saveDailyChatHistory(userId, dateKey, messages) {
     if (findErr) throw findErr;
 
     if (existing) {
-      const { error: updateErr } = await supabase
+      const { error: updateErr } = await supabaseAdmin
         .from('news_cache')
         .update({
           news_content: content,
@@ -145,7 +145,7 @@ async function saveDailyChatHistory(userId, dateKey, messages) {
         .eq('stock_symbol', key);
       if (updateErr) throw updateErr;
     } else {
-      const { error: insertErr } = await supabase
+      const { error: insertErr } = await supabaseAdmin
         .from('news_cache')
         .insert({
           stock_symbol: key,
@@ -165,7 +165,7 @@ const nse = new NSE('./tmp_nse_downloads');
 async function fetchCorporateActionsForSymbol(symbol) {
   try {
     const actionSymbol = `${symbol.toUpperCase()}_ACTIONS`;
-    const { data: cached } = await supabase
+    const { data: cached } = await supabaseAdmin
       .from('news_cache')
       .select('*')
       .eq('stock_symbol', actionSymbol)
@@ -208,7 +208,7 @@ async function fetchCorporateActionsForSymbol(symbol) {
 
     // Cache it
     if (events.length > 0) {
-      await supabase.from('news_cache').upsert({
+      await supabaseAdmin.from('news_cache').upsert({
         stock_symbol: actionSymbol,
         news_content: events,
         fetched_at: new Date().toISOString()
@@ -228,7 +228,7 @@ async function fetchCorporateActionsForSymbol(symbol) {
 // Helper to fetch news for a symbol
 async function fetchNewsForSymbol(symbol) {
   try {
-    const { data: cached } = await supabase
+    const { data: cached } = await supabaseAdmin
       .from('news_cache')
       .select('*')
       .eq('stock_symbol', symbol.toUpperCase())
@@ -252,7 +252,7 @@ async function fetchNewsForSymbol(symbol) {
 }
 
 const portfolioContextCache = new Map(); // userId -> { contextText, timestamp }
-const CONTEXT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CONTEXT_CACHE_TTL_MS = 10 * 1000; // 10 seconds TTL for real-time expense updates
 
 /**
  * Helper to build portfolio context as text
@@ -266,13 +266,13 @@ async function buildPortfolioContext(userId, skipInsights = false) {
     return cached.contextText;
   }
 
-  const { data: holdings } = await supabase
+  const { data: holdings } = await supabaseAdmin
     .from('holdings')
     .select('*')
     .eq('user_id', userId);
 
   // Fetch ALL trades of the user (all-time) sorted chronologically for accurate FIFO calculations
-  const { data: allTrades } = await supabase
+  const { data: allTrades } = await supabaseAdmin
     .from('trades')
     .select('*')
     .eq('user_id', userId)
@@ -480,7 +480,7 @@ async function buildPortfolioContext(userId, skipInsights = false) {
   if (holdings && holdings.length > 0) {
     const symbols = holdings.map(h => `${h.stock_symbol.toUpperCase()}_ACTIONS`);
     try {
-      const { data: cachedActions } = await supabase
+      const { data: cachedActions } = await supabaseAdmin
         .from('news_cache')
         .select('*')
         .in('stock_symbol', symbols);
@@ -518,7 +518,7 @@ async function buildPortfolioContext(userId, skipInsights = false) {
 
   // 5. Fetch profile data (non-sensitive fields)
   try {
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('username, country, gender')
       .eq('id', userId)
@@ -536,7 +536,7 @@ async function buildPortfolioContext(userId, skipInsights = false) {
 
   // 6. Fetch recent finance transactions & calculate summary aggregates
   try {
-    const { data: recentTransactions } = await supabase
+    const { data: recentTransactions } = await supabaseAdmin
       .from('finance_transactions')
       .select('date, description, amount, type, category, is_claimable, claim_status')
       .eq('user_id', userId)
@@ -672,6 +672,27 @@ function generateSimulatedResponse(message, contextText) {
     } else {
       reply += `No discipline score is available yet. Ensure you have imported at least 5 completed trades in your tradebook.`;
     }
+  } else if (msgLower.includes('expense') || msgLower.includes('spend') || msgLower.includes('avoidable') || msgLower.includes('claim') || msgLower.includes('budget') || msgLower.includes('junk')) {
+    reply += `#### 💳 Expense & Finance Ledger Audit\n\n`;
+    const lines = contextText.split('\n');
+    const ledgerLines = lines.filter(l => l.startsWith('- Total Expenses') || l.startsWith('- Total Income') || l.includes('Essential Expenses') || l.includes('Avoidable') || l.includes('Reimbursable Claims'));
+    const transactionLines = lines.filter(l => (l.startsWith('- **20') || l.startsWith('- **N/A')) && (l.includes('[EXPENSE]') || l.includes('[INCOME]')));
+
+    if (ledgerLines.length > 0) {
+      reply += `Here is your expense & finance ledger audit summary:\n\n`;
+      ledgerLines.forEach(l => {
+        reply += `${l}\n`;
+      });
+
+      if (transactionLines.length > 0) {
+        reply += `\n##### 📝 Recent Finance Transactions:\n`;
+        transactionLines.slice(0, 10).forEach(t => {
+          reply += `${t}\n`;
+        });
+      }
+    } else {
+      reply += `No finance transactions found. Log your daily expenses in the Finance tab to get automated AI advice!`;
+    }
   } else if (msgLower.includes('trade') || msgLower.includes('recent') || msgLower.includes('history')) {
     reply += `#### ⏳ Recent Trades Log\n\n`;
     const lines = contextText.split('\n');
@@ -687,10 +708,11 @@ function generateSimulatedResponse(message, contextText) {
     }
   } else {
     reply += `#### 👋 Welcome to Finor AI Chat Coach!\n\n`;
-    reply += `I am your virtual trading assistant. I have full context on your holdings, recent trades, and discipline score parameters. Ask me questions like:\n`;
+    reply += `I am your virtual trading & expense assistant. I have full context on your holdings, recent trades, finance transactions, and discipline score parameters. Ask me questions like:\n`;
     reply += `1. *"Summarize my holdings"* (to see active open positions)\n`;
-    reply += `2. *"Evaluate my trading discipline"* (to check scores and violations)\n`;
-    reply += `3. *"What are my recent trades?"* (to check transaction logs)\n\n`;
+    reply += `2. *"What are my avoidable expenses?"* (to audit snacks, shopping & impulse spend)\n`;
+    reply += `3. *"Show my pending claimable expenses"* (to review company reimbursements)\n`;
+    reply += `4. *"Evaluate my trading discipline"* (to check scores and violations)\n\n`;
     reply += `*Configure your \`GEMINI_API_KEY\` in your env settings to activate live generative AI chat responses.*`;
   }
 
