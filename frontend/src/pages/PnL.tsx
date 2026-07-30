@@ -1012,7 +1012,7 @@ export const PnL = () => {
           <div className="glass-panel rounded-3xl p-6 border border-dark-border">
             <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wider mb-6">Realized P&L by Month</h3>
             <div className="h-64 w-full">
-              <ResponsiveContainer width="99%" height={256}>
+              <ResponsiveContainer width="99%" height={256} minWidth={0} minHeight={0}>
                 <BarChart data={monthlyChartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--color-dark-border)" vertical={false} />
                   <XAxis 

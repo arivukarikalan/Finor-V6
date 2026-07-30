@@ -452,7 +452,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
             </div>
             
             <div className="h-72 w-full">
-              <ResponsiveContainer width="99%" height={288}>
+              <ResponsiveContainer width="99%" height={288} minWidth={0} minHeight={0}>
                 <AreaChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="valGradient" x1="0" y1="0" x2="0" y2="1">

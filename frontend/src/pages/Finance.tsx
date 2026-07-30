@@ -845,7 +845,7 @@ export const Finance: React.FC = () => {
             
             {chartData.length > 0 ? (
               <div className="h-[200px] my-4" style={{ minWidth: 0 }}>
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <PieChart>
                     <Pie
                       data={chartData}
@@ -1069,7 +1069,7 @@ export const Finance: React.FC = () => {
 
               {/* Chart Render Container with minWidth: 0 to prevent Recharts console size warnings */}
               <div className="h-[210px] w-full pt-2 min-w-0">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   {chartMode === 'daily' ? (
                     <BarChart data={dailySpendingsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -1117,7 +1117,7 @@ export const Finance: React.FC = () => {
 
               {categoryExpensesChartData.length > 0 ? (
                 <div className="h-[170px] my-2" style={{ minWidth: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                       <Pie
                         data={categoryExpensesChartData}
