@@ -51,20 +51,54 @@ function parseZerodhaCSV(csvText) {
 
     if (isNaN(quantity) || isNaN(price) || !symbol) continue;
 
-    // Parse Date: supports MM-DD-YYYY or order_execution_time
+    // Parse Date: supports YYYY-MM-DD, DD-MM-YYYY, MM-DD-YYYY, or order_execution_time
     let tradeDate;
     if (execTimeIdx !== -1 && cols[execTimeIdx]) {
       tradeDate = new Date(cols[execTimeIdx]);
     } else if (tradeDateIdx !== -1 && cols[tradeDateIdx]) {
-      const parts = cols[tradeDateIdx].split('-');
+      const dateStr = cols[tradeDateIdx].trim();
+      const parts = dateStr.split(/[-/]/);
       if (parts.length === 3) {
-        // parts[0] = MM, parts[1] = DD, parts[2] = YYYY
-        const month = parseInt(parts[0], 10) - 1;
-        const day = parseInt(parts[1], 10);
-        const year = parseInt(parts[2], 10);
+        let year, month, day;
+        if (parts[0].length === 4) {
+          // Format: YYYY-MM-DD or YYYY/MM/DD
+          year = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+          day = parseInt(parts[2], 10);
+        } else if (parts[2].length === 4) {
+          // Format: DD-MM-YYYY or MM-DD-YYYY or DD/MM/YYYY etc.
+          year = parseInt(parts[2], 10);
+          const p0 = parseInt(parts[0], 10);
+          const p1 = parseInt(parts[1], 10);
+          if (p0 > 12) {
+            // Must be DD-MM-YYYY
+            day = p0;
+            month = p1 - 1;
+          } else if (p1 > 12) {
+            // Must be MM-DD-YYYY
+            month = p0 - 1;
+            day = p1;
+          } else {
+            // Default to DD-MM-YYYY for standard Indian broker format (e.g. Zerodha)
+            day = p0;
+            month = p1 - 1;
+          }
+        } else {
+          // Fallback if year is 2 digits
+          let y = parseInt(parts[2], 10);
+          year = y < 100 ? (y + (y > 50 ? 1900 : 2000)) : y;
+          day = parseInt(parts[0], 10);
+          month = parseInt(parts[1], 10) - 1;
+        }
+
         tradeDate = new Date(Date.UTC(year, month, day, 10, 0, 0));
+        
+        // Safety check for invalid dates
+        if (isNaN(tradeDate.getTime())) {
+          tradeDate = new Date(dateStr);
+        }
       } else {
-        tradeDate = new Date(cols[tradeDateIdx]);
+        tradeDate = new Date(dateStr);
       }
     } else {
       tradeDate = new Date();
