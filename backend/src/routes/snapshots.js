@@ -394,4 +394,95 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
   }
 });
 
+/**
+ * POST /api/snapshots/restore-to-live
+ * Overwrites live trades & holdings with a baseline snapshot point,
+ * allowing the user to start their ledger cleanly from a known historical snapshot.
+ */
+router.post('/restore-to-live', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { snapshot_id } = req.body;
+
+    if (!snapshot_id) {
+      return res.status(400).json({ error: 'Missing snapshot_id in request body.' });
+    }
+
+    // 1. Fetch target snapshot
+    const { data: snapshot, error: snapErr } = await supabaseAdmin
+      .from('portfolio_snapshots')
+      .select('*')
+      .eq('id', snapshot_id)
+      .eq('user_id', userId)
+      .single();
+
+    if (snapErr || !snapshot) {
+      return res.status(404).json({ error: 'Snapshot record not found.' });
+    }
+
+    const holdingsState = snapshot.holdings_state || [];
+    if (holdingsState.length === 0) {
+      return res.status(400).json({ error: 'Selected snapshot contains no active holdings.' });
+    }
+
+    // 2. Clear current live trades & holdings for user
+    const { error: delTradesErr } = await supabaseAdmin
+      .from('trades')
+      .delete()
+      .eq('user_id', userId);
+
+    if (delTradesErr) throw delTradesErr;
+
+    const { error: delHoldingsErr } = await supabaseAdmin
+      .from('holdings')
+      .delete()
+      .eq('user_id', userId);
+
+    if (delHoldingsErr) throw delHoldingsErr;
+
+    // 3. Create baseline BUY trade records from snapshot holdings_state
+    const snapDateISO = new Date(snapshot.snapshot_date).toISOString();
+    const baselineTrades = holdingsState.map((h, idx) => {
+      const sym = (h.stock_symbol || '').toUpperCase();
+      const qty = Number(h.quantity || 0);
+      const avgPrice = Number(h.average_buy_price || 0);
+      const name = h.stock_name || sym;
+
+      return {
+        user_id: userId,
+        stock_symbol: sym,
+        stock_name: name,
+        trade_type: 'BUY',
+        quantity: qty,
+        price: avgPrice,
+        trade_date: snapDateISO,
+        order_id: `BASELINE_SNAP_${snapshot.snapshot_date}_${sym}_${idx}`
+      };
+    }).filter(t => t.stock_symbol && t.quantity > 0 && t.price > 0);
+
+    if (baselineTrades.length > 0) {
+      const { error: insErr } = await supabaseAdmin
+        .from('trades')
+        .insert(baselineTrades);
+
+      if (insErr) throw insErr;
+    }
+
+    // 4. Recalculate holdings automatically
+    await recalculateHoldings(userId);
+
+    const formattedDate = new Date(snapshot.snapshot_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+    res.json({
+      message: `Successfully loaded portfolio baseline from ${formattedDate} snapshot (${baselineTrades.length} positions restored)! You can now log subsequent trades.`,
+      restoredPositionsCount: baselineTrades.length,
+      snapshotDate: snapshot.snapshot_date
+    });
+
+  } catch (err) {
+    console.error('[Snapshots] Restore live portfolio failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

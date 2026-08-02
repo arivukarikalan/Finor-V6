@@ -30,7 +30,8 @@ import {
   LayoutGrid,
   Table,
   List,
-  RotateCcw
+  RotateCcw,
+  Camera
 } from 'lucide-react';
 
 interface Holding {
@@ -595,6 +596,55 @@ export const Holdings = () => {
       setError(err.message || 'Failed to clear data.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Restore Baseline Snapshot Modal State & Logic
+  const [isSnapshotModalOpen, setIsSnapshotModalOpen] = useState(false);
+  const [availableSnapshots, setAvailableSnapshots] = useState<any[]>([]);
+  const [loadingSnapshots, setLoadingSnapshots] = useState(false);
+  const [restoringSnapshotId, setRestoringSnapshotId] = useState<string | null>(null);
+
+  const handleOpenRestoreSnapshotModal = async () => {
+    setIsSnapshotModalOpen(true);
+    setLoadingSnapshots(true);
+    try {
+      const data = await apiRequest('/snapshots');
+      setAvailableSnapshots(data || []);
+    } catch (err: any) {
+      useToastStore.getState().addToast(err.message || 'Failed to fetch portfolio snapshots.', 'error');
+    } finally {
+      setLoadingSnapshots(false);
+    }
+  };
+
+  const handleRestoreSnapshotToLive = async (snapshot: any) => {
+    if (!snapshot || !snapshot.id) return;
+    const snapDateStr = new Date(snapshot.snapshot_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    
+    setRestoringSnapshotId(snapshot.id);
+    const toastId = useToastStore.getState().addToast(`Restoring live portfolio to ${snapDateStr} snapshot baseline...`, 'loading');
+    try {
+      const res = await apiRequest('/snapshots/restore-to-live', {
+        method: 'POST',
+        body: JSON.stringify({ snapshot_id: snapshot.id })
+      });
+
+      // Clear local IndexedDB cache
+      const { db: appDb } = await import('../services/api');
+      await appDb.apiCache.clear();
+
+      useToastStore.getState().removeToast(toastId);
+      useToastStore.getState().addToast(res.message || `Successfully loaded ${snapDateStr} snapshot as live baseline!`, 'success');
+      setIsSnapshotModalOpen(false);
+
+      // Refresh core data
+      await fetchCoreData();
+    } catch (err: any) {
+      useToastStore.getState().removeToast(toastId);
+      useToastStore.getState().addToast(err.message || 'Failed to restore snapshot to live portfolio.', 'error');
+    } finally {
+      setRestoringSnapshotId(null);
     }
   };
 
@@ -1786,6 +1836,15 @@ export const Holdings = () => {
           </button>
           
           <button
+            onClick={handleOpenRestoreSnapshotModal}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs font-semibold text-amber-300 hover:text-white hover:bg-amber-500/25 transition-all cursor-pointer"
+            title="Load your live portfolio baseline from a historical snapshot date (e.g. July 30)"
+          >
+            <Camera className="w-3.5 h-3.5 text-amber-400" />
+            <span>Load Baseline Snapshot</span>
+          </button>
+          
+          <button
             onClick={() => { setIsAddTradeOpen(true); setAddTradeResult(null); }}
             className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
           >
@@ -2785,6 +2844,118 @@ export const Holdings = () => {
         message={alertMessage}
         onClose={() => setAlertOpen(false)}
       />
+
+      {/* Restore Baseline Snapshot Modal */}
+      {isSnapshotModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="relative w-full max-w-2xl bg-dark-depth-1 border border-amber-500/30 rounded-3xl shadow-2xl shadow-amber-900/20 overflow-hidden flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="p-6 border-b border-dark-border/60 bg-gradient-to-r from-amber-500/10 via-purple-500/5 to-transparent flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-white tracking-tight">Load Baseline Snapshot</h2>
+                  <p className="text-xs text-gray-400">Restore holdings, total invested & metrics from a historical snapshot date</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSnapshotModalOpen(false)}
+                className="p-2 rounded-xl text-gray-400 hover:text-white hover:bg-dark-depth-2 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200/90 leading-relaxed flex items-start gap-3">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-semibold text-amber-300">How Baseline Restore Works:</span> Selecting a snapshot will replace your active holdings data with the exact positions, invested values, and metrics captured on that snapshot date (e.g. July 30). Trades added after that snapshot date will remain safely stored in your trade ledger!
+                </div>
+              </div>
+
+              {loadingSnapshots ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-3 text-gray-400">
+                  <Loader2 className="w-8 h-8 animate-spin text-amber-400" />
+                  <span className="text-xs font-semibold">Loading available snapshot dates...</span>
+                </div>
+              ) : availableSnapshots.length === 0 ? (
+                <div className="py-10 text-center text-gray-400 text-xs bg-dark-depth-2/40 rounded-2xl border border-dark-border/40 p-6">
+                  No saved baseline snapshots found. You can generate a snapshot using your portfolio history!
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {availableSnapshots.map((snap) => {
+                    const snapDateStr = new Date(snap.snapshot_date).toLocaleDateString('en-IN', {
+                      weekday: 'short',
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric'
+                    });
+                    const isRestoringThis = restoringSnapshotId === snap.id;
+
+                    return (
+                      <div
+                        key={snap.id}
+                        className="p-4 rounded-2xl bg-dark-depth-2/60 border border-dark-border hover:border-amber-500/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold text-white group-hover:text-amber-300 transition-colors">
+                              {snapDateStr}
+                            </span>
+                            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              {snap.holdings_count || snap.holdings?.length || 0} Stocks
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-4 text-xs text-gray-400">
+                            <span>Invested: <strong className="text-gray-200">₹{Number(snap.total_invested || 0).toLocaleString('en-IN')}</strong></span>
+                            <span>Current: <strong className="text-gray-200">₹{Number(snap.current_value || 0).toLocaleString('en-IN')}</strong></span>
+                            <span>P&L: <strong className={Number(snap.overall_pnl || 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                              {Number(snap.overall_pnl || 0) >= 0 ? '+' : ''}₹{Number(snap.overall_pnl || 0).toLocaleString('en-IN')}
+                            </strong></span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleRestoreSnapshotToLive(snap)}
+                          disabled={!!restoringSnapshotId}
+                          className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-semibold text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-amber-600/20 shrink-0 cursor-pointer"
+                        >
+                          {isRestoringThis ? (
+                            <>
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <span>Restoring...</span>
+                            </>
+                          ) : (
+                            <>
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>Set as Live Baseline</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-dark-border/60 bg-dark-depth-2/40 flex justify-end shrink-0">
+              <button
+                onClick={() => setIsSnapshotModalOpen(false)}
+                className="px-5 py-2.5 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-xs font-bold text-gray-300 hover:text-white transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
