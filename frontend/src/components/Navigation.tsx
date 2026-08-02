@@ -126,8 +126,12 @@ export const Navigation: React.FC<NavigationProps> = ({
       });
       setTimeout(() => setSyncToast(null), 5000);
     } catch (err: any) {
-      setSyncToast({ type: 'error', message: err.message || 'Sync failed' });
-      setTimeout(() => setSyncToast(null), 5000);
+      const errMsg = err.message || 'Sync failed';
+      if (errMsg.toLowerCase().includes('connect') || errMsg.toLowerCase().includes('expired') || errMsg.toLowerCase().includes('re-authorize') || errMsg.toLowerCase().includes('invalid_grant')) {
+        setGmailConnected(false);
+      }
+      setSyncToast({ type: 'error', message: errMsg });
+      setTimeout(() => setSyncToast(null), 7000);
     } finally {
       setIsSyncing(false);
     }

@@ -123,19 +123,34 @@ router.get('/status', requireAuth, async (req, res) => {
     const token = await getRefreshToken(req.user.id);
     if (!token) return res.json({ connected: false });
 
-    const auth = getOAuth2Client();
-    auth.setCredentials({ refresh_token: token });
-    
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('gmail_connected_email')
-      .eq('id', req.user.id)
-      .maybeSingle();
+    const auth = await getAuthorizedClient(req.user.id);
+    if (!auth) return res.json({ connected: false });
 
-    res.json({ 
-      connected: true, 
-      email: profile?.gmail_connected_email || 'Connected Gmail' 
-    });
+    // Test token validity with googleapis
+    try {
+      await auth.getAccessToken();
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('gmail_connected_email')
+        .eq('id', req.user.id)
+        .maybeSingle();
+
+      res.json({ 
+        connected: true, 
+        email: profile?.gmail_connected_email || 'Connected Gmail' 
+      });
+    } catch (tokenErr) {
+      const errStr = String(tokenErr?.message || tokenErr || '').toLowerCase();
+      if (errStr.includes('invalid_grant') || tokenErr?.response?.data?.error === 'invalid_grant') {
+        console.warn(`[GmailStatus] Invalid refresh token for user ${req.user.id}. Clearing token.`);
+        await supabaseAdmin
+          .from('profiles')
+          .update({ gmail_refresh_token: null, gmail_connected_email: null })
+          .eq('id', req.user.id);
+        return res.json({ connected: false, reauthRequired: true });
+      }
+      res.json({ connected: true });
+    }
   } catch (err) {
     console.error('Gmail status error:', err.message);
     res.json({ connected: false });
@@ -595,6 +610,22 @@ router.post('/sync', requireAuth, async (req, res) => {
 
   } catch (err) {
     console.error('Gmail sync error:', err);
+    const errStr = String(err?.message || err || '').toLowerCase();
+    const isInvalidGrant = errStr.includes('invalid_grant') || errStr.includes('invalid_request') || err?.response?.data?.error === 'invalid_grant';
+
+    if (isInvalidGrant) {
+      console.warn(`[GmailSync] Invalid refresh token for user ${req.user.id}. Clearing token.`);
+      await supabaseAdmin
+        .from('profiles')
+        .update({ gmail_refresh_token: null, gmail_connected_email: null })
+        .eq('id', req.user.id);
+
+      return res.status(401).json({
+        error: 'Gmail authorization expired or was revoked. Please click "Connect Gmail" to re-authorize.',
+        needsConnection: true,
+        invalidToken: true
+      });
+    }
     res.status(500).json({ error: 'Gmail sync failed: ' + err.message });
   }
 });
