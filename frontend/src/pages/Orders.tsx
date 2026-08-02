@@ -14,9 +14,7 @@ import {
   Clock,
   Trash2,
   Activity,
-  Edit,
-  Sparkles,
-  RotateCcw
+  Edit
 } from 'lucide-react';
 
 interface OrderConfig {
@@ -108,27 +106,7 @@ export const Orders = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [submittingOrder, setSubmittingOrder] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
 
-  const handleRestoreFromStaging = async () => {
-    setIsRestoring(true);
-    try {
-      const res: any = await apiRequest('/trades/restore-from-staging', { method: 'POST' });
-      setSuccess(res.message || 'Restored missing trade records from Staging Vault.');
-      try {
-        const { db: appDb } = await import('../services/api');
-        await appDb.apiCache.clear();
-      } catch (e) {
-        console.warn('Cache clear error:', e);
-      }
-      await fetchLists();
-      window.dispatchEvent(new Event('portfolio-sync-complete'));
-    } catch (err: any) {
-      setError(err.message || 'Failed to restore trades.');
-    } finally {
-      setIsRestoring(false);
-    }
-  };
 
   // List Virtualization Windowing
   const [displayLimit, setDisplayLimit] = useState(50);
@@ -567,29 +545,7 @@ export const Orders = () => {
     }
   };
 
-  const [isDeduplicating, setIsDeduplicating] = useState(false);
 
-  const handleDeduplicateTrades = async () => {
-    setIsDeduplicating(true);
-    setError(null);
-    setSuccess(null);
-    try {
-      const res: any = await apiRequest('/trades/deduplicate', { method: 'POST' });
-      setSuccess(res.message);
-      try {
-        const { db: appDb } = await import('../services/api');
-        await appDb.apiCache.clear();
-      } catch (dbErr) {
-        console.warn('Cache clear failed:', dbErr);
-      }
-      await fetchLists();
-      window.dispatchEvent(new Event('portfolio-sync-complete'));
-    } catch (err: any) {
-      setError(err.message || 'Deduplication failed.');
-    } finally {
-      setIsDeduplicating(false);
-    }
-  };
 
   // Form Validation
   const isFormValid = () => {
@@ -1320,38 +1276,6 @@ export const Orders = () => {
                       </div>
                     </div>
 
-                    {/* Right: Actions */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* Clean Duplicates Button */}
-                      <button
-                        onClick={handleDeduplicateTrades}
-                        disabled={isDeduplicating}
-                        title="Scan and remove duplicate trade records"
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50 shrink-0"
-                      >
-                        {isDeduplicating ? (
-                          <Loader2 className="w-3 h-3 animate-spin text-purple-400" />
-                        ) : (
-                          <Sparkles className="w-3 h-3 text-purple-400" />
-                        )}
-                        <span>{isDeduplicating ? 'Cleaning...' : 'Clean Duplicates'}</span>
-                      </button>
-
-                      {/* Restore Vault Button */}
-                      <button
-                        onClick={handleRestoreFromStaging}
-                        disabled={isRestoring}
-                        title="Recover missing trade records from Staging Vault"
-                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-brand-300 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50 shrink-0"
-                      >
-                        {isRestoring ? (
-                          <Loader2 className="w-3 h-3 animate-spin text-brand-400" />
-                        ) : (
-                          <RotateCcw className="w-3 h-3 text-brand-400" />
-                        )}
-                        <span>{isRestoring ? 'Restoring...' : 'Restore Staged Vault'}</span>
-                      </button>
-                    </div>
                   </div>
                 </div>
               )}
