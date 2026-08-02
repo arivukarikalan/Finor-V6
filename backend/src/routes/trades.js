@@ -281,7 +281,8 @@ router.post('/upload', requireAuth, express.text({ type: 'text/csv', limit: '2mb
       const day = String(localDate.getDate()).padStart(2, '0');
       const dateStr = `${year}-${month}-${day}`;
       const priceStr = parseFloat(t.price).toFixed(2);
-      return `${t.stock_symbol}_${dateStr}_${t.trade_type}_${t.quantity}_${priceStr}`;
+      const orderIdSuffix = t.order_id ? `_${t.order_id}` : '';
+      return `${t.stock_symbol}_${dateStr}_${t.trade_type}_${t.quantity}_${priceStr}${orderIdSuffix}`;
     };
 
     const existingKeys = new Set(existingTrades.map(getTradeKey));
