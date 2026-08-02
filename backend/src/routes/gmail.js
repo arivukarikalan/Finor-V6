@@ -2,7 +2,7 @@ import express from 'express';
 import crypto from 'crypto';
 import { google } from 'googleapis';
 import { createRequire } from 'module';
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { encryptText, decryptText } from '../utils/encryption.js';
 import { recalculateHoldings } from './trades.js';
@@ -47,7 +47,7 @@ const saveRefreshToken = async (userId, token, email = null) => {
   if (email) {
     updatePayload.gmail_connected_email = email;
   }
-  const { error } = await supabase
+  const { error } = await supabaseAdmin
     .from('profiles')
     .update(updatePayload)
     .eq('id', userId);
@@ -60,7 +60,7 @@ const saveRefreshToken = async (userId, token, email = null) => {
 };
 
 const getRefreshToken = async (userId) => {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('profiles')
     .select('gmail_refresh_token')
     .eq('id', userId)
@@ -74,7 +74,7 @@ const getRefreshToken = async (userId) => {
 };
 
 const getAuthorizedClient = async (userId) => {
-  const { data: profile, error } = await supabase
+  const { data: profile, error } = await supabaseAdmin
     .from('profiles')
     .select('gmail_refresh_token, gmail_client_id, gmail_client_secret')
     .eq('id', userId)
@@ -126,7 +126,7 @@ router.get('/status', requireAuth, async (req, res) => {
     const auth = getOAuth2Client();
     auth.setCredentials({ refresh_token: token });
     
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('gmail_connected_email')
       .eq('id', req.user.id)
@@ -150,7 +150,7 @@ router.get('/auth', async (req, res) => {
   }
 
   try {
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('gmail_client_id, gmail_client_secret')
       .eq('id', userId)
@@ -186,7 +186,7 @@ router.get('/callback', async (req, res) => {
   }
 
   try {
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('gmail_client_id, gmail_client_secret')
       .eq('id', userId)
@@ -369,7 +369,7 @@ router.post('/sync', requireAuth, async (req, res) => {
     const userId = req.user.id;
 
     // Retrieve user-specific PAN password for PDF contract note decryption
-    const { data: profile } = await supabase
+    const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('zerodha_pdf_password, gmail_filter_from, gmail_filter_subject, gmail_connected_email')
       .eq('id', userId)
@@ -436,7 +436,7 @@ router.post('/sync', requireAuth, async (req, res) => {
         if (!subjectLower.includes('contract note') && !subjectLower.includes('upc0')) continue;
 
         // Check if we've already processed this email
-        const { data: existingLog } = await supabase
+        const { data: existingLog } = await supabaseAdmin
           .from('system_settings')
           .select('value')
           .eq('key', `gmail_processed_${userId}_${msg.id}`)
@@ -534,7 +534,7 @@ router.post('/sync', requireAuth, async (req, res) => {
             status: 'PENDING'
           };
 
-          const { error: insertError } = await supabase
+          const { error: insertError } = await supabaseAdmin
             .from('staging_trades')
             .insert(stagingPayload);
 
@@ -551,12 +551,12 @@ router.post('/sync', requireAuth, async (req, res) => {
 
         // Reconcile and import newly staged trades immediately
         if (emailNewTrades > 0) {
-          const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+          const { error: rErr } = await supabaseAdmin.rpc('reconcile_staging_trades');
           if (rErr) console.error('[GmailIngestion] Immediate reconciliation failed:', rErr.message);
         }
 
         // Mark email as processed
-        await supabase.from('system_settings').upsert(
+        await supabaseAdmin.from('system_settings').upsert(
           { key: `gmail_processed_${userId}_${msg.id}`, value: tradeDate },
           { onConflict: 'key' }
         );
@@ -578,7 +578,7 @@ router.post('/sync', requireAuth, async (req, res) => {
 
     // Always recalculate holdings on sync to ensure trades are reflected correctly in holdings
     await recalculateHoldings(userId);
-    await supabase.from('system_settings').upsert(
+    await supabaseAdmin.from('system_settings').upsert(
       { key: 'gmail_last_sync', value: new Date().toISOString() },
       { onConflict: 'key' }
     );
@@ -601,7 +601,7 @@ router.post('/sync', requireAuth, async (req, res) => {
 
 // ─── GET /api/gmail/last-sync ─────────────────────────────────────────────────
 router.get('/last-sync', requireAuth, async (req, res) => {
-  const { data } = await supabase.from('system_settings').select('value').eq('key', 'gmail_last_sync').maybeSingle();
+  const { data } = await supabaseAdmin.from('system_settings').select('value').eq('key', 'gmail_last_sync').maybeSingle();
   res.json({ lastSync: data?.value || null });
 });
 
@@ -611,7 +611,7 @@ router.post('/reset-cache', requireAuth, async (req, res) => {
     const userId = req.user.id;
     
     // Clear both user-specific scoped keys AND global message keys for this user's fallback
-    const { error: err1 } = await supabase
+    const { error: err1 } = await supabaseAdmin
       .from('system_settings')
       .delete()
       .like('key', `gmail_processed_${userId}_%`);
@@ -619,7 +619,7 @@ router.post('/reset-cache', requireAuth, async (req, res) => {
     if (err1) throw err1;
 
     // Optional: Also support clearing legacy key names if needed by checking for user context
-    const { error: err2 } = await supabase
+    const { error: err2 } = await supabaseAdmin
       .from('system_settings')
       .delete()
       .like('key', 'gmail_processed_%');
@@ -627,7 +627,7 @@ router.post('/reset-cache', requireAuth, async (req, res) => {
     if (err2) throw err2;
 
     // Delete failed staging trades for this user to allow reprocessing them
-    const { error: errStaging } = await supabase
+    const { error: errStaging } = await supabaseAdmin
       .from('staging_trades')
       .delete()
       .eq('user_id', userId)

@@ -1,7 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import pkg from 'kiteconnect';
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getActiveSession, getUserZerodhaCredentials } from '../services/orderService.js';
 
@@ -89,7 +89,7 @@ function parseZerodhaCSV(csvText) {
  */
 export async function recalculateHoldings(userId) {
   // Fetch all trades sorted by date ascending
-  const { data: trades, error: fetchError } = await supabase
+  const { data: trades, error: fetchError } = await supabaseAdmin
     .from('trades')
     .select('*')
     .eq('user_id', userId)
@@ -170,7 +170,7 @@ export async function recalculateHoldings(userId) {
   });
 
   // Fetch existing holdings to preserve their LTP values
-  const { data: existingHoldings } = await supabase
+  const { data: existingHoldings } = await supabaseAdmin
     .from('holdings')
     .select('stock_symbol, ltp')
     .eq('user_id', userId);
@@ -183,7 +183,7 @@ export async function recalculateHoldings(userId) {
   }
 
   // Delete existing holdings
-  const { error: deleteError } = await supabase
+  const { error: deleteError } = await supabaseAdmin
     .from('holdings')
     .delete()
     .eq('user_id', userId);
@@ -202,7 +202,7 @@ export async function recalculateHoldings(userId) {
       last_updated: new Date().toISOString()
     }));
 
-    const { error: insertError } = await supabase
+    const { error: insertError } = await supabaseAdmin
       .from('holdings')
       .insert(holdingsToInsert);
 
@@ -229,7 +229,7 @@ router.post('/upload', requireAuth, express.text({ type: 'text/csv', limit: '2mb
     }
 
     // Fetch all existing trades to check for duplicates using a composite key
-    const { data: existingTrades, error: checkError } = await supabase
+    const { data: existingTrades, error: checkError } = await supabaseAdmin
       .from('trades')
       .select('stock_symbol, trade_date, trade_type, quantity, price, order_id')
       .eq('user_id', req.user.id);
@@ -282,7 +282,7 @@ router.post('/upload', requireAuth, express.text({ type: 'text/csv', limit: '2mb
 
     let stagedCount = 0;
     for (const payload of stagingPayloads) {
-      const { error: insErr } = await supabase
+      const { error: insErr } = await supabaseAdmin
         .from('staging_trades')
         .insert(payload);
       if (!insErr) {
@@ -297,7 +297,7 @@ router.post('/upload', requireAuth, express.text({ type: 'text/csv', limit: '2mb
     }
 
     // Immediately trigger reconciliation
-    const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+    const { error: rErr } = await supabaseAdmin.rpc('reconcile_staging_trades');
     if (rErr) throw rErr;
 
     // Recalculate holdings
@@ -319,7 +319,7 @@ router.post('/upload', requireAuth, express.text({ type: 'text/csv', limit: '2mb
  */
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('trades')
       .select('*')
       .eq('user_id', req.user.id)
@@ -341,7 +341,7 @@ router.delete('/', requireAuth, async (req, res) => {
     const userId = req.user.id;
 
     // Delete trades
-    const { error: tradesError } = await supabase
+    const { error: tradesError } = await supabaseAdmin
       .from('trades')
       .delete()
       .eq('user_id', userId);
@@ -349,7 +349,7 @@ router.delete('/', requireAuth, async (req, res) => {
     if (tradesError) throw tradesError;
 
     // Delete holdings
-    const { error: holdingsError } = await supabase
+    const { error: holdingsError } = await supabaseAdmin
       .from('holdings')
       .delete()
       .eq('user_id', userId);
@@ -371,7 +371,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
     const userId = req.user.id;
     const tradeId = req.params.id;
 
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await supabaseAdmin
       .from('trades')
       .delete()
       .eq('id', tradeId)
@@ -405,7 +405,7 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     // If there are split trade IDs to delete as part of a merged edit, delete them first
     if (deleteIds && Array.isArray(deleteIds) && deleteIds.length > 0) {
-      const { error: delErr } = await supabase
+      const { error: delErr } = await supabaseAdmin
         .from('trades')
         .delete()
         .in('id', deleteIds)
@@ -416,7 +416,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       }
     }
 
-    const { data: updatedTrade, error: updateError } = await supabase
+    const { data: updatedTrade, error: updateError } = await supabaseAdmin
       .from('trades')
       .update({
         stock_symbol: stock_symbol.toUpperCase(),
@@ -456,7 +456,7 @@ router.post('/delete-multiple', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'IDs array is required.' });
     }
 
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await supabaseAdmin
       .from('trades')
       .delete()
       .in('id', ids)
@@ -511,7 +511,7 @@ router.post('/sync-kite', requireAuth, async (req, res) => {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
-    const { data: existingTrades, error: checkError } = await supabase
+    const { data: existingTrades, error: checkError } = await supabaseAdmin
       .from('trades')
       .select('order_id, stock_symbol, trade_date, trade_type, quantity, price')
       .eq('user_id', req.user.id)
@@ -563,7 +563,7 @@ router.post('/sync-kite', requireAuth, async (req, res) => {
 
     let stagedCount = 0;
     for (const payload of stagingPayloads) {
-      const { error: insErr } = await supabase
+      const { error: insErr } = await supabaseAdmin
         .from('staging_trades')
         .insert(payload);
       if (!insErr) {
@@ -575,7 +575,7 @@ router.post('/sync-kite', requireAuth, async (req, res) => {
 
     if (stagedCount > 0) {
       // Immediately trigger reconciliation
-      const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+      const { error: rErr } = await supabaseAdmin.rpc('reconcile_staging_trades');
       if (rErr) throw rErr;
 
       // Recalculate holdings
@@ -628,7 +628,7 @@ router.post('/postback', async (req, res) => {
     }
 
     // Check if a trade with this order_id already exists in the database
-    const { data: existing, error: checkError } = await supabase
+    const { data: existing, error: checkError } = await supabaseAdmin
       .from('trades')
       .select('id')
       .eq('user_id', user_id)
@@ -672,7 +672,7 @@ router.post('/postback', async (req, res) => {
       status: 'PENDING'
     };
 
-    const { error: insertError } = await supabase
+    const { error: insertError } = await supabaseAdmin
       .from('staging_trades')
       .insert(stagingPayload);
 
@@ -681,7 +681,7 @@ router.post('/postback', async (req, res) => {
     }
 
     // Immediately trigger reconciliation
-    const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+    const { error: rErr } = await supabaseAdmin.rpc('reconcile_staging_trades');
     if (rErr) throw rErr;
 
     // Recalculate holdings

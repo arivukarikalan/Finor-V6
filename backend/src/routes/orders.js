@@ -1,7 +1,7 @@
 import express from 'express';
 import pkg from 'kiteconnect';
 import crypto from 'crypto';
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
 import { getActiveSession, placeGttOrderInternal, getUserZerodhaCredentials } from '../services/orderService.js';
@@ -75,7 +75,7 @@ router.post('/kite/session', requireAuth, async (req, res) => {
     const session = await kc.generateSession(request_token, apiSecret);
     
     // Save to database broker_sessions
-    const { error: upsertError } = await supabase
+    const { error: upsertError } = await supabaseAdmin
       .from('broker_sessions')
       .upsert({
         user_id: req.user.id,
@@ -153,7 +153,7 @@ router.get('/live', requireAuth, async (req, res) => {
             status: 'PENDING'
           };
 
-          const { error: insertError } = await supabase
+          const { error: insertError } = await supabaseAdmin
             .from('staging_trades')
             .insert(stagingPayload);
 
@@ -165,7 +165,7 @@ router.get('/live', requireAuth, async (req, res) => {
 
       if (newTradesAdded > 0) {
         // Run database reconciliation to move pending staged orders to public.trades
-        const { error: rErr } = await supabase.rpc('reconcile_staging_trades');
+        const { error: rErr } = await supabaseAdmin.rpc('reconcile_staging_trades');
         if (rErr) console.error('[KiteSync] Staging reconciliation failed:', rErr.message);
 
         // Standardized recalculation of user active positions
@@ -210,7 +210,7 @@ router.get('/live', requireAuth, async (req, res) => {
       const startOfToday = new Date();
       startOfToday.setHours(0, 0, 0, 0);
 
-      const { data: mockOrders, error } = await supabase
+      const { data: mockOrders, error } = await supabaseAdmin
         .from('orders')
         .select('*')
         .eq('user_id', req.user.id)
@@ -270,7 +270,7 @@ router.get('/gtt/live', requireAuth, async (req, res) => {
 
       // Synchronize database 'gtts' table with Zerodha Kite Connect state
       try {
-        await supabase
+        await supabaseAdmin
           .from('gtts')
           .delete()
           .eq('user_id', req.user.id);
@@ -287,7 +287,7 @@ router.get('/gtt/live', requireAuth, async (req, res) => {
             quantity: g.quantity,
             status: 'ACTIVE'
           }));
-          await supabase.from('gtts').insert(rowsToInsert);
+          await supabaseAdmin.from('gtts').insert(rowsToInsert);
         }
       } catch (dbErr) {
         console.error('[OrdersRoute] Failed to sync local GTT database table with Zerodha:', dbErr.message);
@@ -296,7 +296,7 @@ router.get('/gtt/live', requireAuth, async (req, res) => {
       return res.json({ mode: 'REAL', gtts: mappedGtts });
     } else {
       // Mock Mode: pull from database gtts table
-      const { data: mockGTTs, error } = await supabase
+      const { data: mockGTTs, error } = await supabaseAdmin
         .from('gtts')
         .select('*')
         .eq('user_id', req.user.id)
@@ -346,7 +346,7 @@ router.post('/place', requireAuth, async (req, res) => {
       const result = await kc.placeOrder('regular', orderParams);
       
       // Save order to tracking table
-      const { error: dbError } = await supabase.from('orders').insert({
+      const { error: dbError } = await supabaseAdmin.from('orders').insert({
         user_id: req.user.id,
         stock_symbol: stock_symbol.toUpperCase(),
         transaction_type: transaction_type.toUpperCase(),
@@ -386,7 +386,7 @@ router.post('/place', requireAuth, async (req, res) => {
         // Market orders execute immediately. Update trades & holdings.
         
         // 1. Fetch current holdings
-        const { data: holding, error: holdError } = await supabase
+        const { data: holding, error: holdError } = await supabaseAdmin
           .from('holdings')
           .select('*')
           .eq('user_id', req.user.id)
@@ -401,7 +401,7 @@ router.post('/place', requireAuth, async (req, res) => {
             const newQty = holding.quantity + qtyVal;
             const newAvgPrice = parseFloat((((holding.average_buy_price * holding.quantity) + (currentLTP * qtyVal)) / newQty).toFixed(2));
             
-            const { error: updErr } = await supabase
+            const { error: updErr } = await supabaseAdmin
               .from('holdings')
               .update({
                 quantity: newQty,
@@ -412,7 +412,7 @@ router.post('/place', requireAuth, async (req, res) => {
               .eq('id', holding.id);
             if (updErr) throw updErr;
           } else {
-            const { error: insErr } = await supabase
+            const { error: insErr } = await supabaseAdmin
               .from('holdings')
               .insert({
                 user_id: req.user.id,
@@ -436,11 +436,11 @@ router.post('/place', requireAuth, async (req, res) => {
 
           if (holding.quantity === qtyVal) {
             // Delete holding
-            const { error: delErr } = await supabase.from('holdings').delete().eq('id', holding.id);
+            const { error: delErr } = await supabaseAdmin.from('holdings').delete().eq('id', holding.id);
             if (delErr) throw delErr;
           } else {
             // Update quantity
-            const { error: updErr } = await supabase
+            const { error: updErr } = await supabaseAdmin
               .from('holdings')
               .update({
                 quantity: holding.quantity - qtyVal,
@@ -453,7 +453,7 @@ router.post('/place', requireAuth, async (req, res) => {
         }
 
         // 2. Insert Completed Trade
-        const { error: tradeErr } = await supabase.from('trades').insert({
+        const { error: tradeErr } = await supabaseAdmin.from('trades').insert({
           user_id: req.user.id,
           stock_symbol: symbolUpper,
           stock_name: symbolUpper,
@@ -466,7 +466,7 @@ router.post('/place', requireAuth, async (req, res) => {
         if (tradeErr) throw tradeErr;
 
         // 3. Save to orders log table
-        const { error: ordErr } = await supabase.from('orders').insert({
+        const { error: ordErr } = await supabaseAdmin.from('orders').insert({
           user_id: req.user.id,
           stock_symbol: symbolUpper,
           transaction_type: actionUpper,
@@ -488,7 +488,7 @@ router.post('/place', requireAuth, async (req, res) => {
 
       } else {
         // LIMIT order: insert as OPEN and wait for price triggers
-        const { error: ordErr } = await supabase.from('orders').insert({
+        const { error: ordErr } = await supabaseAdmin.from('orders').insert({
           user_id: req.user.id,
           stock_symbol: symbolUpper,
           transaction_type: actionUpper,
@@ -534,7 +534,7 @@ router.post('/cancel', requireAuth, async (req, res) => {
       });
       await kc.cancelOrder('regular', order_id);
       
-      await supabase
+      await supabaseAdmin
         .from('orders')
         .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
         .eq('broker_order_id', order_id);
@@ -542,7 +542,7 @@ router.post('/cancel', requireAuth, async (req, res) => {
       return res.json({ status: 'SUCCESS', message: `Order ${order_id} cancelled.` });
     } else {
       // Mock Mode: update status
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from('orders')
         .update({ status: 'CANCELLED', updated_at: new Date().toISOString() })
         .eq('user_id', req.user.id)
@@ -604,11 +604,11 @@ router.post('/gtt/cancel', requireAuth, async (req, res) => {
       });
       await kc.deleteGTT(gtt_id);
       
-      await supabase.from('gtts').delete().eq('gtt_id', gtt_id);
+      await supabaseAdmin.from('gtts').delete().eq('gtt_id', gtt_id);
       return res.json({ status: 'SUCCESS', message: `GTT trigger ${gtt_id} cancelled.` });
     } else {
       // Mock Mode: update status
-      const { error } = await supabase
+      const { error } = await supabaseAdmin
         .from('gtts')
         .update({ status: 'CANCELLED' })
         .eq('user_id', req.user.id)
@@ -631,7 +631,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
     const userId = req.user.id;
 
     // 1. Fetch open limit orders
-    const { data: openOrders, error: errOrders } = await supabase
+    const { data: openOrders, error: errOrders } = await supabaseAdmin
       .from('orders')
       .select('*')
       .eq('user_id', userId)
@@ -640,7 +640,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
     if (errOrders) throw errOrders;
 
     // 2. Fetch active GTT triggers
-    const { data: activeGTTs, error: errGtts } = await supabase
+    const { data: activeGTTs, error: errGtts } = await supabaseAdmin
       .from('gtts')
       .select('*')
       .eq('user_id', userId)
@@ -677,7 +677,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
 
       if (shouldExecute) {
         // Execute Order
-        const { data: holding } = await supabase
+        const { data: holding } = await supabaseAdmin
           .from('holdings')
           .select('*')
           .eq('user_id', userId)
@@ -688,17 +688,17 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
           if (holding) {
             const newQty = holding.quantity + order.quantity;
             const newAvgPrice = parseFloat((((holding.average_buy_price * holding.quantity) + (order.price * order.quantity)) / newQty).toFixed(2));
-            await supabase.from('holdings').update({ quantity: newQty, average_buy_price: newAvgPrice, ltp: currentLTP, last_updated: new Date().toISOString() }).eq('id', holding.id);
+            await supabaseAdmin.from('holdings').update({ quantity: newQty, average_buy_price: newAvgPrice, ltp: currentLTP, last_updated: new Date().toISOString() }).eq('id', holding.id);
           } else {
-            await supabase.from('holdings').insert({ user_id: userId, stock_symbol: order.stock_symbol, stock_name: order.stock_symbol, average_buy_price: order.price, quantity: order.quantity, ltp: currentLTP, last_updated: new Date().toISOString() });
+            await supabaseAdmin.from('holdings').insert({ user_id: userId, stock_symbol: order.stock_symbol, stock_name: order.stock_symbol, average_buy_price: order.price, quantity: order.quantity, ltp: currentLTP, last_updated: new Date().toISOString() });
           }
         } else {
           // SELL
           if (holding && holding.quantity >= order.quantity) {
             if (holding.quantity === order.quantity) {
-              await supabase.from('holdings').delete().eq('id', holding.id);
+              await supabaseAdmin.from('holdings').delete().eq('id', holding.id);
             } else {
-              await supabase.from('holdings').update({ quantity: holding.quantity - order.quantity, ltp: currentLTP, last_updated: new Date().toISOString() }).eq('id', holding.id);
+              await supabaseAdmin.from('holdings').update({ quantity: holding.quantity - order.quantity, ltp: currentLTP, last_updated: new Date().toISOString() }).eq('id', holding.id);
             }
           } else {
             // Insufficient quantity to fill: skip execution
@@ -707,7 +707,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
         }
 
         // Insert Trade
-        await supabase.from('trades').insert({
+        await supabaseAdmin.from('trades').insert({
           user_id: userId,
           stock_symbol: order.stock_symbol,
           stock_name: order.stock_symbol,
@@ -719,7 +719,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
         });
 
         // Update Order Status to COMPLETE
-        await supabase
+        await supabaseAdmin
           .from('orders')
           .update({ status: 'COMPLETE', updated_at: new Date().toISOString() })
           .eq('id', order.id);
@@ -742,7 +742,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
         // If trigger is above, it is a target SELL trigger.
         // Let's check boundary crossing:
         // We trigger it if the price has crossed the threshold.
-        const { data: holding } = await supabase.from('holdings').select('*').eq('user_id', userId).eq('stock_symbol', gtt.stock_symbol).maybeSingle();
+        const { data: holding } = await supabaseAdmin.from('holdings').select('*').eq('user_id', userId).eq('stock_symbol', gtt.stock_symbol).maybeSingle();
         const isSell = !!holding; // Heuristic: if they own it, they are GTT-selling it.
         
         if (isSell && currentLTP >= gtt.trigger_price_1) {
@@ -766,7 +766,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
 
       if (isTriggered) {
         // Execute the triggered GTT Order
-        const { data: holding } = await supabase
+        const { data: holding } = await supabaseAdmin
           .from('holdings')
           .select('*')
           .eq('user_id', userId)
@@ -779,14 +779,14 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
           // Sell execution
           const sellQty = Math.min(holding.quantity, gtt.quantity);
           if (holding.quantity === sellQty) {
-            await supabase.from('holdings').delete().eq('id', holding.id);
+            await supabaseAdmin.from('holdings').delete().eq('id', holding.id);
           } else {
-            await supabase.from('holdings').update({ quantity: holding.quantity - sellQty, ltp: currentLTP, last_updated: new Date().toISOString() }).eq('id', holding.id);
+            await supabaseAdmin.from('holdings').update({ quantity: holding.quantity - sellQty, ltp: currentLTP, last_updated: new Date().toISOString() }).eq('id', holding.id);
           }
 
           // Insert Completed Trade
           const mockOrderId = `mock_ord_${Date.now()}`;
-          await supabase.from('trades').insert({
+          await supabaseAdmin.from('trades').insert({
             user_id: userId,
             stock_symbol: gtt.stock_symbol,
             stock_name: gtt.stock_symbol,
@@ -798,7 +798,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
           });
 
           // Insert Completed Order record
-          await supabase.from('orders').insert({
+          await supabaseAdmin.from('orders').insert({
             user_id: userId,
             stock_symbol: gtt.stock_symbol,
             transaction_type: 'SELL',
@@ -811,7 +811,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
         } else {
           // Buy execution
           const mockOrderId = `mock_ord_${Date.now()}`;
-          await supabase.from('holdings').insert({
+          await supabaseAdmin.from('holdings').insert({
             user_id: userId,
             stock_symbol: gtt.stock_symbol,
             stock_name: gtt.stock_symbol,
@@ -822,7 +822,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
           });
 
           // Insert Completed Trade
-          await supabase.from('trades').insert({
+          await supabaseAdmin.from('trades').insert({
             user_id: userId,
             stock_symbol: gtt.stock_symbol,
             stock_name: gtt.stock_symbol,
@@ -834,7 +834,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
           });
 
           // Insert Completed Order record
-          await supabase.from('orders').insert({
+          await supabaseAdmin.from('orders').insert({
             user_id: userId,
             stock_symbol: gtt.stock_symbol,
             transaction_type: 'BUY',
@@ -847,7 +847,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
         }
 
         // Update GTT status to TRIGGERED
-        await supabase
+        await supabaseAdmin
           .from('gtts')
           .update({ status: 'TRIGGERED' })
           .eq('id', gtt.id);
@@ -872,7 +872,7 @@ router.post('/sync-mock', requireAuth, async (req, res) => {
  */
 router.post('/clear-history', requireAuth, async (req, res) => {
   try {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('orders')
       .delete()
       .eq('user_id', req.user.id)

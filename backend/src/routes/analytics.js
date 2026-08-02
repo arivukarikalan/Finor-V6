@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { calculateRealizedPnL } from '../services/fifoCalculator.js';
 import { fetchHistoricalPrices } from '../services/yahooFinance.js';
@@ -16,7 +16,7 @@ router.get('/realized-pnl', requireAuth, async (req, res) => {
     const userId = req.user.id;
 
     // Fetch all trades
-    const { data: trades, error } = await supabase
+    const { data: trades, error } = await supabaseAdmin
       .from('trades')
       .select('*')
       .eq('user_id', userId)
@@ -130,7 +130,7 @@ router.get('/portfolio-history', requireAuth, async (req, res) => {
     const period = req.query.period || '1Y';
 
     // 1. Fetch trades
-    const { data: trades, error } = await supabase
+    const { data: trades, error } = await supabaseAdmin
       .from('trades')
       .select('*')
       .eq('user_id', userId)
@@ -396,7 +396,7 @@ router.post('/pnl-comparison/ai', requireAuth, async (req, res) => {
     const { startDate, endDate, stockA, stockB } = req.body;
 
     // 1. Fetch all trades
-    const { data: trades, error: tradesErr } = await supabase
+    const { data: trades, error: tradesErr } = await supabaseAdmin
       .from('trades')
       .select('*')
       .eq('user_id', userId)

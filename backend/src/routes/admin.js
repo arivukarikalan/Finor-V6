@@ -148,10 +148,10 @@ router.post('/reconcile', async (req, res) => {
     }
 
     // Call PostgreSQL RPC reconcile functions
-    const { data: txResult, error: txError } = await supabase.rpc('reconcile_staging_transactions');
+    const { data: txResult, error: txError } = await supabaseAdmin.rpc('reconcile_staging_transactions');
     if (txError) throw txError;
 
-    const { data: tradeResult, error: tradeError } = await supabase.rpc('reconcile_staging_trades');
+    const { data: tradeResult, error: tradeError } = await supabaseAdmin.rpc('reconcile_staging_trades');
     if (tradeError) throw tradeError;
 
     res.json({

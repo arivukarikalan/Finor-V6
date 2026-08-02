@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getStockDailyPrices } from '../services/yahooFinance.js';
 import { recalculateHoldings } from './trades.js';
@@ -10,7 +10,7 @@ const router = express.Router();
 router.get('/', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('portfolio_snapshots')
       .select('*')
       .eq('user_id', userId)
@@ -37,7 +37,7 @@ router.post('/', requireAuth, async (req, res) => {
     }
     
     // 1. Fetch active holdings
-    const { data: holdings, error: holdError } = await supabase
+    const { data: holdings, error: holdError } = await supabaseAdmin
       .from('holdings')
       .select('*')
       .eq('user_id', userId);
@@ -61,7 +61,7 @@ router.post('/', requireAuth, async (req, res) => {
     const snapshotDate = new Date().toISOString().split('T')[0];
 
     // 4. Duplicate Check: Check if snapshot already exists for today
-    const { data: existing, error: checkError } = await supabase
+    const { data: existing, error: checkError } = await supabaseAdmin
       .from('portfolio_snapshots')
       .select('id')
       .eq('user_id', userId)
@@ -73,7 +73,7 @@ router.post('/', requireAuth, async (req, res) => {
     let savedData;
     if (existing) {
       // Update existing snapshot
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAdmin
         .from('portfolio_snapshots')
         .update({
           holdings_state: holdingsState,
@@ -89,7 +89,7 @@ router.post('/', requireAuth, async (req, res) => {
       savedData = data;
     } else {
       // Insert new snapshot
-      const { data, error } = await supabase
+      const { data, error } = await supabaseAdmin
         .from('portfolio_snapshots')
         .insert({
           user_id: userId,
@@ -119,7 +119,7 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
     const userId = req.user.id;
 
     // 1. Fetch all user trades in ascending date order
-    const { data: trades, error: tradesError } = await supabase
+    const { data: trades, error: tradesError } = await supabaseAdmin
       .from('trades')
       .select('*')
       .eq('user_id', userId)
@@ -244,7 +244,7 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
       const weeklyPL = totalValue - totalInvested;
 
       // Duplicate Check: Check if snapshot already exists for this date
-      const { data: existing, error: checkError } = await supabase
+      const { data: existing, error: checkError } = await supabaseAdmin
         .from('portfolio_snapshots')
         .select('id')
         .eq('user_id', userId)
@@ -255,7 +255,7 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
 
       if (existing) {
         // Update existing snapshot
-        const { error } = await supabase
+        const { error } = await supabaseAdmin
           .from('portfolio_snapshots')
           .update({
             holdings_state: holdingsState,
@@ -269,7 +269,7 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
         updatedCount++;
       } else {
         // Insert new snapshot
-        const { error } = await supabase
+        const { error } = await supabaseAdmin
           .from('portfolio_snapshots')
           .insert({
             user_id: userId,
@@ -349,7 +349,7 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
     const totalValue = todayHoldingsState.reduce((sum, h) => sum + (h.ltp * h.quantity), 0);
     const weeklyPL = totalValue - totalInvested;
 
-    const { data: existingToday, error: checkTodayErr } = await supabase
+    const { data: existingToday, error: checkTodayErr } = await supabaseAdmin
       .from('portfolio_snapshots')
       .select('id')
       .eq('user_id', userId)
@@ -358,7 +358,7 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
 
     if (!checkTodayErr) {
       if (existingToday) {
-        await supabase
+        await supabaseAdmin
           .from('portfolio_snapshots')
           .update({
             holdings_state: todayHoldingsState,
@@ -369,7 +369,7 @@ router.post('/initialize-history', requireAuth, async (req, res) => {
           .eq('id', existingToday.id);
         updatedCount++;
       } else {
-        await supabase
+        await supabaseAdmin
           .from('portfolio_snapshots')
           .insert({
             user_id: userId,

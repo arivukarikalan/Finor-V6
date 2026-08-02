@@ -1,6 +1,6 @@
 import express from 'express';
 import PDFDocument from 'pdfkit';
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { calculateRealizedPnL } from '../services/fifoCalculator.js';
 import crypto from 'crypto';
@@ -20,7 +20,7 @@ function getDailyHistoryKey(userId, dateKey) {
 async function getLastAssistantMessage(userId) {
   const dateKey = getISTDateKey();
   const key = getDailyHistoryKey(userId, dateKey);
-  const { data } = await supabase
+  const { data } = await supabaseAdmin
     .from('news_cache')
     .select('news_content')
     .eq('stock_symbol', key)

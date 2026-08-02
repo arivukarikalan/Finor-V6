@@ -1,5 +1,5 @@
 import express from 'express';
-import { supabase } from '../config/supabase.js';
+import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { NSE } from 'nse-bse-api';
 
@@ -434,14 +434,14 @@ router.get('/corporate-actions', requireAuth, async (req, res) => {
     const userId = req.user.id;
 
     // 1. Fetch user's holdings and historical trades to include past stocks
-    const { data: holdings, error: holdError } = await supabase
+    const { data: holdings, error: holdError } = await supabaseAdmin
       .from('holdings')
       .select('stock_symbol')
       .eq('user_id', userId);
 
     if (holdError) throw holdError;
 
-    const { data: trades, error: tradesError } = await supabase
+    const { data: trades, error: tradesError } = await supabaseAdmin
       .from('trades')
       .select('stock_symbol')
       .eq('user_id', userId);
@@ -462,7 +462,7 @@ router.get('/corporate-actions', requireAuth, async (req, res) => {
     const actionsCacheTTL = 6 * 60 * 60 * 1000; // 6 hours cache limit
 
     // 2. Fetch cached news from database (used for fallbacks)
-    const { data: cachedNews, error: cacheFetchError } = await supabase
+    const { data: cachedNews, error: cacheFetchError } = await supabaseAdmin
       .from('news_cache')
       .select('*')
       .in('stock_symbol', uniqueSymbols);
@@ -476,7 +476,7 @@ router.get('/corporate-actions', requireAuth, async (req, res) => {
 
     // 3. Fetch cached corporate actions from Supabase
     const actionCacheKeys = uniqueSymbols.map(s => `${s}_ACTIONS`);
-    const { data: cachedActionsRows, error: cacheActionsErr } = await supabase
+    const { data: cachedActionsRows, error: cacheActionsErr } = await supabaseAdmin
       .from('news_cache')
       .select('*')
       .in('stock_symbol', actionCacheKeys);
@@ -754,14 +754,14 @@ router.get('/corporate-actions', requireAuth, async (req, res) => {
       // Save into cache (Supabase news_cache table under SYMBOL_ACTIONS symbol)
       try {
         const cacheSymbol = `${symbol}_ACTIONS`;
-        const { data: existing, error: findErr } = await supabase
+        const { data: existing, error: findErr } = await supabaseAdmin
           .from('news_cache')
           .select('id')
           .eq('stock_symbol', cacheSymbol)
           .maybeSingle();
 
         if (existing) {
-          await supabase
+          await supabaseAdmin
             .from('news_cache')
             .update({
               news_content: freshEvents,
@@ -770,7 +770,7 @@ router.get('/corporate-actions', requireAuth, async (req, res) => {
             })
             .eq('stock_symbol', cacheSymbol);
         } else {
-          await supabase
+          await supabaseAdmin
             .from('news_cache')
             .insert({
               stock_symbol: cacheSymbol,
@@ -814,14 +814,14 @@ router.get('/', requireAuth, async (req, res) => {
     const userId = req.user.id;
 
     // 1. Fetch user's active holdings and historical trades to include past stocks
-    const { data: holdings, error: holdError } = await supabase
+    const { data: holdings, error: holdError } = await supabaseAdmin
       .from('holdings')
       .select('stock_symbol')
       .eq('user_id', userId);
 
     if (holdError) throw holdError;
 
-    const { data: trades, error: tradesError } = await supabase
+    const { data: trades, error: tradesError } = await supabaseAdmin
       .from('trades')
       .select('stock_symbol')
       .eq('user_id', userId);
@@ -843,7 +843,7 @@ router.get('/', requireAuth, async (req, res) => {
     const cacheTTL = 4 * 60 * 60 * 1000; // 4 Hours cache validation limit
 
     // 2. Fetch cached news from database
-    const { data: cachedNews, error: cacheFetchError } = await supabase
+    const { data: cachedNews, error: cacheFetchError } = await supabaseAdmin
       .from('news_cache')
       .select('*')
       .in('stock_symbol', uniqueSymbols);
@@ -980,7 +980,7 @@ router.get('/', requireAuth, async (req, res) => {
 
       // Save into Supabase news_cache (Update if exists, else insert)
       try {
-        const { data: existing, error: findErr } = await supabase
+        const { data: existing, error: findErr } = await supabaseAdmin
           .from('news_cache')
           .select('id')
           .eq('stock_symbol', symbol)
@@ -991,7 +991,7 @@ router.get('/', requireAuth, async (req, res) => {
         }
 
         if (existing) {
-          const { error: updateErr } = await supabase
+          const { error: updateErr } = await supabaseAdmin
             .from('news_cache')
             .update({
               news_content: articles,
@@ -1004,7 +1004,7 @@ router.get('/', requireAuth, async (req, res) => {
             console.error(`[NewsRoute] Cache update failed for ${symbol}:`, updateErr.message);
           }
         } else {
-          const { error: insertErr } = await supabase
+          const { error: insertErr } = await supabaseAdmin
             .from('news_cache')
             .insert({
               stock_symbol: symbol,
