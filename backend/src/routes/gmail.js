@@ -543,7 +543,8 @@ router.post('/sync', requireAuth, async (req, res) => {
               trade_type: trade.trade_type,
               quantity: trade.quantity,
               price: trade.price,
-              order_id: `GMAIL_${msg.id}_${trade.stock_symbol}`
+              order_id: `GMAIL_${msg.id}_${trade.stock_symbol}`,
+              source: 'GMAIL_SYNC'
             },
             raw_data_hash: defaultHash,
             status: 'PENDING'

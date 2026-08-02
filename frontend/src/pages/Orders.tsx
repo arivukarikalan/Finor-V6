@@ -14,7 +14,8 @@ import {
   Clock,
   Trash2,
   Activity,
-  Edit
+  Edit,
+  Sparkles
 } from 'lucide-react';
 
 interface OrderConfig {
@@ -541,6 +542,30 @@ export const Orders = () => {
       setError(err.message || 'Failed to clear order history.');
     } finally {
       setClearingHistory(false);
+    }
+  };
+
+  const [isDeduplicating, setIsDeduplicating] = useState(false);
+
+  const handleDeduplicateTrades = async () => {
+    setIsDeduplicating(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const res: any = await apiRequest('/trades/deduplicate', { method: 'POST' });
+      setSuccess(res.message);
+      try {
+        const { db: appDb } = await import('../services/api');
+        await appDb.apiCache.clear();
+      } catch (dbErr) {
+        console.warn('Cache clear failed:', dbErr);
+      }
+      await fetchLists();
+      window.dispatchEvent(new Event('portfolio-sync-complete'));
+    } catch (err: any) {
+      setError(err.message || 'Deduplication failed.');
+    } finally {
+      setIsDeduplicating(false);
     }
   };
 
@@ -1267,6 +1292,21 @@ export const Orders = () => {
                         <option value="ALL">All Trades</option>
                       </select>
                     </div>
+
+                    {/* Clean Duplicates Button */}
+                    <button
+                      onClick={handleDeduplicateTrades}
+                      disabled={isDeduplicating}
+                      title="Scan and remove duplicate trade records"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                    >
+                      {isDeduplicating ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                      ) : (
+                        <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                      )}
+                      <span>{isDeduplicating ? 'Cleaning...' : 'Clean Duplicates'}</span>
+                    </button>
                   </div>
                 </div>
               )}

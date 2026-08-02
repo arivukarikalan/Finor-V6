@@ -274,7 +274,8 @@ router.post('/upload', requireAuth, express.text({ type: 'text/csv', limit: '2mb
         trade_type: t.trade_type,
         quantity: t.quantity,
         price: t.price,
-        order_id: t.order_id || null
+        order_id: t.order_id || null,
+        source: 'CSV_IMPORT'
       },
       raw_data_hash: getTradeHash(t),
       status: 'PENDING'
@@ -470,6 +471,67 @@ router.post('/delete-multiple', requireAuth, async (req, res) => {
     res.json({ message: 'Trades deleted successfully and holdings updated.' });
   } catch (err) {
     console.error('[TradesRoute] Delete multiple trades failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/trades/deduplicate
+ * Scans user trades for exact date + symbol + type + qty + price overlaps and removes duplicates.
+ */
+router.post('/deduplicate', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch all user trades ordered by trade_date ascending
+    const { data: trades, error } = await supabaseAdmin
+      .from('trades')
+      .select('*')
+      .eq('user_id', userId)
+      .order('trade_date', { ascending: true });
+
+    if (error) throw error;
+
+    const seenMap = new Map();
+    const duplicateIds = [];
+
+    for (const t of trades) {
+      const dateOnly = new Date(t.trade_date).toISOString().substring(0, 10);
+      const symbol = t.stock_symbol.toUpperCase();
+      const type = t.trade_type.toUpperCase();
+      const qty = Number(t.quantity);
+      const price = parseFloat(t.price).toFixed(2);
+      
+      const compositeKey = `${symbol}_${dateOnly}_${type}_${qty}_${price}`;
+      
+      if (seenMap.has(compositeKey)) {
+        duplicateIds.push(t.id);
+      } else {
+        seenMap.set(compositeKey, t.id);
+      }
+    }
+
+    if (duplicateIds.length === 0) {
+      return res.json({ message: 'No duplicate trades found. Your ledger is clean!', removedCount: 0 });
+    }
+
+    const { error: deleteErr } = await supabaseAdmin
+      .from('trades')
+      .delete()
+      .in('id', duplicateIds)
+      .eq('user_id', userId);
+
+    if (deleteErr) throw deleteErr;
+
+    // Recalculate holdings automatically
+    await recalculateHoldings(userId);
+
+    res.json({
+      message: `Cleaned ${duplicateIds.length} duplicate trade(s) and recalculated holdings.`,
+      removedCount: duplicateIds.length
+    });
+  } catch (err) {
+    console.error('[TradesRoute] Deduplicate trades failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
