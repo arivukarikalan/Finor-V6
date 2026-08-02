@@ -425,7 +425,7 @@ router.put('/:id', requireAuth, async (req, res) => {
         quantity: Number(quantity),
         price: Number(price),
         trade_date: new Date(trade_date).toISOString(),
-        stock_name: stock_name || null
+        stock_name: (stock_name && stock_name.trim()) ? stock_name.trim() : stock_symbol.toUpperCase()
       })
       .eq('id', tradeId)
       .eq('user_id', userId)
@@ -583,6 +583,7 @@ router.post('/restore-from-staging', requireAuth, async (req, res) => {
         toInsert.push({
           user_id: userId,
           stock_symbol: symbol.toUpperCase(),
+          stock_name: (raw.stock_name || symbol).toUpperCase(),
           trade_date: tradeDate,
           trade_type: tradeType.toUpperCase(),
           quantity: qty,
