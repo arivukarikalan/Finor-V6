@@ -477,13 +477,13 @@ router.post('/delete-multiple', requireAuth, async (req, res) => {
 
 /**
  * POST /api/trades/deduplicate
- * Scans user trades for exact date + symbol + type + qty + price overlaps and removes duplicates.
+ * Scans user trades for exact duplicate order_id or exact matching raw_data_hash in staging.
  */
 router.post('/deduplicate', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Fetch all user trades ordered by trade_date ascending
+    // Fetch trades for user
     const { data: trades, error } = await supabaseAdmin
       .from('trades')
       .select('*')
@@ -492,27 +492,23 @@ router.post('/deduplicate', requireAuth, async (req, res) => {
 
     if (error) throw error;
 
-    const seenMap = new Map();
+    // Only deduplicate if explicit order_id match exists
+    const seenOrderIds = new Map();
     const duplicateIds = [];
 
     for (const t of trades) {
-      const dateOnly = new Date(t.trade_date).toISOString().substring(0, 10);
-      const symbol = t.stock_symbol.toUpperCase();
-      const type = t.trade_type.toUpperCase();
-      const qty = Number(t.quantity);
-      const price = parseFloat(t.price).toFixed(2);
-      
-      const compositeKey = `${symbol}_${dateOnly}_${type}_${qty}_${price}`;
-      
-      if (seenMap.has(compositeKey)) {
-        duplicateIds.push(t.id);
-      } else {
-        seenMap.set(compositeKey, t.id);
+      if (t.order_id && t.order_id.trim() !== '') {
+        const orderKey = `${t.stock_symbol}_${t.order_id}`;
+        if (seenOrderIds.has(orderKey)) {
+          duplicateIds.push(t.id);
+        } else {
+          seenOrderIds.set(orderKey, t.id);
+        }
       }
     }
 
     if (duplicateIds.length === 0) {
-      return res.json({ message: 'No duplicate trades found. Your ledger is clean!', removedCount: 0 });
+      return res.json({ message: 'No duplicate trades found with matching Order IDs. Your ledger is safe and clean!', removedCount: 0 });
     }
 
     const { error: deleteErr } = await supabaseAdmin
@@ -527,11 +523,95 @@ router.post('/deduplicate', requireAuth, async (req, res) => {
     await recalculateHoldings(userId);
 
     res.json({
-      message: `Cleaned ${duplicateIds.length} duplicate trade(s) and recalculated holdings.`,
+      message: `Cleaned ${duplicateIds.length} duplicate trade(s) with matching Order IDs.`,
       removedCount: duplicateIds.length
     });
   } catch (err) {
     console.error('[TradesRoute] Deduplicate trades failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/trades/restore-from-staging
+ * Re-reconciles all raw staging trades into the main trades table to recover missing items.
+ */
+router.post('/restore-from-staging', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Fetch all staging records for user
+    const { data: stagedItems, error: sErr } = await supabaseAdmin
+      .from('staging_trades')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (sErr) throw sErr;
+
+    if (!stagedItems || stagedItems.length === 0) {
+      return res.json({ message: 'No staging vault records found for your account.', restoredCount: 0 });
+    }
+
+    // Fetch current trades to prevent duplicates
+    const { data: existingTrades, error: tErr } = await supabaseAdmin
+      .from('trades')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (tErr) throw tErr;
+
+    const existingKeys = new Set(
+      (existingTrades || []).map(t => `${t.stock_symbol.toUpperCase()}_${new Date(t.trade_date).toISOString().substring(0, 10)}_${t.trade_type.toUpperCase()}_${t.quantity}_${parseFloat(t.price).toFixed(2)}_${t.order_id || ''}`)
+    );
+
+    const toInsert = [];
+    for (const item of stagedItems) {
+      const raw = item.raw_data || {};
+      const symbol = raw.stock_symbol || raw.symbol;
+      const tradeDate = raw.trade_date || raw.date;
+      const tradeType = raw.trade_type || raw.type;
+      const qty = raw.quantity || raw.qty;
+      const price = raw.price;
+      const orderId = raw.order_id || null;
+
+      if (!symbol || !tradeDate || !tradeType || !qty || !price) continue;
+
+      const dateStr = new Date(tradeDate).toISOString().substring(0, 10);
+      const key = `${symbol.toUpperCase()}_${dateStr}_${tradeType.toUpperCase()}_${qty}_${parseFloat(price).toFixed(2)}_${orderId || ''}`;
+
+      if (!existingKeys.has(key)) {
+        toInsert.push({
+          user_id: userId,
+          stock_symbol: symbol.toUpperCase(),
+          trade_date: tradeDate,
+          trade_type: tradeType.toUpperCase(),
+          quantity: qty,
+          price: price,
+          order_id: orderId
+        });
+        existingKeys.add(key);
+      }
+    }
+
+    let restoredCount = 0;
+    if (toInsert.length > 0) {
+      const { error: insErr } = await supabaseAdmin
+        .from('trades')
+        .insert(toInsert);
+
+      if (insErr) throw insErr;
+      restoredCount = toInsert.length;
+    }
+
+    // Recalculate holdings automatically
+    await recalculateHoldings(userId);
+
+    res.json({
+      message: `Successfully restored ${restoredCount} missing trade(s) from Staging Vault. Portfolio recalculated!`,
+      restoredCount
+    });
+  } catch (err) {
+    console.error('[TradesRoute] Restore from staging failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

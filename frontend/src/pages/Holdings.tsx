@@ -29,7 +29,8 @@ import {
   ChevronUp,
   LayoutGrid,
   Table,
-  List
+  List,
+  RotateCcw
 } from 'lucide-react';
 
 interface Holding {
@@ -176,6 +177,27 @@ export const Holdings = () => {
   const [alertType, setAlertType] = useState<'success' | 'error' | 'info'>('success');
   const [alertTitle, setAlertTitle] = useState('');
   const [alertMessage, setAlertMessage] = useState('');
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  const handleRestoreFromStaging = async () => {
+    setIsRestoring(true);
+    try {
+      const res: any = await apiRequest('/trades/restore-from-staging', { method: 'POST' });
+      triggerAlert('success', 'Ledger Vault Restored', res.message || 'Restored missing trades from Staging Vault.');
+      try {
+        const { db: appDb } = await import('../services/api');
+        await appDb.apiCache.clear();
+      } catch (e) {
+        console.warn('Cache clear error:', e);
+      }
+      await fetchCoreData();
+      window.dispatchEvent(new Event('portfolio-sync-complete'));
+    } catch (err: any) {
+      triggerAlert('error', 'Restoration Failed', err.message || 'Could not restore trades.');
+    } finally {
+      setIsRestoring(false);
+    }
+  };
 
   const triggerAlert = (type: 'success' | 'error' | 'info', title: string, message: string) => {
     setAlertType(type);
@@ -1747,6 +1769,20 @@ export const Holdings = () => {
           >
             <AlertTriangle className={`w-3.5 h-3.5 ${forceRebuilding ? 'animate-pulse text-rose-500' : ''}`} />
             Force Rebuild
+          </button>
+
+          <button
+            onClick={handleRestoreFromStaging}
+            disabled={isRestoring}
+            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-purple-500/30 bg-purple-500/10 text-xs font-semibold text-purple-300 hover:text-white hover:bg-purple-500/25 transition-all cursor-pointer disabled:opacity-50"
+            title="Recover any missing raw trade records from Staging Vault"
+          >
+            {isRestoring ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+            ) : (
+              <RotateCcw className="w-3.5 h-3.5 text-purple-400" />
+            )}
+            <span>{isRestoring ? 'Restoring...' : 'Restore Staged Vault'}</span>
           </button>
           
           <button

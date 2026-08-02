@@ -15,7 +15,8 @@ import {
   Trash2,
   Activity,
   Edit,
-  Sparkles
+  Sparkles,
+  RotateCcw
 } from 'lucide-react';
 
 interface OrderConfig {
@@ -107,6 +108,27 @@ export const Orders = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [submittingOrder, setSubmittingOrder] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  const handleRestoreFromStaging = async () => {
+    setIsRestoring(true);
+    try {
+      const res: any = await apiRequest('/trades/restore-from-staging', { method: 'POST' });
+      setSuccess(res.message || 'Restored missing trade records from Staging Vault.');
+      try {
+        const { db: appDb } = await import('../services/api');
+        await appDb.apiCache.clear();
+      } catch (e) {
+        console.warn('Cache clear error:', e);
+      }
+      await fetchLists();
+      window.dispatchEvent(new Event('portfolio-sync-complete'));
+    } catch (err: any) {
+      setError(err.message || 'Failed to restore trades.');
+    } finally {
+      setIsRestoring(false);
+    }
+  };
 
   // List Virtualization Windowing
   const [displayLimit, setDisplayLimit] = useState(50);
@@ -1306,6 +1328,21 @@ export const Orders = () => {
                         <Sparkles className="w-3.5 h-3.5 text-purple-400" />
                       )}
                       <span>{isDeduplicating ? 'Cleaning...' : 'Clean Duplicates'}</span>
+                    </button>
+
+                    {/* Restore Vault Button */}
+                    <button
+                      onClick={handleRestoreFromStaging}
+                      disabled={isRestoring}
+                      title="Recover missing trade records from Staging Vault"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-brand-300 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50 shrink-0"
+                    >
+                      {isRestoring ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-400" />
+                      ) : (
+                        <RotateCcw className="w-3.5 h-3.5 text-brand-400" />
+                      )}
+                      <span>{isRestoring ? 'Restoring...' : 'Restore Staged Vault'}</span>
                     </button>
                   </div>
                 </div>
