@@ -151,6 +151,9 @@ export const Finance: React.FC = () => {
   // Chart Mode: Daily Spending View (default) vs Cumulative Trajectory View
   const [chartMode, setChartMode] = useState<'daily' | 'cumulative'>('daily');
 
+  // Debt View Mode: Detailed Records vs Merged by Person
+  const [debtViewMode, setDebtViewMode] = useState<'detailed' | 'merged'>('detailed');
+
   const handleQuickMapCategory = async (tx: Transaction, newCat: string) => {
     setActiveQuickMapTxId(null);
     try {
@@ -728,6 +731,48 @@ export const Finance: React.FC = () => {
       </div>
     );
   }
+
+  const getMergedDebts = () => {
+    const groups: { [key: string]: Debt[] } = {};
+    debts.forEach(d => {
+      const name = d.person_name.trim();
+      if (!groups[name]) groups[name] = [];
+      groups[name].push(d);
+    });
+
+    return Object.entries(groups).map(([name, records]) => {
+      let totalLentOriginal = 0;
+      let totalLentRemaining = 0;
+      let totalBorrowedOriginal = 0;
+      let totalBorrowedRemaining = 0;
+
+      records.forEach(r => {
+        if (r.type === 'LENT') {
+          totalLentOriginal += r.amount;
+          totalLentRemaining += r.remaining_amount;
+        } else {
+          totalBorrowedOriginal += r.amount;
+          totalBorrowedRemaining += r.remaining_amount;
+        }
+      });
+
+      const netRemaining = totalLentRemaining - totalBorrowedRemaining;
+      const netType = netRemaining >= 0 ? 'LENT' : 'BORROWED';
+      const status = (totalLentRemaining === 0 && totalBorrowedRemaining === 0) ? 'SETTLED' : 'ACTIVE';
+
+      return {
+        person_name: name,
+        type: netType,
+        total_lent_original: totalLentOriginal,
+        total_lent_remaining: totalLentRemaining,
+        total_borrowed_original: totalBorrowedOriginal,
+        total_borrowed_remaining: totalBorrowedRemaining,
+        net_remaining: Math.abs(netRemaining),
+        status,
+        records
+      };
+    }).sort((a, b) => b.net_remaining - a.net_remaining);
+  };
 
   const chartData = Object.keys(assetValues).map(key => ({
     name: key.replace('_', ' '),
@@ -1704,84 +1749,207 @@ export const Finance: React.FC = () => {
             </button>
           </div>
 
+          {/* View Mode Toggle */}
+          <div className="flex items-center gap-2 bg-dark-depth-2/40 border border-dark-border/40 p-1 rounded-xl w-fit">
+            <button
+              onClick={() => setDebtViewMode('detailed')}
+              className={`px-4 py-2 rounded-xl text-xs font-black tracking-wide uppercase transition-all cursor-pointer ${
+                debtViewMode === 'detailed'
+                  ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Detailed Records
+            </button>
+            <button
+              onClick={() => setDebtViewMode('merged')}
+              className={`px-4 py-2 rounded-xl text-xs font-black tracking-wide uppercase transition-all cursor-pointer ${
+                debtViewMode === 'merged'
+                  ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              Merged by Person
+            </button>
+          </div>
+
           {/* Debt Entries Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {debts.length > 0 ? (
-              debts.map(d => (
-                <div key={d.id} className="glass-panel rounded-2xl p-5 border border-dark-border space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-sm text-white">{d.person_name}</span>
-                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
-                          d.type === 'LENT' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                        }`}>
-                          {d.type === 'LENT' ? 'LENT (Receivable)' : 'BORROWED (Liability)'}
+            {debtViewMode === 'detailed' ? (
+              debts.length > 0 ? (
+                debts.map(d => (
+                  <div key={d.id} className="glass-panel rounded-2xl p-5 border border-dark-border space-y-4">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-sm text-white">{d.person_name}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
+                            d.type === 'LENT' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                          }`}>
+                            {d.type === 'LENT' ? 'LENT (Receivable)' : 'BORROWED (Liability)'}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-gray-400 block mt-1">
+                          Recorded: {new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                         </span>
                       </div>
-                      <span className="text-[9px] text-gray-400 block mt-1">
-                        Recorded: {new Date(d.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+
+                      <span className={`text-xs font-black px-2 py-1 rounded-lg border ${
+                        d.status === 'SETTLED' ? 'bg-slate-700/20 text-gray-400 border-slate-700/40' : 'bg-brand-500/10 text-brand-400 border-brand-500/20'
+                      }`}>
+                        {d.status}
                       </span>
                     </div>
 
-                    <span className={`text-xs font-black px-2 py-1 rounded-lg border ${
-                      d.status === 'SETTLED' ? 'bg-slate-700/20 text-gray-400 border-slate-700/40' : 'bg-brand-500/10 text-brand-400 border-brand-500/20'
-                    }`}>
-                      {d.status}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 bg-dark-depth-2/40 p-3 rounded-xl text-xs font-semibold">
-                    <div>
-                      <span className="text-[9px] text-gray-500 block uppercase">Original Amount</span>
-                      <span className="text-white font-bold">{fmt(d.amount)}</span>
+                    <div className="grid grid-cols-2 gap-2 bg-dark-depth-2/40 p-3 rounded-xl text-xs font-semibold">
+                      <div>
+                        <span className="text-[9px] text-gray-500 block uppercase">Original Amount</span>
+                        <span className="text-white font-bold">{fmt(d.amount)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-gray-500 block uppercase">Remaining Due</span>
+                        <span className={`font-black ${d.remaining_amount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                          {fmt(d.remaining_amount)}
+                        </span>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-[9px] text-gray-500 block uppercase">Remaining Due</span>
-                      <span className={`font-black ${d.remaining_amount > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                        {fmt(d.remaining_amount)}
-                      </span>
-                    </div>
-                  </div>
 
-                  {d.notes && (
-                    <p className="text-[10px] text-gray-400 leading-relaxed font-mono bg-dark-depth-2/20 p-2.5 rounded-xl border border-dark-border/20 whitespace-pre-wrap">
-                      {d.notes}
-                    </p>
-                  )}
-
-                  <div className="flex items-center justify-between pt-2 border-t border-dark-border/40">
-                    <button
-                      onClick={() => confirmDeleteDebt(d.id)}
-                      className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                      title="Delete Debt"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-
-                    {d.status === 'ACTIVE' && (
-                      <button
-                        onClick={() => {
-                          setShowRepayModal(d);
-                          setRepayForm({
-                            amount: d.remaining_amount.toString(),
-                            date: new Date().toISOString().split('T')[0],
-                            method: 'UPI',
-                            description: `Repayment for ${d.person_name}`
-                          });
-                        }}
-                        className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                      >
-                        Record Repayment
-                      </button>
+                    {d.notes && (
+                      <p className="text-[10px] text-gray-400 leading-relaxed font-mono bg-dark-depth-2/20 p-2.5 rounded-xl border border-dark-border/20 whitespace-pre-wrap">
+                        {d.notes}
+                      </p>
                     )}
+
+                    <div className="flex items-center justify-between pt-2 border-t border-dark-border/40">
+                      <button
+                        onClick={() => confirmDeleteDebt(d.id)}
+                        className="p-1.5 rounded-lg text-gray-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                        title="Delete Debt"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+
+                      {d.status === 'ACTIVE' && (
+                        <button
+                          onClick={() => {
+                            setShowRepayModal(d);
+                            setRepayForm({
+                              amount: d.remaining_amount.toString(),
+                              date: new Date().toISOString().split('T')[0],
+                              method: 'UPI',
+                              description: `Repayment for ${d.person_name}`
+                            });
+                          }}
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                        >
+                          Record Repayment
+                        </button>
+                      )}
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div className="col-span-2 glass-panel rounded-3xl p-12 text-center text-gray-500">
+                  No active debt records on ledger. Click "+ Create Debt Record" to start tracking.
                 </div>
-              ))
+              )
             ) : (
-              <div className="col-span-2 glass-panel rounded-3xl p-12 text-center text-gray-500">
-                No active debt records on ledger. Click "+ Create Debt Record" to start tracking.
-              </div>
+              // Merged by Person
+              getMergedDebts().length > 0 ? (
+                getMergedDebts().map(m => (
+                  <div key={m.person_name} className="glass-panel rounded-2xl p-5 border border-dark-border space-y-4 relative overflow-hidden">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-sm text-white">{m.person_name}</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${
+                            m.status === 'SETTLED'
+                              ? 'bg-slate-700/20 text-gray-400 border-slate-700/40'
+                              : m.type === 'LENT'
+                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                              : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                          }`}>
+                            {m.status === 'SETTLED'
+                              ? 'SETTLED'
+                              : m.type === 'LENT'
+                              ? 'Net Receivable'
+                              : 'Net Payable'}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-gray-400 block mt-1">
+                          {m.records.length} transaction{m.records.length > 1 ? 's' : ''} on ledger
+                        </span>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-[9px] text-gray-500 block uppercase">Net Balance Due</span>
+                        <span className={`text-base font-black ${m.status === 'SETTLED' ? 'text-gray-400' : m.type === 'LENT' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          {fmt(m.net_remaining)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 bg-dark-depth-2/40 p-3 rounded-xl text-xs font-semibold">
+                      <div>
+                        <span className="text-[9px] text-gray-500 block uppercase">Total Lent</span>
+                        <span className="text-white font-bold">{fmt(m.total_lent_original)}</span>
+                        {m.total_lent_remaining > 0 && (
+                          <span className="text-[9px] text-emerald-400 block font-normal">Pending: {fmt(m.total_lent_remaining)}</span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-gray-500 block uppercase">Total Borrowed</span>
+                        <span className="text-white font-bold">{fmt(m.total_borrowed_original)}</span>
+                        {m.total_borrowed_remaining > 0 && (
+                          <span className="text-[9px] text-amber-400 block font-normal">Pending: {fmt(m.total_borrowed_remaining)}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 pt-2 border-t border-dark-border/40">
+                      <span className="text-[9px] text-gray-500 uppercase tracking-wider block font-bold">Ledger Transactions</span>
+                      <div className="max-h-24 overflow-y-auto space-y-1 thin-scrollbar">
+                        {m.records.map(r => (
+                          <div key={r.id} className="flex items-center justify-between text-[10px] bg-dark-depth-2/20 hover:bg-dark-depth-2/40 p-2 rounded-lg border border-dark-border/10 transition-colors">
+                            <div className="flex items-center gap-1.5">
+                              <span className={`w-1.5 h-1.5 rounded-full ${r.type === 'LENT' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                              <span className="text-gray-400 font-mono">
+                                {new Date(r.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}:
+                              </span>
+                              <span className="text-white font-medium truncate max-w-[120px]">{r.notes || 'No description'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`font-extrabold ${r.status === 'SETTLED' ? 'text-gray-500 line-through' : r.type === 'LENT' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                {fmt(r.remaining_amount)}
+                              </span>
+                              {r.status === 'ACTIVE' && (
+                                <button
+                                  onClick={() => {
+                                    setShowRepayModal(r);
+                                    setRepayForm({
+                                      amount: r.remaining_amount.toString(),
+                                      date: new Date().toISOString().split('T')[0],
+                                      method: 'UPI',
+                                      description: `Repayment for ${r.person_name}`
+                                    });
+                                  }}
+                                  className="px-2 py-0.5 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white rounded text-[9px] font-black uppercase transition-colors cursor-pointer"
+                                >
+                                  Pay
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-2 glass-panel rounded-3xl p-12 text-center text-gray-500">
+                  No active debt records on ledger. Click "+ Create Debt Record" to start tracking.
+                </div>
+              )
             )}
           </div>
         </div>
