@@ -1230,10 +1230,10 @@ export const Orders = () => {
             <div className="flex-1 p-6">
               {/* Trade Ledger Filters Bar */}
               {listTab === 'trades' && trades.length > 0 && (
-                <div className="mb-6 p-4 rounded-2xl bg-dark-depth-2/40 border border-dark-border/60 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in duration-300">
-                  <div className="flex flex-1 flex-col sm:flex-row items-center gap-3">
+                <div className="mb-6 p-4 rounded-2xl bg-dark-depth-2/40 border border-dark-border/60 flex flex-col xl:flex-row xl:items-center justify-between gap-3.5 animate-in fade-in duration-300">
+                  <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
                     {/* Ticker Search */}
-                    <div className="relative w-full sm:w-48">
+                    <div className="relative flex-1 min-w-[140px] sm:min-w-[180px]">
                       <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                       <input 
                         type="text"
@@ -1245,13 +1245,13 @@ export const Orders = () => {
                     </div>
 
                     {/* Action Selector */}
-                    <div className="flex items-center bg-dark-depth-2 border border-dark-border rounded-xl p-0.5 w-full sm:w-auto">
+                    <div className="flex items-center bg-dark-depth-2 border border-dark-border rounded-xl p-0.5 shrink-0">
                       {(['ALL', 'BUY', 'SELL'] as const).map(action => (
                         <button
                           key={action}
                           type="button"
                           onClick={() => setTradeActionFilter(action)}
-                          className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold uppercase transition-all cursor-pointer flex-1 sm:flex-none ${
+                          className={`px-3 py-1.5 rounded-lg text-[10px] font-extrabold uppercase transition-all cursor-pointer ${
                             tradeActionFilter === action
                               ? 'bg-brand-500 text-white shadow-md'
                               : 'text-gray-400 hover:text-white'
@@ -1263,33 +1263,33 @@ export const Orders = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between sm:justify-end gap-4 w-full md:w-auto">
+                  <div className="flex flex-wrap items-center gap-3 shrink-0">
                     {/* Merge Mode Toggle */}
-                    <label className="flex items-center gap-2 select-none cursor-pointer">
+                    <label className="flex items-center gap-2 select-none cursor-pointer bg-dark-depth-2/80 border border-dark-border px-3 py-1.5 rounded-xl">
                       <input 
                         type="checkbox" 
                         checked={tradeMergeMode}
                         onChange={(e) => setTradeMergeMode(e.target.checked)}
                         className="sr-only peer"
                       />
-                      <div className="w-9 h-5 bg-dark-depth-3 rounded-full peer peer-focus:ring-1 peer-focus:ring-brand-500/50 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-600 relative"></div>
+                      <div className="w-8 h-4.5 bg-dark-depth-3 rounded-full peer peer-focus:ring-1 peer-focus:ring-brand-500/50 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-300 after:border-gray-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-brand-600 relative"></div>
                       <span className="text-[10px] font-bold text-gray-400 peer-checked:text-brand-400 transition-colors uppercase tracking-wider">
                         Merge Executions
                       </span>
                     </label>
 
                     {/* Limit Dropdown */}
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 bg-dark-depth-2/80 border border-dark-border px-2.5 py-1 rounded-xl">
                       <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Show:</span>
                       <select 
                         value={tradeLimitFilter}
                         onChange={(e) => setTradeLimitFilter(e.target.value as any)}
-                        className="bg-dark-depth-2 border border-dark-border text-gray-300 text-[10px] font-bold rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-brand-500/40"
+                        className="bg-transparent text-gray-300 text-[10px] font-bold focus:outline-none cursor-pointer"
                       >
-                        <option value="10">Last 10</option>
-                        <option value="50">Last 50</option>
-                        <option value="100">Last 100</option>
-                        <option value="ALL">All Trades</option>
+                        <option value="10" className="bg-dark-depth-1">Last 10</option>
+                        <option value="50" className="bg-dark-depth-1">Last 50</option>
+                        <option value="100" className="bg-dark-depth-1">Last 100</option>
+                        <option value="ALL" className="bg-dark-depth-1">All Trades</option>
                       </select>
                     </div>
 
@@ -1298,7 +1298,7 @@ export const Orders = () => {
                       onClick={handleDeduplicateTrades}
                       disabled={isDeduplicating}
                       title="Scan and remove duplicate trade records"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[10px] font-bold transition-all cursor-pointer disabled:opacity-50 shrink-0"
                     >
                       {isDeduplicating ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
