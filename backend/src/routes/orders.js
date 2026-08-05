@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
+import { reconcileAllStagingTrades } from '../utils/reconcile.js';
 import { getActiveSession, placeGttOrderInternal, getUserZerodhaCredentials } from '../services/orderService.js';
 
 const { KiteConnect } = pkg;
@@ -165,8 +166,11 @@ router.get('/live', requireAuth, async (req, res) => {
 
       if (newTradesAdded > 0) {
         // Run database reconciliation to move pending staged orders to public.trades
-        const { error: rErr } = await supabaseAdmin.rpc('reconcile_staging_trades');
-        if (rErr) console.error('[KiteSync] Staging reconciliation failed:', rErr.message);
+        try {
+          await reconcileAllStagingTrades();
+        } catch (rErr) {
+          console.error('[KiteSync] Staging reconciliation failed:', rErr.message);
+        }
 
         // Standardized recalculation of user active positions
         const { recalculateHoldings } = await import('./trades.js');

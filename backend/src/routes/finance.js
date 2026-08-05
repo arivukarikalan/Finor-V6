@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { google } from 'googleapis';
+import { reconcileAllStagingTransactions } from '../utils/reconcile.js';
 import { fetchLTPYahoo } from '../services/yahooFinance.js';
 
 const router = express.Router();
@@ -230,8 +231,9 @@ router.post('/transaction', requireAuth, async (req, res) => {
       }
 
       // Immediately reconcile
-      const { error: reconcileError } = await supabaseAdmin.rpc('reconcile_staging_transactions');
-      if (reconcileError) {
+      try {
+        await reconcileAllStagingTransactions();
+      } catch (reconcileError) {
         console.error('[FinanceRoute] Immediate manual reconciliation failed:', reconcileError.message);
       }
 
@@ -680,8 +682,9 @@ router.post('/sms-webhook', async (req, res) => {
     }
 
     // Immediately trigger reconciliation
-    const { error: reconcileError } = await supabaseAdmin.rpc('reconcile_staging_transactions');
-    if (reconcileError) {
+    try {
+      await reconcileAllStagingTransactions();
+    } catch (reconcileError) {
       console.error('[SMSWebhookRoute] Immediate reconciliation failed:', reconcileError.message);
     }
 

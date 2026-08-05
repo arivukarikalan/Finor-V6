@@ -6,6 +6,7 @@ import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { encryptText, decryptText } from '../utils/encryption.js';
 import { recalculateHoldings } from './trades.js';
+import { reconcileAllStagingTrades } from '../utils/reconcile.js';
 
 const require = createRequire(import.meta.url);
 const pdfjsLib = require('pdfjs-dist/build/pdf.js');
@@ -567,8 +568,11 @@ router.post('/sync', requireAuth, async (req, res) => {
 
         // Reconcile and import newly staged trades immediately
         if (emailNewTrades > 0) {
-          const { error: rErr } = await supabaseAdmin.rpc('reconcile_staging_trades');
-          if (rErr) console.error('[GmailIngestion] Immediate reconciliation failed:', rErr.message);
+          try {
+            await reconcileAllStagingTrades();
+          } catch (rErr) {
+            console.error('[GmailIngestion] Immediate reconciliation failed:', rErr.message);
+          }
         }
 
         // Mark email as processed

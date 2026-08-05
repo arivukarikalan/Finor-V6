@@ -14,9 +14,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
 // Regular client (anon key) - used for user-scoped operations
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+const isServiceRolePlaceholder = !supabaseServiceRoleKey || 
+                                 supabaseServiceRoleKey.includes('placeholder') || 
+                                 supabaseServiceRoleKey.includes('your_supabase');
+
 // Admin client (service role key) - bypasses RLS for backend-only operations
 // Used for: saving Gmail tokens, app settings, etc.
 export const supabaseAdmin = createClient(
   supabaseUrl,
-  supabaseServiceRoleKey || supabaseAnonKey  // fallback to anon if service role not set
+  isServiceRolePlaceholder ? supabaseAnonKey : supabaseServiceRoleKey
 );

@@ -2,6 +2,7 @@ import express from 'express';
 import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { sendResetKeyEmail } from '../services/emailService.js';
+import { reconcileAllStagingTrades, reconcileAllStagingTransactions } from '../utils/reconcile.js';
 
 const router = express.Router();
 
@@ -147,18 +148,15 @@ router.post('/reconcile', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized: Invalid or missing x-cron-secret header.' });
     }
 
-    // Call PostgreSQL RPC reconcile functions
-    const { data: txResult, error: txError } = await supabaseAdmin.rpc('reconcile_staging_transactions');
-    if (txError) throw txError;
-
-    const { data: tradeResult, error: tradeError } = await supabaseAdmin.rpc('reconcile_staging_trades');
-    if (tradeError) throw tradeError;
+    // Call loop-based staging reconciliation functions to process all backlogs
+    const txResult = await reconcileAllStagingTransactions();
+    const tradeResult = await reconcileAllStagingTrades();
 
     res.json({
       success: true,
       message: 'Reconciliation executed successfully.',
-      transactions: txResult || { processed: 0, duplicates: 0, failed: 0 },
-      trades: tradeResult || { processed: 0, duplicates: 0, failed: 0 }
+      transactions: txResult,
+      trades: tradeResult
     });
 
   } catch (err) {

@@ -4,6 +4,7 @@ import pkg from 'kiteconnect';
 import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { getActiveSession, getUserZerodhaCredentials } from '../services/orderService.js';
+import { reconcileAllStagingTrades } from '../utils/reconcile.js';
 
 const { KiteConnect } = pkg;
 const router = express.Router();
@@ -589,8 +590,7 @@ router.post('/sync-kite', requireAuth, async (req, res) => {
 
     if (stagedCount > 0) {
       // Immediately trigger reconciliation
-      const { error: rErr } = await supabaseAdmin.rpc('reconcile_staging_trades');
-      if (rErr) throw rErr;
+      await reconcileAllStagingTrades();
 
       // Recalculate holdings
       await recalculateHoldings(req.user.id);
@@ -695,8 +695,7 @@ router.post('/postback', async (req, res) => {
     }
 
     // Immediately trigger reconciliation
-    const { error: rErr } = await supabaseAdmin.rpc('reconcile_staging_trades');
-    if (rErr) throw rErr;
+    await reconcileAllStagingTrades();
 
     // Recalculate holdings
     await recalculateHoldings(user_id);
