@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
 import { recalculateHoldings } from './trades.js';
 import { priceCache } from '../services/priceCache.js';
+import { getStockSector } from '../services/sectorService.js';
 
 const router = express.Router();
 
@@ -93,9 +94,18 @@ router.get('/', requireAuth, async (req, res) => {
         .catch(err => console.error('[HoldingsRoute] Background previousClose seeding failed:', err.message));
     }
 
-    const enriched = data.map(h => ({
-      ...h,
-      previousClose: previousCloses[h.stock_symbol.toUpperCase()] || h.ltp
+    const enriched = await Promise.all(data.map(async (h) => {
+      let sector = 'Other';
+      try {
+        sector = await getStockSector(h.stock_symbol);
+      } catch (err) {
+        console.error(`[HoldingsRoute] Sector fetch failed for ${h.stock_symbol}:`, err.message);
+      }
+      return {
+        ...h,
+        previousClose: previousCloses[h.stock_symbol.toUpperCase()] || h.ltp,
+        sector
+      };
     }));
 
     res.json(enriched);
@@ -542,6 +552,189 @@ router.post('/force-recalculate', requireAuth, async (req, res) => {
 
     res.json({ message: 'Full database recalculation completed, prices cache cleared.' });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/holdings/finor-score ───────────────────────────────────────────
+router.get('/finor-score', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Fetch stock holdings
+    const { data: holdings, error: hErr } = await supabaseAdmin
+      .from('holdings')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (hErr) throw hErr;
+
+    // Enrich with sector
+    const enrichedHoldings = await Promise.all((holdings || []).map(async (h) => {
+      let sector = 'Other';
+      try {
+        sector = await getStockSector(h.stock_symbol);
+      } catch (err) {
+        console.error(`[FinorScore] Sector resolution failed for ${h.stock_symbol}:`, err.message);
+      }
+      return { ...h, sector };
+    }));
+
+    // Calculate total equity value and sector weights
+    let totalEquityVal = 0;
+    const sectorMap = {};
+    enrichedHoldings.forEach(h => {
+      const val = (h.quantity || 0) * (h.ltp || h.average_buy_price || 0);
+      totalEquityVal += val;
+      
+      const sec = h.sector || 'Other';
+      sectorMap[sec] = (sectorMap[sec] || 0) + val;
+    });
+
+    // 2. Fetch finance goals for wealth components
+    const { data: goals, error: gErr } = await supabaseAdmin
+      .from('finance_goals')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (gErr) throw gErr;
+
+    // Build asset values map
+    const assetValues = {
+      LIQUID_CASH: 0,
+      MUTUAL_FUND: 0,
+      GOLD_SILVER: 0,
+      EQUITY_STOCKS: totalEquityVal,
+      US_STOCKS: 0,
+      ETF: 0
+    };
+
+    (goals || []).forEach(g => {
+      if (g.asset_class !== 'EQUITY_STOCKS') {
+        assetValues[g.asset_class] = parseFloat(g.current_value || 0);
+      }
+    });
+
+    const totalAssets = Object.values(assetValues).reduce((sum, v) => sum + v, 0);
+
+    // 3. Fetch monthly expenses to compute burn rate (last 90 days)
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentExpenses } = await supabaseAdmin
+      .from('finance_transactions')
+      .select('amount')
+      .eq('user_id', userId)
+      .eq('type', 'EXPENSE')
+      .gte('date', ninetyDaysAgo);
+
+    const totalRecentExpenses = (recentExpenses || []).reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
+    const monthlyBurnRate = Math.max(5000, totalRecentExpenses / 3);
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // SCORING ENGINE (Out of 100)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // 1. Asset Allocation Diversity (Max 30 points)
+    let assetAllocScore = 0;
+    if (totalAssets > 0) {
+      const cashPct = (assetValues.LIQUID_CASH / totalAssets) * 100;
+      const equityPct = ((assetValues.EQUITY_STOCKS + assetValues.ETF) / totalAssets) * 100;
+      const mfPct = (assetValues.MUTUAL_FUND / totalAssets) * 100;
+      const goldPct = (assetValues.GOLD_SILVER / totalAssets) * 100;
+
+      // Cash Allocation (Max 10 points)
+      if (cashPct >= 10 && cashPct <= 25) assetAllocScore += 10;
+      else if (cashPct > 25) assetAllocScore += Math.max(0, 10 - (cashPct - 25) * 0.4);
+      else assetAllocScore += (cashPct / 10) * 10;
+
+      // Equity Allocation (Max 10 points)
+      if (equityPct >= 30 && equityPct <= 60) assetAllocScore += 10;
+      else if (equityPct > 60) assetAllocScore += Math.max(0, 10 - (equityPct - 60) * 0.4);
+      else assetAllocScore += (equityPct / 30) * 10;
+
+      // Mutual Funds (Max 5 points)
+      if (mfPct >= 15 && mfPct <= 40) assetAllocScore += 5;
+      else if (mfPct > 40) assetAllocScore += Math.max(0, 5 - (mfPct - 40) * 0.2);
+      else assetAllocScore += (mfPct / 15) * 5;
+
+      // Gold / Commodities (Max 5 points)
+      if (goldPct >= 5 && goldPct <= 15) assetAllocScore += 5;
+      else if (goldPct > 15) assetAllocScore += Math.max(0, 5 - (goldPct - 15) * 0.3);
+      else assetAllocScore += (goldPct / 5) * 5;
+    }
+
+    // 2. Equity Sector Diversification (Max 30 points)
+    let sectorDiversScore = 0;
+    const sectorCount = Object.keys(sectorMap).length;
+    if (totalEquityVal > 0) {
+      if (sectorCount === 1) sectorDiversScore += 5;
+      else if (sectorCount === 2) sectorDiversScore += 10;
+      else if (sectorCount === 3) sectorDiversScore += 20;
+      else if (sectorCount >= 4) sectorDiversScore += 30;
+
+      Object.entries(sectorMap).forEach(([sec, val]) => {
+        const pct = (val / totalEquityVal) * 100;
+        if (pct > 40) {
+          const penalty = (pct - 40) * 0.5;
+          sectorDiversScore = Math.max(0, sectorDiversScore - penalty);
+        }
+      });
+    } else {
+      sectorDiversScore = 15; // default fallback if no equity stocks
+    }
+
+    // 3. Emergency Fund Adequacy (Max 25 points)
+    let emergencyScore = 0;
+    const cashReserve = assetValues.LIQUID_CASH;
+    const adequacyRatio = cashReserve / monthlyBurnRate;
+    if (adequacyRatio >= 6.0) {
+      emergencyScore = 25;
+    } else {
+      emergencyScore = (adequacyRatio / 6.0) * 25;
+    }
+
+    // 4. Commodity Safety Hedge (Max 15 points)
+    let commodityHedgeScore = 0;
+    if (totalAssets > 0) {
+      const goldPct = (assetValues.GOLD_SILVER / totalAssets) * 100;
+      if (goldPct >= 5 && goldPct <= 15) {
+        commodityHedgeScore = 15;
+      } else if (goldPct < 5) {
+        commodityHedgeScore = (goldPct / 5) * 15;
+      } else {
+        commodityHedgeScore = Math.max(0, 15 - (goldPct - 15) * 0.8);
+      }
+    }
+
+    const finorFinanceScore = Math.round(assetAllocScore + sectorDiversScore + emergencyScore + commodityHedgeScore);
+
+    res.json({
+      score: Math.min(100, Math.max(0, finorFinanceScore)),
+      breakdown: {
+        assetAllocation: parseFloat(assetAllocScore.toFixed(1)),
+        sectorDiversification: parseFloat(sectorDiversScore.toFixed(1)),
+        emergencyFund: parseFloat(emergencyScore.toFixed(1)),
+        commodityHedge: parseFloat(commodityHedgeScore.toFixed(1))
+      },
+      stats: {
+        totalAssets: parseFloat(totalAssets.toFixed(2)),
+        totalEquity: parseFloat(totalEquityVal.toFixed(2)),
+        monthlyBurnRate: Math.round(monthlyBurnRate),
+        emergencyMonthsCovered: parseFloat(adequacyRatio.toFixed(2)),
+        sectorWeights: Object.entries(sectorMap).map(([sector, amount]) => ({
+          sector,
+          amount: parseFloat(amount.toFixed(2)),
+          weight: parseFloat(((amount / (totalEquityVal || 1)) * 100).toFixed(1))
+        })).sort((a, b) => b.amount - a.amount),
+        assetWeights: {
+          cashWeight: totalAssets > 0 ? parseFloat(((assetValues.LIQUID_CASH / totalAssets) * 100).toFixed(1)) : 0,
+          equityWeight: totalAssets > 0 ? parseFloat((((assetValues.EQUITY_STOCKS + assetValues.ETF) / totalAssets) * 100).toFixed(1)) : 0,
+          mutualFundWeight: totalAssets > 0 ? parseFloat(((assetValues.MUTUAL_FUND / totalAssets) * 100).toFixed(1)) : 0,
+          commodityWeight: totalAssets > 0 ? parseFloat(((assetValues.GOLD_SILVER / totalAssets) * 100).toFixed(1)) : 0
+        }
+      }
+    });
+  } catch (err) {
+    console.error('[HoldingsRoute] Finor Score error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

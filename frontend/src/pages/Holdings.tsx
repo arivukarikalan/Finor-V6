@@ -34,6 +34,8 @@ import {
   Camera
 } from 'lucide-react';
 
+import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+
 interface Holding {
   id: string;
   stock_symbol: string;
@@ -77,6 +79,8 @@ export const Holdings = () => {
     }
   });
   const [considerExits, setConsiderExits] = useState<{ symbol: string; reason: string }[]>([]);
+  const [finorScore, setFinorScore] = useState<any | null>(null);
+  const [loadingScore, setLoadingScore] = useState<boolean>(false);
   const [loading, setLoading] = useState(() => {
     return !localStorage.getItem('finor_cached_holdings');
   });
@@ -211,6 +215,17 @@ export const Holdings = () => {
       const settingsData = await apiRequest('/holdings/settings');
       setStockSettings(settingsData || {});
       localStorage.setItem('finor_cached_stock_settings', JSON.stringify(settingsData || {}));
+
+      // Fetch Finor Score
+      setLoadingScore(true);
+      try {
+        const scoreData = await apiRequest('/holdings/finor-score');
+        setFinorScore(scoreData);
+      } catch (scoreErr) {
+        console.error('Failed to fetch Finor score:', scoreErr);
+      } finally {
+        setLoadingScore(false);
+      }
 
       // Fetch consider exits from insights
       if (holdingsData.length > 0) {
@@ -1924,7 +1939,238 @@ export const Holdings = () => {
 
       </div>
 
+      {/* Finor Finance Score & Sector Diversification Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        
+        {/* Card 1: Finor Finance Score */}
+        <div className="glass-panel rounded-3xl p-6 border border-dark-border bg-gradient-to-br from-dark-depth-1 via-dark-depth-1 to-brand-500/5 relative overflow-hidden flex flex-col justify-between">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/5 rounded-full blur-2xl pointer-events-none" />
+          
+          <div>
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+              <div>
+                <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-brand-400 animate-pulse" />
+                  Finor Finance Score
+                </h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">Comprehensive audit of asset diversification, liquid reserves, and safety hedges.</p>
+              </div>
+              {loadingScore && <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />}
+            </div>
 
+            {finorScore ? (
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 items-center mt-6">
+                
+                {/* Circular Gauge */}
+                <div className="sm:col-span-5 flex flex-col items-center justify-center relative">
+                  <div className="relative w-32 h-32 flex items-center justify-center">
+                    {/* SVG Circular Progress Ring */}
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                      {/* Background circle */}
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        className="stroke-dark-border/40"
+                        strokeWidth="8"
+                        fill="transparent"
+                      />
+                      {/* Foreground Circle with Gradient */}
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="42"
+                        stroke="url(#finorScoreGradient)"
+                        strokeWidth="8"
+                        strokeDasharray={2 * Math.PI * 42}
+                        strokeDashoffset={2 * Math.PI * 42 * (1 - finorScore.score / 100)}
+                        strokeLinecap="round"
+                        fill="transparent"
+                      />
+                      <defs>
+                        <linearGradient id="finorScoreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#4f46e5" />
+                          <stop offset="100%" stopColor="#10b981" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                    
+                    {/* Score Number Centered */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-3xl font-black text-white">{finorScore.score}</span>
+                      <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">Finance Score</span>
+                    </div>
+                  </div>
+                  
+                  {/* Rating Label */}
+                  <div className={`mt-3 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase border ${
+                    finorScore.score >= 80 
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                      : finorScore.score >= 60
+                      ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                      : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                  }`}>
+                    {finorScore.score >= 80 ? '👑 Excellent Health' : finorScore.score >= 60 ? '⚡ Healthy' : '⚠️ Action Required'}
+                  </div>
+                </div>
+
+                {/* Score Components Progress Bars */}
+                <div className="sm:col-span-7 space-y-3.5">
+                  {[
+                    { label: 'Asset Allocation', score: finorScore.breakdown.assetAllocation, max: 30, color: 'from-brand-500 to-indigo-500', desc: 'Diversification across stocks, MFs, cash & gold' },
+                    { label: 'Sector Diversification', score: finorScore.breakdown.sectorDiversification, max: 30, color: 'from-violet-500 to-fuchsia-500', desc: 'Spreads equity concentration across sector groups' },
+                    { label: 'Emergency Fund Adequacy', score: finorScore.breakdown.emergencyFund, max: 25, color: 'from-emerald-500 to-teal-500', desc: 'Cash/FD reserve covers at least 6 months spend' },
+                    { label: 'Commodity Safety Hedge', score: finorScore.breakdown.commodityHedge, max: 15, color: 'from-amber-500 to-yellow-500', desc: 'Safety buffers in Gold and precious metals' }
+                  ].map((comp, idx) => {
+                    const percentage = (comp.score / comp.max) * 100;
+                    return (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px]">
+                          <span className="font-extrabold text-gray-200" title={comp.desc}>{comp.label}</span>
+                          <span className="font-black text-gray-400">
+                            <span className="text-white">{comp.score}</span> / {comp.max}
+                          </span>
+                        </div>
+                        <div className="w-full bg-dark-depth-3 rounded-full h-1.5 overflow-hidden border border-dark-border/40">
+                          <div 
+                            className={`h-full bg-gradient-to-r ${comp.color} rounded-full transition-all duration-500`}
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-center py-10 space-y-2">
+                <Loader2 className="w-6 h-6 text-brand-500 animate-spin" />
+                <p className="text-xs text-gray-400">Calculating your Finor Finance Score...</p>
+              </div>
+            )}
+
+          </div>
+          
+          {finorScore && (
+            <div className="mt-4 pt-3 border-t border-dark-border/40 flex items-center justify-between text-[9px] text-gray-400">
+              <span className="flex items-center gap-1">
+                🔹 Net Worth: <strong className="text-white">₹{finorScore.stats.totalAssets.toLocaleString('en-IN')}</strong>
+              </span>
+              <span className="flex items-center gap-1">
+                ⏰ Spend Burn: <strong className="text-white">₹{finorScore.stats.monthlyBurnRate.toLocaleString('en-IN')}/mo</strong>
+              </span>
+              <span className="flex items-center gap-1">
+                🛡️ Cash Buffer: <strong className="text-white">{finorScore.stats.emergencyMonthsCovered} months</strong>
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Card 2: Sector Diversification Pie Chart */}
+        <div className="glass-panel rounded-3xl p-6 border border-dark-border bg-gradient-to-br from-dark-depth-1 via-dark-depth-1 to-indigo-500/5 relative overflow-hidden flex flex-col justify-between">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full blur-2xl pointer-events-none" />
+          
+          <div>
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+              <div>
+                <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                  <PieChart className="w-4 h-4 text-brand-400" />
+                  Sector Diversification
+                </h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">Asset allocation weights across equity industries.</p>
+              </div>
+            </div>
+
+            {finorScore && finorScore.stats.sectorWeights.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-6 items-center mt-6">
+                
+                {/* Recharts Pie Chart */}
+                <div className="sm:col-span-5 flex justify-center relative min-h-[140px] min-w-0">
+                  <ResponsiveContainer width="100%" height={140}>
+                    <RechartsPieChart>
+                      <Pie
+                        data={finorScore.stats.sectorWeights}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={36}
+                        outerRadius={52}
+                        paddingAngle={3}
+                        dataKey="amount"
+                        nameKey="sector"
+                      >
+                        {finorScore.stats.sectorWeights.map((_: any, index: number) => {
+                          const colors = ['#6366f1', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#3b82f6'];
+                          return (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={colors[index % colors.length]} 
+                            />
+                          );
+                        })}
+                      </Pie>
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#0b0f19',
+                          borderColor: '#1e293b',
+                          borderRadius: '12px',
+                          color: '#fff',
+                          fontSize: '10px'
+                        }}
+                        formatter={(value: any) => [`₹${parseFloat(value).toLocaleString('en-IN')}`, 'Amount']}
+                      />
+                    </RechartsPieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Sector Weights Legend list */}
+                <div className="sm:col-span-7 space-y-2 max-h-[140px] overflow-y-auto pr-1">
+                  {finorScore.stats.sectorWeights.map((entry: any, index: number) => {
+                    const colors = ['#6366f1', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#3b82f6'];
+                    const color = colors[index % colors.length];
+                    return (
+                      <div key={index} className="flex items-center justify-between text-[10px]">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: color }} />
+                          <span className="font-extrabold text-gray-200 truncate" title={entry.sector}>{entry.sector}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 font-bold text-gray-400">
+                          <span>₹{entry.amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+                          <span className="bg-dark-depth-3 border border-dark-border px-1.5 py-0.5 rounded text-[8px] text-white font-extrabold">{entry.weight}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+              </div>
+            ) : (
+              <div className="py-10 flex flex-col items-center justify-center text-center space-y-2">
+                <div className="w-10 h-10 rounded-full bg-brand-500/10 border border-brand-500/20 flex items-center justify-center">
+                  <AlertCircle className="w-5 h-5 text-brand-400" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-white font-extrabold">No Equity Sectors Found</p>
+                  <p className="text-[9px] text-gray-400 max-w-[250px]">Upload your Zerodha Kite Tradebook CSV or simulate trades to compute diversification.</p>
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {finorScore && finorScore.stats.sectorWeights.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-dark-border/40 flex items-center justify-between text-[9px] text-gray-400">
+              <span>
+                📊 Top Sector: <strong className="text-white">{finorScore.stats.sectorWeights[0]?.sector} ({finorScore.stats.sectorWeights[0]?.weight}%)</strong>
+              </span>
+              <span>
+                ⚡ Total Equities: <strong className="text-white">₹{finorScore.stats.totalEquity.toLocaleString('en-IN')}</strong>
+              </span>
+            </div>
+          )}
+        </div>
+
+      </div>
 
       {/* Filters and Sorting Panel */}
       <div className="glass-panel rounded-2xl p-4 border border-dark-border flex flex-col md:flex-row md:items-center justify-between gap-4">
