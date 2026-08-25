@@ -834,7 +834,7 @@ router.post('/ai-reallocate', requireAuth, async (req, res) => {
 
     if (hasGemini) {
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
 
       const prompt = `You are Finor AI Wealth Coach, a premium, certified financial planner.
 Review the following user financial profile and provide a personalized portfolio audit, risk analysis, and reallocation plan.
