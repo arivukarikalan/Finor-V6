@@ -6,47 +6,14 @@ import { google } from 'googleapis';
 import { reconcileAllStagingTransactions } from '../utils/reconcile.js';
 import { fetchLTPYahoo } from '../services/yahooFinance.js';
 import { detectRecurringPattern } from '../services/recurringService.js';
+import { cleanAndClassifyTransaction } from '../utils/textClassifier.js';
 
 
 const router = express.Router();
 
 
 
-// Smart keyword mapping to auto-categorize transaction alerts
-function autoCategorize(description) {
-  const desc = (description || '').toLowerCase();
-  
-  if (desc.includes('zomato') || desc.includes('swiggy') || desc.includes('food') || desc.includes('restaurant') || desc.includes('eat') || desc.includes('cafe') || desc.includes('dominos') || desc.includes('pizza') || desc.includes('dhaba') || desc.includes('bakery')) {
-    if (desc.includes('breakfast')) return 'Food (Breakfast)';
-    if (desc.includes('lunch')) return 'Food (Lunch)';
-    if (desc.includes('dinner')) return 'Food (Dinner)';
-    if (desc.includes('snacks') || desc.includes('tea') || desc.includes('coffee') || desc.includes('snack') || desc.includes('chai')) return 'Food (Snacks)';
-    return 'Food';
-  }
-  if (desc.includes('lent') || desc.includes('friends') || desc.includes('borrowed') || desc.includes('splitwise') || desc.includes('friend') || desc.includes('lent to')) {
-    return 'Lent/Friends';
-  }
-  if (desc.includes('payment link') || desc.includes('paylink') || desc.includes('razorpay.me') || desc.includes('instamojo')) {
-    return 'Payment Link';
-  }
-  if (desc.includes('uber') || desc.includes('ola') || desc.includes('petrol') || desc.includes('metro') || desc.includes('irctc') || desc.includes('flight') || desc.includes('taxi') || desc.includes('rapido') || desc.includes('fuel') || desc.includes('indian oil') || desc.includes('hpcl') || desc.includes('bpcl')) {
-    return 'Travel';
-  }
-  if (desc.includes('amazon') || desc.includes('flipkart') || desc.includes('myntra') || desc.includes('shopping') || desc.includes('retail') || desc.includes('grocery') || desc.includes('supermarket') || desc.includes('mart') || desc.includes('billing') || desc.includes('clothing') || desc.includes('apparel')) {
-    return 'Shopping';
-  }
-  if (desc.includes('groww') || desc.includes('zerodha') || desc.includes('mutual fund') || desc.includes('smallcase') || desc.includes('investment') || desc.includes('stocks') || desc.includes('etf') || desc.includes('deposit') || desc.includes('wazirx') || desc.includes('coinswitch')) {
-    return 'Investments';
-  }
-  if (desc.includes('rent') || desc.includes('electricity') || desc.includes('broadband') || desc.includes('recharge') || desc.includes('airtel') || desc.includes('jio') || desc.includes('water bill') || desc.includes('insurance') || desc.includes('netflix') || desc.includes('spotify') || desc.includes('disney')) {
-    return 'Bills/Utilities';
-  }
-  if (desc.includes('salary') || desc.includes('dividend') || desc.includes('interest') || desc.includes('refund') || desc.includes('cashback')) {
-    return 'Salary/Income';
-  }
-  
-  return 'Uncategorized';
-}
+
 
 // ─── GET /api/finance/dashboard ──────────────────────────────────────────────
 router.get('/dashboard', requireAuth, async (req, res) => {
@@ -636,18 +603,22 @@ router.post('/sms-webhook', async (req, res) => {
     const amount = parseFloat(amtMatch[1].replace(/,/g, ''));
     const type = isCredit ? 'INCOME' : 'EXPENSE';
 
-    const merchantMatch = message.match(/(?:to|at|from|towards|merchant)\s+([a-zA-Z0-9\s&*]{3,25})/i);
+    const merchantMatch = message.match(/(?:to|at|from|towards|merchant)\s+([a-zA-Z0-9\s&*()-]{3,80})/i);
     let description = '';
-    if (type === 'EXPENSE') {
-      description = merchantMatch ? `UPI to ${merchantMatch[1].trim()}` : `Spent via SMS alert`;
+    let category = 'Other';
+
+    if (merchantMatch) {
+      const classification = cleanAndClassifyTransaction(merchantMatch[1]);
+      description = classification.description;
+      category = classification.category;
     } else {
-      description = merchantMatch ? `Credits from ${merchantMatch[1].trim()}` : `Credits via SMS alert`;
+      description = type === 'EXPENSE' ? 'Spent via SMS alert' : 'Credits via SMS alert';
+      category = type === 'EXPENSE' ? 'Other' : 'Salary';
     }
 
     // Append sender header detail
     description += ` (${sender || 'Unknown'})`;
 
-    const category = autoCategorize(description);
     const txDate = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
 
     // AI recurring auto-fill detection
@@ -940,8 +911,9 @@ router.post('/create-mock-sms', requireAuth, async (req, res) => {
     const type = 'EXPENSE';
 
     // Heuristics pattern auto-fill detection
-    let finalDescription = `Spent via SMS alert`;
-    let finalCategory = 'Travel';
+    const classification = cleanAndClassifyTransaction(mockDescription);
+    let finalDescription = classification.description;
+    let finalCategory = classification.category;
     let isAutoFilled = false;
     let needsReview = true;
 
@@ -951,9 +923,6 @@ router.post('/create-mock-sms', requireAuth, async (req, res) => {
         finalDescription = autoFill.description;
         finalCategory = autoFill.category;
         isAutoFilled = true;
-      } else {
-        finalDescription = `Spent via SMS alert (${mockDescription})`;
-        finalCategory = 'Uncategorized';
       }
     } catch (autoErr) {
       console.error('[MockSMS] Recurring pattern detection failed:', autoErr.message);
