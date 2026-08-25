@@ -5,6 +5,7 @@ import { fetchMultipleLTPs } from '../services/yahooFinance.js';
 import { recalculateHoldings } from './trades.js';
 import { priceCache } from '../services/priceCache.js';
 import { getStockSector } from '../services/sectorService.js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const router = express.Router();
 
