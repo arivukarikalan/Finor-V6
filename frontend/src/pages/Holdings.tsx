@@ -2327,6 +2327,9 @@ export const Holdings = () => {
                               No LTP
                             </span>
                           )}
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-dark-depth-3 text-gray-300 border border-dark-border/60">
+                            {h.sector || 'Other'}
+                          </span>
                         </h4>
                         <span className="text-[10px] text-gray-500 block mt-1 font-medium">{stockNameOnly}</span>
                       </div>
@@ -2510,6 +2513,7 @@ export const Holdings = () => {
                   <thead>
                     <tr className="border-b border-dark-border bg-dark-depth-1/40 text-[10px] text-gray-400 uppercase font-bold tracking-wider">
                       <th className="px-6 py-4">Stock</th>
+                      <th className="px-6 py-4">Sector</th>
                       <th className="px-6 py-4 text-right">Quantity</th>
                       <th className="px-6 py-4 text-right">Avg Buy Price</th>
                       <th className="px-6 py-4 text-right">LTP</th>
@@ -2548,6 +2552,11 @@ export const Holdings = () => {
                               )}
                             </div>
                             <span className="text-[10px] text-gray-500 block font-normal mt-0.5">{h.stock_name.split('|')[0]}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="bg-dark-depth-3 border border-dark-border px-2 py-1 rounded-lg text-[10px] font-bold text-gray-300">
+                              {h.sector || 'Other'}
+                            </span>
                           </td>
                           <td className="px-6 py-4 text-right font-semibold text-gray-300">{h.quantity}</td>
                           <td className="px-6 py-4 text-right font-semibold text-gray-300">₹{activeAvgPrice.toFixed(2)}</td>
@@ -2624,6 +2633,9 @@ export const Holdings = () => {
                               ★ Core
                             </span>
                           )}
+                          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-dark-depth-3 text-gray-300 border border-dark-border">
+                            {h.sector || 'Other'}
+                          </span>
                         </div>
                         <span className="text-[10px] text-gray-500 block mt-0.5">{h.quantity} Shares @ ₹{activeAvgPrice.toFixed(2)}</span>
                       </div>

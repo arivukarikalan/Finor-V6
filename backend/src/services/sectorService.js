@@ -68,8 +68,10 @@ const LOCAL_SECTOR_MAP = {
   'PGHH': 'Consumer Defensive',
   'GODREJCP': 'Consumer Defensive',
   'VBL': 'Consumer Defensive',
+  'EMAMILTD': 'Consumer Defensive',
+  'GILLETTE': 'Consumer Defensive',
   
-  // Automobile
+  // Automobile & Travel/Tourism (Consumer Cyclical)
   'TATAMOTORS': 'Consumer Cyclical',
   'MARUTI': 'Consumer Cyclical',
   'M&M': 'Consumer Cyclical',
@@ -79,6 +81,10 @@ const LOCAL_SECTOR_MAP = {
   'EICHERMOT': 'Consumer Cyclical',
   'ASHOKLEY': 'Consumer Cyclical',
   'BALKRISIND': 'Consumer Cyclical',
+  'IRCTC': 'Consumer Cyclical',
+  'EIHOTEL': 'Consumer Cyclical',
+  'LEMONTREE': 'Consumer Cyclical',
+  'INDHOTEL': 'Consumer Cyclical',
   
   // Healthcare / Pharma
   'SUNPHARMA': 'Healthcare',
@@ -134,10 +140,12 @@ const LOCAL_SECTOR_MAP = {
   'PAGEIND': 'Consumer Cyclical',
   'BATAINDIA': 'Consumer Cyclical',
   
-  // Telecommunication
+  // Telecommunication & Media (Communication Services)
   'BHARTIARTL': 'Communication Services',
   'IDEA': 'Communication Services',
-  'INDUSTOWER': 'Communication Services'
+  'INDUSTOWER': 'Communication Services',
+  'SUNTV': 'Communication Services',
+  'ZEEL': 'Communication Services'
 };
 
 export async function getStockSector(symbol) {
