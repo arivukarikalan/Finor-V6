@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
-  Edit2, UserMinus, UserPlus, Users, X, Link2, Briefcase,
+  Edit2, UserMinus, UserPlus, Users, X, Link2,
   Receipt, TrendingUp, BarChart3, Check, Search, AlertTriangle, Sparkles, Loader2
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
@@ -252,22 +252,7 @@ export const Finance: React.FC = () => {
     }
   };
 
-  const handleToggleClaimStatus = async (tx: Transaction) => {
-    const newStatus = tx.claim_status === 'CLAIMED' ? 'UNCLAIMED' : 'CLAIMED';
-    setTransactions(prev => prev.map(t => t.id === tx.id ? { ...t, claim_status: newStatus, is_claimable: true } : t));
-    try {
-      await apiRequest(`/finance/transaction/${tx.id}/toggle-claim`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_claimable: true, claim_status: newStatus })
-      });
-      triggerToast('success', newStatus === 'CLAIMED' ? 'Marked as claimed!' : 'Marked as unclaimed.');
-    } catch (err: any) {
-      console.error('Failed to toggle claim status:', err);
-      triggerToast('error', 'Failed to update claim status.');
-      fetchDashboardData(true);
-    }
-  };
+
 
   const getLinkCandidates = (currentTx: Transaction) => {
     return transactions
@@ -290,7 +275,7 @@ export const Finance: React.FC = () => {
   const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>(() => (sessionStorage.getItem('finor_filter_type') as any) || 'ALL');
   const [filterCategory, setFilterCategory] = useState(() => sessionStorage.getItem('finor_filter_category') || 'ALL');
   const [filterMethod, setFilterMethod] = useState(() => sessionStorage.getItem('finor_filter_method') || 'ALL');
-  const [filterClaimable, setFilterClaimable] = useState<'ALL' | 'UNCLAIMED' | 'CLAIMED' | 'PERSONAL' | 'AVOIDABLE' | 'ESSENTIAL'>(() => (sessionStorage.getItem('finor_filter_claimable') as any) || 'ALL');
+  const [filterClaimable, setFilterClaimable] = useState<'ALL' | 'AVOIDABLE' | 'ESSENTIAL'>(() => (sessionStorage.getItem('finor_filter_claimable') as any) || 'ALL');
   const [filterStartDate, setFilterStartDate] = useState(() => sessionStorage.getItem('finor_filter_start_date') || '');
   const [filterEndDate, setFilterEndDate] = useState(() => sessionStorage.getItem('finor_filter_end_date') || '');
 
@@ -505,6 +490,24 @@ export const Finance: React.FC = () => {
     }
   };
 
+  const handleCreateMockSMS = async () => {
+    try {
+      triggerToast('info', 'Simulating incoming SMS alert...');
+      await apiRequest('/finance/create-mock-sms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: 40, description: 'Transport' })
+      });
+      await fetchDashboardData(true);
+      triggerToast('success', 'Mock transaction synced! Check review inbox.');
+    } catch (err: any) {
+      console.error('Failed to create mock SMS:', err);
+      triggerToast('error', err.message || 'Failed to simulate mock SMS.');
+    }
+  };
+
+
+
 
   const fetchDashboardData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -559,14 +562,7 @@ export const Finance: React.FC = () => {
   const totalAssets = Object.values(assetValues).reduce((sum, v) => sum + v, 0) + netLentDebts;
   const netWorth = totalAssets - netBorrowedDebts;
 
-  // Reimbursable Company Claims Summary
-  const unclaimedReimbursable = transactions
-    .filter(t => t.is_claimable && (t.claim_status === 'UNCLAIMED' || !t.claim_status))
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
-  const claimedReimbursable = transactions
-    .filter(t => t.is_claimable && t.claim_status === 'CLAIMED')
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
   // Exclude Investments and Lent/Friends from standard consumption expenses
   const isConsumptionExpense = (t: Transaction) => {
@@ -659,13 +655,7 @@ export const Finance: React.FC = () => {
     const matchesMethod = filterMethod === 'ALL' || tx.method === filterMethod;
     
     let matchesClaimable = true;
-    if (filterClaimable === 'UNCLAIMED') {
-      matchesClaimable = Boolean(tx.is_claimable) && (tx.claim_status === 'UNCLAIMED' || !tx.claim_status);
-    } else if (filterClaimable === 'CLAIMED') {
-      matchesClaimable = Boolean(tx.is_claimable) && tx.claim_status === 'CLAIMED';
-    } else if (filterClaimable === 'PERSONAL') {
-      matchesClaimable = !tx.is_claimable;
-    } else if (filterClaimable === 'AVOIDABLE') {
+    if (filterClaimable === 'AVOIDABLE') {
       matchesClaimable = isAvoidableExpense(tx.category, tx.description);
     } else if (filterClaimable === 'ESSENTIAL') {
       matchesClaimable = !isAvoidableExpense(tx.category, tx.description);
@@ -934,7 +924,7 @@ export const Finance: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-extrabold font-display text-white">Finance Hub</h1>
-          <p className="text-xs text-gray-400 mt-1">Complete control over your expenses, company reimbursements, wealth goals, and debt ledgers.</p>
+          <p className="text-xs text-gray-400 mt-1">Complete control over your expenses, wealth goals, and debt ledgers.</p>
         </div>
         
         {/* Sync Toast Notification */}
@@ -951,7 +941,7 @@ export const Finance: React.FC = () => {
       </div>
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="glass-panel rounded-2xl p-4 border border-dark-border relative overflow-hidden">
           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider block">Estimated Net Worth</span>
           <span className="text-xl font-black text-white mt-1 block">{fmt(netWorth)}</span>
@@ -964,21 +954,6 @@ export const Finance: React.FC = () => {
           <span className="text-xl font-black text-rose-500 mt-1 block">{fmt(monthlyExpenses)}</span>
           <span className="text-[9px] text-gray-400 mt-1 block">Income: {fmt(monthlyIncome)}</span>
           <ArrowDownRight className="absolute top-4 right-4 w-5 h-5 text-rose-500/20" />
-        </div>
-
-        {/* Reimbursable Claims KPI Card */}
-        <div 
-          onClick={() => { setSubTab('expenses'); setFilterClaimable('UNCLAIMED'); }}
-          className="glass-panel glass-panel-hover rounded-2xl p-4 border border-indigo-500/30 relative overflow-hidden cursor-pointer group"
-          title="Click to view pending reimbursable claims"
-        >
-          <span className="text-[10px] text-indigo-400 font-extrabold uppercase tracking-wider flex items-center gap-1 block">
-            <Briefcase className="w-3 h-3 text-indigo-400" />
-            Company Claimable
-          </span>
-          <span className="text-xl font-black text-indigo-400 mt-1 block">{fmt(unclaimedReimbursable)}</span>
-          <span className="text-[9px] text-gray-400 mt-1 block">Pending Unclaimed | Claimed: {fmt(claimedReimbursable)}</span>
-          <Receipt className="absolute top-4 right-4 w-5 h-5 text-indigo-500/20 group-hover:text-indigo-400 transition-colors" />
         </div>
 
         <div className="glass-panel rounded-2xl p-4 border border-dark-border relative overflow-hidden">
@@ -1000,10 +975,11 @@ export const Finance: React.FC = () => {
       <div className="flex border-b border-dark-border/60 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full">
         <button
           onClick={() => setSubTab('wealth')}
-          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
+          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 flex items-center gap-1.5 ${
             subTab === 'wealth' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
           }`}
         >
+          <Landmark className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Wealth & Goals</span>
           <span className="md:hidden">Wealth</span>
         </button>
@@ -1019,10 +995,11 @@ export const Finance: React.FC = () => {
         </button>
         <button
           onClick={() => setSubTab('debts')}
-          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 ${
+          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 flex items-center gap-1.5 ${
             subTab === 'debts' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
           }`}
         >
+          <Users className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Debt Ledger</span>
           <span className="md:hidden">Debts</span>
         </button>
@@ -1164,18 +1141,19 @@ export const Finance: React.FC = () => {
         <div className="space-y-6">
           
           {/* Daily Review Inbox Block */}
-          {Object.keys(groupedReviewQueue).length > 0 && (
-            <div className="glass-panel rounded-3xl p-6 border border-brand-500/35 bg-gradient-to-r from-brand-500/5 via-dark-depth-1 to-indigo-500/5 space-y-4 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
-                <div>
-                  <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-brand-400 animate-pulse" />
-                    Transaction Review Inbox ({transactions.filter(t => t.needs_review).length} pending)
-                  </h3>
-                  <p className="text-[10px] text-gray-400 mt-0.5">AI suggests details for your recurring transactions. Confirm or edit them day-by-day.</p>
-                </div>
+          {/* Daily Review Inbox Block */}
+          <div className="glass-panel rounded-3xl p-6 border border-brand-500/25 bg-gradient-to-r from-brand-500/5 via-dark-depth-1 to-indigo-500/5 space-y-4 animate-in fade-in duration-300">
+            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+              <div>
+                <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-brand-400 animate-pulse" />
+                  Transaction Review Inbox ({transactions.filter(t => t.needs_review).length} pending)
+                </h3>
+                <p className="text-[10px] text-gray-400 mt-0.5">Confirm or label transactions imported from SMS and third-party syncs.</p>
               </div>
+            </div>
 
+            {Object.keys(groupedReviewQueue).length > 0 ? (
               <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
                 {Object.keys(groupedReviewQueue).map(day => (
                   <div key={day} className="space-y-2">
@@ -1253,8 +1231,8 @@ export const Finance: React.FC = () => {
                                     category: tx.category,
                                     method: tx.method,
                                     description: isAuto ? tx.description : formState.description,
-                                    is_claimable: tx.is_claimable || false,
-                                    claim_status: tx.claim_status || 'UNCLAIMED'
+                                    is_claimable: false,
+                                    claim_status: 'UNCLAIMED'
                                   });
                                   setShowTxModal(true);
                                 }}
@@ -1271,8 +1249,25 @@ export const Finance: React.FC = () => {
                   </div>
                 ))}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="py-8 flex flex-col items-center justify-center text-center space-y-3">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div className="space-y-0.5">
+                  <p className="text-xs text-white font-extrabold">All caught up!</p>
+                  <p className="text-[10px] text-gray-400">All synced transactions have category and description details filled in.</p>
+                </div>
+                <button
+                  onClick={handleCreateMockSMS}
+                  className="px-4 py-1.5 rounded-xl bg-brand-500/20 hover:bg-brand-500 text-brand-300 hover:text-white border border-brand-500/30 text-[10px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-brand-500/5 hover:scale-102"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Simulate Webhook SMS (₹40)
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* AI Finor Essential vs Avoidable Expense Smart Breakdown Banner */}
           <div className="glass-panel rounded-3xl p-6 border border-amber-500/30 bg-gradient-to-r from-amber-500/5 via-dark-depth-1 to-brand-500/5 space-y-4">
@@ -1544,22 +1539,19 @@ export const Finance: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Company Claimable & Essential/Avoidable Filter Pills */}
+                {/* Essential/Avoidable Filter Pills */}
                 <div className="flex bg-dark-depth-2 border border-dark-border p-1 rounded-xl gap-1 overflow-x-auto scrollbar-none">
                   {[
                     { id: 'ALL', label: 'All Expenses' },
                     { id: 'AVOIDABLE', label: '⚠️ Avoidable' },
-                    { id: 'ESSENTIAL', label: '🟢 Essential' },
-                    { id: 'UNCLAIMED', label: '💼 Unclaimed' },
-                    { id: 'CLAIMED', label: '✅ Claimed' },
-                    { id: 'PERSONAL', label: 'Personal' }
+                    { id: 'ESSENTIAL', label: '🟢 Essential' }
                   ].map(p => (
                     <button
                       key={p.id}
                       onClick={() => setFilterClaimable(p.id as any)}
-                      className={`flex-1 py-1 px-2.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${
+                      className={`flex-1 py-1 px-2.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
                         filterClaimable === p.id 
-                          ? p.id === 'AVOIDABLE' ? 'bg-rose-600 text-white shadow' : 'bg-indigo-600 text-white shadow'
+                          ? p.id === 'AVOIDABLE' ? 'bg-rose-500 text-white shadow' : p.id === 'ESSENTIAL' ? 'bg-emerald-500 text-white shadow' : 'bg-brand-500 text-white shadow'
                           : 'text-gray-400 hover:text-white'
                       }`}
                     >
@@ -1672,7 +1664,6 @@ export const Finance: React.FC = () => {
                     <th className="p-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Amount</th>
                     <th className="p-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Category</th>
                     <th className="p-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Method</th>
-                    <th className="p-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Claimable</th>
                     <th className="p-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Description</th>
                     <th className="p-4 text-[10px] font-extrabold text-gray-400 uppercase tracking-wider text-right">Actions</th>
                   </tr>
@@ -1738,25 +1729,7 @@ export const Finance: React.FC = () => {
                               </span>
                             </td>
 
-                            {/* Reimbursable Claim Status Badge & Toggle Button */}
-                            <td className="p-4">
-                              {tx.is_claimable ? (
-                                <button
-                                  onClick={() => handleToggleClaimStatus(tx)}
-                                  className={`px-2.5 py-1 rounded-xl text-[9px] font-extrabold tracking-wider border cursor-pointer transition-all flex items-center gap-1 ${
-                                    tx.claim_status === 'CLAIMED'
-                                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
-                                      : 'bg-amber-500/10 border-amber-500/20 text-amber-400 hover:bg-amber-500/20'
-                                  }`}
-                                  title="Click to toggle Claim status"
-                                >
-                                  {tx.claim_status === 'CLAIMED' ? <Check className="w-3 h-3 text-emerald-400" /> : <Briefcase className="w-3 h-3 text-amber-400" />}
-                                  {tx.claim_status === 'CLAIMED' ? 'CLAIMED' : 'UNCLAIMED'}
-                                </button>
-                              ) : (
-                                <span className="text-[9px] text-gray-600 font-semibold">—</span>
-                              )}
-                            </td>
+
 
                             <td className="p-4 text-gray-300 truncate max-w-xs" title={tx.description}>
                               <div>
@@ -1932,18 +1905,7 @@ export const Finance: React.FC = () => {
                             {tx.method}
                           </span>
 
-                          {tx.is_claimable && (
-                            <button
-                              onClick={() => handleToggleClaimStatus(tx)}
-                              className={`px-2 py-0.5 rounded-full text-[8px] font-extrabold uppercase border ${
-                                tx.claim_status === 'CLAIMED'
-                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                                  : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                              }`}
-                            >
-                              {tx.claim_status === 'CLAIMED' ? '✅ CLAIMED' : '💼 UNCLAIMED'}
-                            </button>
-                          )}
+
 
                           {isAvoidable && (
                             <span className="px-2 py-0.5 rounded-full text-[8px] font-extrabold bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-0.5">
@@ -2503,23 +2465,7 @@ export const Finance: React.FC = () => {
                 </select>
               </div>
 
-              {/* Company Reimbursable Toggle */}
-              <div className="bg-dark-depth-2/60 border border-dark-border/60 p-3 rounded-xl flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-white block flex items-center gap-1.5">
-                    <Briefcase className="w-3.5 h-3.5 text-indigo-400" />
-                    Company Reimbursable
-                  </span>
-                  <span className="text-[9px] text-gray-400 block mt-0.5">Flag as expense claimable from employer</span>
-                </div>
 
-                <input
-                  type="checkbox"
-                  checked={txForm.is_claimable}
-                  onChange={(e) => setTxForm({ ...txForm, is_claimable: e.target.checked })}
-                  className="w-4 h-4 rounded border-dark-border bg-dark-depth-2 text-indigo-500 focus:ring-indigo-500/80 cursor-pointer accent-indigo-500"
-                />
-              </div>
 
               <div>
                 <label className="text-[10px] text-gray-400 font-extrabold uppercase block mb-1">Description / Notes</label>

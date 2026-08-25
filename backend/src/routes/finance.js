@@ -928,6 +928,92 @@ router.get('/recurring-suggestions', requireAuth, async (req, res) => {
   }
 });
 
+// ─── POST /api/finance/create-mock-sms ───────────────────────────────────────
+router.post('/create-mock-sms', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const amount = parseFloat(req.body.amount || 40);
+    const mockDescription = req.body.description || 'Transport';
+    
+    // Simulate SMS timestamp (current time in IST)
+    const txDate = new Date().toISOString();
+    const type = 'EXPENSE';
+
+    // Heuristics pattern auto-fill detection
+    let finalDescription = `Spent via SMS alert`;
+    let finalCategory = 'Travel';
+    let isAutoFilled = false;
+    let needsReview = true;
+
+    try {
+      const autoFill = await detectRecurringPattern(userId, amount, new Date(txDate));
+      if (autoFill.isMatched) {
+        finalDescription = autoFill.description;
+        finalCategory = autoFill.category;
+        isAutoFilled = true;
+      } else {
+        finalDescription = `Spent via SMS alert (${mockDescription})`;
+        finalCategory = 'Uncategorized';
+      }
+    } catch (autoErr) {
+      console.error('[MockSMS] Recurring pattern detection failed:', autoErr.message);
+    }
+
+    const txDateObj = new Date(txDate);
+    const dateStr = txDateObj.toLocaleDateString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).split('/').reverse().join('-');
+    const amountStr = amount.toFixed(2);
+
+    // Create unique hash to avoid duplicate constraints if run multiple times
+    const uniqueSalt = Math.floor(Math.random() * 1000000).toString();
+    const defaultHash = crypto
+      .createHash('md5')
+      .update(`${userId}_${dateStr}_${type}_${amountStr}_${finalDescription}_mock_${uniqueSalt}`)
+      .digest('hex');
+
+    const stagingPayload = {
+      user_id: userId,
+      raw_data: {
+        date: txDate,
+        amount,
+        type,
+        category: finalCategory,
+        method: 'UPI',
+        description: finalDescription,
+        source: 'SMS',
+        is_auto_filled: isAutoFilled,
+        needs_review: needsReview
+      },
+      raw_data_hash: defaultHash,
+      status: 'PENDING'
+    };
+
+    const { error: insertError } = await supabaseAdmin
+      .from('staging_transactions')
+      .insert(stagingPayload);
+
+    if (insertError) {
+      throw insertError;
+    }
+
+    // Call the immediate reconciliation helper
+    await reconcileAllStagingTransactions();
+
+    res.status(201).json({
+      success: true,
+      message: 'Mock SMS logged and reconciled successfully.'
+    });
+  } catch (err) {
+    console.error('[MockSMS] Ingestion failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ─── GET /api/finance/monthly-report ──────────────────────────────────────────
 router.get('/monthly-report', requireAuth, async (req, res) => {
   try {
