@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { marked } from 'marked';
 
 interface Holding {
   id: string;
@@ -81,6 +82,13 @@ export const Holdings = () => {
   const [considerExits, setConsiderExits] = useState<{ symbol: string; reason: string }[]>([]);
   const [finorScore, setFinorScore] = useState<any | null>(null);
   const [loadingScore, setLoadingScore] = useState<boolean>(false);
+  const [isAiAdvisorOpen, setIsAiAdvisorOpen] = useState(false);
+  const [aiAge, setAiAge] = useState<string>('25');
+  const [aiRisk, setAiRisk] = useState<'Conservative' | 'Moderate' | 'Aggressive'>('Moderate');
+  const [aiHorizon, setAiHorizon] = useState<'Short-term' | 'Mid-term' | 'Long-term'>('Long-term');
+  const [aiAdviceResult, setAiAdviceResult] = useState<string | null>(null);
+  const [generatingAdvice, setGeneratingAdvice] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [loading, setLoading] = useState(() => {
     return !localStorage.getItem('finor_cached_holdings');
   });
@@ -238,6 +246,29 @@ export const Holdings = () => {
       setError(err.message || 'Failed to fetch core data.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGenerateAiAdvice = async () => {
+    setGeneratingAdvice(true);
+    setAiError(null);
+    try {
+      const res = await apiRequest('/holdings/ai-reallocate', {
+        method: 'POST',
+        body: JSON.stringify({
+          age: parseInt(aiAge) || 25,
+          riskAppetite: aiRisk,
+          horizon: aiHorizon
+        }),
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      setAiAdviceResult(res.advice);
+    } catch (err: any) {
+      setAiError(err.message || 'Failed to generate reallocation advice.');
+    } finally {
+      setGeneratingAdvice(false);
     }
   };
 
@@ -1955,7 +1986,21 @@ export const Holdings = () => {
                 </h3>
                 <p className="text-[10px] text-gray-400 mt-0.5">Comprehensive audit of asset diversification, liquid reserves, and safety hedges.</p>
               </div>
-              {loadingScore && <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />}
+              <div className="flex items-center gap-3">
+                {loadingScore && <Loader2 className="w-4 h-4 text-brand-400 animate-spin" />}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAiAdviceResult(null);
+                    setAiError(null);
+                    setIsAiAdvisorOpen(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-[10px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-brand-900/30 hover:scale-102 border border-brand-400/20"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-brand-200" />
+                  AI Reallocate
+                </button>
+              </div>
             </div>
 
             {finorScore ? (
@@ -2941,6 +2986,205 @@ export const Holdings = () => {
           holdingDays={selectedAiStock.holdingDays}
           onClose={() => setSelectedAiStock(null)}
         />
+      )}
+
+      {/* ─── AI Reallocation Advisor Modal ─── */}
+      {isAiAdvisorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
+          style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(12px)' }}
+          onClick={(e) => { if (e.target === e.currentTarget && !generatingAdvice) setIsAiAdvisorOpen(false); }}
+        >
+          <div
+            className="relative w-full max-w-2xl rounded-3xl border border-dark-border bg-dark-depth-1 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            style={{ animation: 'scaleIn 0.22s cubic-bezier(0.34,1.56,0.64,1) both' }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-dark-border bg-dark-depth-2/40">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400">
+                  <Sparkles className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h2 className="text-base font-extrabold text-white tracking-tight">AI Portfolio Reallocation Coach</h2>
+                  <p className="text-[11px] text-gray-400 mt-0.5">Optimise asset allocation and GICS sector diversification limits</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { if (!generatingAdvice) setIsAiAdvisorOpen(false); }} 
+                className="p-2 rounded-xl hover:bg-dark-depth-2 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                disabled={generatingAdvice}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Content Container (Scrollable) */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+              
+              {generatingAdvice && (
+                <div className="py-12 flex flex-col items-center justify-center space-y-4">
+                  <div className="relative w-16 h-16 flex items-center justify-center">
+                    <div className="absolute inset-0 rounded-full border-4 border-brand-500/20 border-t-brand-500 animate-spin" />
+                    <Sparkles className="w-6 h-6 text-brand-400 animate-bounce" />
+                  </div>
+                  <div className="text-center space-y-1.5 max-w-sm">
+                    <p className="text-sm font-bold text-white">Generating Portfolio Audit...</p>
+                    <p className="text-xs text-gray-400">Finor AI is evaluating your current GICS sector concentration, emergency cash reserves, and gold hedging limits against your age and risk targets.</p>
+                  </div>
+                </div>
+              )}
+
+              {aiError && !generatingAdvice && (
+                <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-450 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{aiError}</span>
+                </div>
+              )}
+
+              {!generatingAdvice && !aiAdviceResult && (
+                <div className="space-y-6">
+                  {/* Onboarding Form */}
+                  <div className="space-y-4">
+                    {/* Age */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-extrabold text-gray-300 uppercase tracking-wider">Your Age</label>
+                        <span className="text-xs font-bold text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded-lg border border-brand-500/20">{aiAge} Years Old</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="range"
+                          min="18"
+                          max="80"
+                          value={aiAge}
+                          onChange={(e) => setAiAge(e.target.value)}
+                          className="flex-1 accent-brand-500 bg-dark-depth-3 h-1.5 rounded-lg cursor-pointer"
+                        />
+                        <input
+                          type="number"
+                          min="18"
+                          max="80"
+                          value={aiAge}
+                          onChange={(e) => {
+                            const val = Math.min(80, Math.max(18, parseInt(e.target.value) || 18));
+                            setAiAge(String(val));
+                          }}
+                          className="w-16 px-2.5 py-1.5 text-center text-xs font-bold text-white bg-dark-depth-3 border border-dark-border rounded-xl focus:border-brand-500 focus:outline-none"
+                        />
+                      </div>
+                      <p className="text-[10px] text-gray-500">Helps determine the target equity/MF ratio (e.g. using the standard 100 - Age guideline).</p>
+                    </div>
+
+                    {/* Risk Appetite */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-extrabold text-gray-300 uppercase tracking-wider block">Risk Appetite</label>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {[
+                          {
+                            key: 'Conservative',
+                            title: 'Conservative',
+                            desc: 'Focus on wealth preservation, larger cash & gold buffers, lower equity volatility.'
+                          },
+                          {
+                            key: 'Moderate',
+                            title: 'Moderate',
+                            desc: 'Balanced growth. Core index stocks, moderate sector diversification weights.'
+                          },
+                          {
+                            key: 'Aggressive',
+                            title: 'Aggressive',
+                            desc: 'Maximise returns. High stock/MF ratio, accepts higher sector volatility.'
+                          }
+                        ].map(item => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => setAiRisk(item.key as any)}
+                            className={`p-4 rounded-2xl text-left border transition-all cursor-pointer flex flex-col justify-between h-28 ${
+                              aiRisk === item.key
+                                ? 'bg-brand-500/10 border-brand-500 text-white shadow-lg shadow-brand-900/10'
+                                : 'bg-dark-depth-2 border-dark-border hover:border-gray-600 text-gray-400'
+                            }`}
+                          >
+                            <span className="text-xs font-black uppercase tracking-wider block">{item.title}</span>
+                            <span className="text-[10px] leading-relaxed text-gray-400 mt-2 block font-normal">{item.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Investment Horizon */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-extrabold text-gray-300 uppercase tracking-wider block">Investment Horizon</label>
+                      <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-dark-depth-3 border border-dark-border">
+                        {[
+                          { key: 'Short-term', val: 'Short-term (<3y)' },
+                          { key: 'Mid-term', val: 'Mid-term (3-7y)' },
+                          { key: 'Long-term', val: 'Long-term (>7y)' }
+                        ].map(t => (
+                          <button
+                            key={t.key}
+                            type="button"
+                            onClick={() => setAiHorizon(t.key as any)}
+                            className={`py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                              aiHorizon === t.key
+                                ? 'bg-brand-500 text-white shadow-lg shadow-brand-900/30'
+                                : 'text-gray-400 hover:text-white'
+                            }`}
+                          >
+                            {t.val}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleGenerateAiAdvice}
+                    className="w-full py-3.5 rounded-2xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-black uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-brand-900/30 flex items-center justify-center gap-2 mt-4 hover:scale-101 border border-brand-400/20"
+                  >
+                    <Sparkles className="w-4 h-4 text-brand-200 animate-pulse" />
+                    Run AI Portfolio Risk Audit
+                  </button>
+                </div>
+              )}
+
+              {!generatingAdvice && aiAdviceResult && (
+                <div className="space-y-6">
+                  {/* Markdown Audit Report */}
+                  <div className="glass-panel p-6 rounded-2xl border border-dark-border bg-dark-depth-2/40 overflow-hidden select-text">
+                    <div 
+                      className="text-xs text-gray-300 space-y-4 leading-relaxed font-sans prose prose-invert max-w-none 
+                                 prose-headings:text-white prose-headings:font-black prose-headings:uppercase prose-headings:tracking-wider prose-headings:border-b prose-headings:border-dark-border/40 prose-headings:pb-2
+                                 prose-p:text-gray-300 prose-ul:list-disc prose-ul:pl-4 prose-li:my-1
+                                 prose-strong:text-white prose-strong:font-extrabold
+                                 prose-blockquote:border-l-4 prose-blockquote:border-brand-500 prose-blockquote:pl-4 prose-blockquote:italic"
+                      dangerouslySetInnerHTML={{ __html: marked.parse(aiAdviceResult) as string }}
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setAiAdviceResult(null)}
+                      className="flex-1 py-3 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-gray-400 hover:text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      Run New Audit
+                    </button>
+                    <button
+                      onClick={() => setIsAiAdvisorOpen(false)}
+                      className="flex-1 py-3 rounded-xl bg-brand-500 hover:bg-brand-600 text-white text-xs font-extrabold transition-colors cursor-pointer"
+                    >
+                      Done / Close
+                    </button>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ─── Quick Add Trade Modal ─── */}

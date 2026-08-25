@@ -662,19 +662,26 @@ router.get('/finor-score', requireAuth, async (req, res) => {
       else assetAllocScore += (goldPct / 5) * 5;
     }
 
-    // 2. Equity Sector Diversification (Max 30 points)
+    // 2. Equity Sector Diversification (Max 30 points) using Shannon Entropy
     let sectorDiversScore = 0;
-    const sectorCount = Object.keys(sectorMap).length;
     if (totalEquityVal > 0) {
-      if (sectorCount === 1) sectorDiversScore += 5;
-      else if (sectorCount === 2) sectorDiversScore += 10;
-      else if (sectorCount === 3) sectorDiversScore += 20;
-      else if (sectorCount >= 4) sectorDiversScore += 30;
+      let entropy = 0;
+      Object.values(sectorMap).forEach(val => {
+        const w = val / totalEquityVal;
+        if (w > 0) {
+          entropy -= w * Math.log(w);
+        }
+      });
 
-      Object.entries(sectorMap).forEach(([sec, val]) => {
+      const maxEntropy = Math.log(11);
+      const normalizedEntropy = entropy / maxEntropy;
+      sectorDiversScore = 30 * normalizedEntropy;
+
+      // Apply concentration penalty if any single sector has >35% allocation
+      Object.values(sectorMap).forEach(val => {
         const pct = (val / totalEquityVal) * 100;
-        if (pct > 40) {
-          const penalty = (pct - 40) * 0.5;
+        if (pct > 35) {
+          const penalty = (pct - 35) * 0.4;
           sectorDiversScore = Math.max(0, sectorDiversScore - penalty);
         }
       });
@@ -735,6 +742,176 @@ router.get('/finor-score', requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error('[HoldingsRoute] Finor Score error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/holdings/ai-reallocate ─────────────────────────────────────────
+router.post('/ai-reallocate', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { age = 25, riskAppetite = 'Moderate', horizon = 'Long-term' } = req.body;
+
+    // Fetch user holdings
+    const { data: holdings, error: hErr } = await supabaseAdmin
+      .from('holdings')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (hErr) throw hErr;
+
+    // Resolve sectors
+    const enrichedHoldings = await Promise.all((holdings || []).map(async (h) => {
+      let sector = 'Other';
+      try {
+        sector = await getStockSector(h.stock_symbol, h.stock_name);
+      } catch (err) {
+        console.error(err);
+      }
+      return { ...h, sector };
+    }));
+
+    let totalEquityVal = 0;
+    const sectorMap = {};
+    enrichedHoldings.forEach(h => {
+      const val = (h.quantity || 0) * (h.ltp || h.average_buy_price || 0);
+      totalEquityVal += val;
+      const sec = h.sector || 'Other';
+      sectorMap[sec] = (sectorMap[sec] || 0) + val;
+    });
+
+    // Fetch finance goals
+    const { data: goals, error: gErr } = await supabaseAdmin
+      .from('finance_goals')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (gErr) throw gErr;
+
+    const assetValues = {
+      LIQUID_CASH: 0,
+      MUTUAL_FUND: 0,
+      GOLD_SILVER: 0,
+      EQUITY_STOCKS: totalEquityVal,
+      US_STOCKS: 0,
+      ETF: 0
+    };
+
+    (goals || []).forEach(g => {
+      if (g.asset_class !== 'EQUITY_STOCKS') {
+        assetValues[g.asset_class] = parseFloat(g.current_value || 0);
+      }
+    });
+
+    const totalAssets = Object.values(assetValues).reduce((sum, v) => sum + v, 0);
+
+    // Fetch transactions for monthly burn
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentExpenses } = await supabaseAdmin
+      .from('finance_transactions')
+      .select('amount')
+      .eq('user_id', userId)
+      .eq('type', 'EXPENSE')
+      .gte('date', ninetyDaysAgo);
+
+    const totalRecentExpenses = (recentExpenses || []).reduce((sum, tx) => sum + parseFloat(tx.amount || 0), 0);
+    const monthlyBurnRate = Math.max(5000, totalRecentExpenses / 3);
+
+    const sectorWeights = Object.entries(sectorMap).map(([sector, amount]) => ({
+      sector,
+      amount: parseFloat(amount.toFixed(2)),
+      weight: parseFloat(((amount / (totalEquityVal || 1)) * 100).toFixed(1))
+    })).sort((a, b) => b.amount - a.amount);
+
+    const cashWeight = totalAssets > 0 ? parseFloat(((assetValues.LIQUID_CASH / totalAssets) * 100).toFixed(1)) : 0;
+    const equityWeight = totalAssets > 0 ? parseFloat((((assetValues.EQUITY_STOCKS + assetValues.ETF) / totalAssets) * 100).toFixed(1)) : 0;
+    const mutualFundWeight = totalAssets > 0 ? parseFloat(((assetValues.MUTUAL_FUND / totalAssets) * 100).toFixed(1)) : 0;
+    const commodityWeight = totalAssets > 0 ? parseFloat(((assetValues.GOLD_SILVER / totalAssets) * 100).toFixed(1)) : 0;
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    const hasGemini = apiKey && apiKey !== 'your_gemini_api_key_here';
+
+    if (hasGemini) {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+      const prompt = `You are Finor AI Wealth Coach, a premium, certified financial planner.
+Review the following user financial profile and provide a personalized portfolio audit, risk analysis, and reallocation plan.
+
+User Profile:
+- Age: ${age}
+- Risk Appetite: ${riskAppetite}
+- Investment Horizon: ${horizon}
+- Monthly Expenses (Burn Rate): ₹${Math.round(monthlyBurnRate)}/month
+
+Current Asset Allocation:
+- Total Net Worth: ₹${Math.round(totalAssets)}
+- Cash/FD reserves (Emergency Fund): ₹${Math.round(assetValues.LIQUID_CASH)} (${cashWeight}% of portfolio)
+- Mutual Funds: ₹${Math.round(assetValues.MUTUAL_FUND)} (${mutualFundWeight}% of portfolio)
+- Commodities (Gold/Silver): ₹${Math.round(assetValues.GOLD_SILVER)} (${commodityWeight}% of portfolio)
+- Stock Equities & ETFs: ₹${Math.round(assetValues.EQUITY_STOCKS)} (${equityWeight}% of portfolio)
+
+Current Stock Sector Allocation:
+${sectorWeights.map(s => `- ${s.sector}: ₹${Math.round(s.amount)} (${s.weight}% of equity)`).join('\n')}
+
+Based on the 11 global GICS sectors and standard asset allocation principles:
+1. Identify specific risk factors (e.g. sector concentration where a single sector exceeds 35% weight, cash buffers covering less than 6 months of expenses, or commodities safety hedges missing).
+2. Recommend a target asset allocation customized to their age (using the 100 - Age rule if appropriate for their risk profile) and horizon.
+3. Recommend a target sector spread for their equities to achieve optimum GICS diversification.
+4. Outline 3 to 4 actionable, step-by-step reallocation instructions (e.g. which asset classes to buy/sell, how to diversify cash, and which sectors to rebalance).
+
+Format your response in professional GitHub-style markdown. Use bold headers, bullet points, clean alert callouts (e.g. > [!WARNING] or > [!TIP]), and keep the tone professional, encouraging, and clear.`;
+
+      const response = await model.generateContent(prompt);
+      const text = response.response.text();
+      return res.json({ advice: text });
+    } else {
+      // Mock Response Fallback if Gemini key is missing
+      const isConcentrated = sectorWeights.length > 0 && sectorWeights[0].weight > 35;
+      const isCashLow = assetValues.LIQUID_CASH / monthlyBurnRate < 6;
+      const isGoldLow = totalAssets > 0 && (assetValues.GOLD_SILVER / totalAssets) * 100 < 5;
+
+      const mockAdvice = `### 🌟 Finor AI Portfolio Reallocation Coach (Simulated)
+
+> [!NOTE]
+> *Configure your \`GEMINI_API_KEY\` in your environment settings to activate personalized deep-learning model advice. Below is a heuristic portfolio audit based on your financial statistics.*
+
+#### 🚨 Risk Identification & Analysis
+${isConcentrated ? `> [!WARNING]
+> **Sector Concentration Risk**: Your top sector (**${sectorWeights[0]?.sector}**) accounts for **${sectorWeights[0]?.weight}%** of your stock portfolio. A healthy portfolio should keep single-sector GICS exposure below **35%** to hedge against sector-wide downturns.` : `> [!TIP]
+> **Healthy Sector Diversity**: Your stock holdings are nicely spread out, with no single GICS sector exceeding the 35% concentration threshold.`}
+
+${isCashLow ? `> [!CAUTION]
+> **Inadequate Cash Cushion**: Your liquid cash/FD reserves cover only **${(assetValues.LIQUID_CASH / monthlyBurnRate).toFixed(1)} months** of your average monthly expenses (₹${Math.round(monthlyBurnRate)}/mo). We strongly recommend building a cash reserve covering **6.0 months** before locking more capital in equities.` : `> [!TIP]
+> **Excellent Liquidity Buffer**: Your cash reserves cover **${(assetValues.LIQUID_CASH / monthlyBurnRate).toFixed(1)} months** of expenses, providing a solid emergency cushion.`}
+
+${isGoldLow ? `> [!WARNING]
+> **Commodity Hedge Underallocated**: Your gold and silver commodity allocation stands at **${commodityWeight}%** (Ideal: 5-15%). Consider allocating more towards commodities as a hedge against inflation and equity market crashes.` : `> [!TIP]
+> **Good Commodities Safety Hedge**: You have a safe **${commodityWeight}%** buffer in precious metals.`}
+
+#### 📈 Recommended Target Asset Allocation
+Based on your age (**${age}**) and **${riskAppetite}** risk profile, your ideal asset spread should look like:
+*   **Equities & MFs**: **${100 - age}%** (Customized rule: 100 - Age for equity weight)
+*   **Debt / Cash Reserves**: **${Math.min(50, Math.max(10, age))}%** (Emergency fund + FDs)
+*   **Commodities / Gold**: **10%** (Safety Hedge)
+
+#### 📊 Recommended Equity Sector Allocation
+To diversify away from your current heavy weightings, target the following GICS allocation boundaries:
+*   **Information Technology**: **15% - 25%**
+*   **Financials**: **15% - 25%**
+*   **Consumer Staples**: **10% - 15%**
+*   **Health Care / Pharmaceuticals**: **10% - 15%**
+*   **Industrials / Commodities / Other**: **Remainder**
+
+#### 🛠️ Step-by-Step Action Plan
+1.  **Rebalance Stock Concentrations**: Gradually sell down positions in **${sectorWeights[0]?.sector || 'over-concentrated'}** and redirect funds into underallocated sectors like **Information Technology** or **Financials**.
+2.  **Bolster Emergency Reserves**: If cash is low, set aside surplus income to top up your FDs/Liquid reserves until they cover at least 6 months of expenses (₹${Math.round(monthlyBurnRate * 6)}).
+3.  **Hedge with Gold**: Consider setting up a recurring deposit (SIP) in Sovereign Gold Bonds or Gold ETFs representing ~8-10% of your net worth.
+`;
+      return res.json({ advice: mockAdvice });
+    }
+  } catch (err) {
+    console.error('[HoldingsRoute] AI Reallocate error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
