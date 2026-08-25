@@ -1,43 +1,67 @@
 import { supabase } from '../config/supabase.js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Local dictionary for Nifty 100 and popular stocks to guarantee zero-latency resolution
+const GICS_SECTORS = [
+  'Communication Services',
+  'Consumer Discretionary',
+  'Consumer Staples',
+  'Energy',
+  'Financials',
+  'Health Care',
+  'Industrials',
+  'Information Technology',
+  'Materials',
+  'Real Estate',
+  'Utilities'
+];
+
+// Local dictionary mapped to GICS 11 standard sectors
 const LOCAL_SECTOR_MAP = {
-  // Financial Services
-  'HDFCBANK': 'Financial Services',
-  'ICICIBANK': 'Financial Services',
-  'SBIN': 'Financial Services',
-  'KOTAKBANK': 'Financial Services',
-  'AXISBANK': 'Financial Services',
-  'BAJFINANCE': 'Financial Services',
-  'BAJAJFINSV': 'Financial Services',
-  'LICHSGFIN': 'Financial Services',
-  'MUTHOOTFIN': 'Financial Services',
-  'CHOLAFIN': 'Financial Services',
-  'PFC': 'Financial Services',
-  'RECLTD': 'Financial Services',
-  'IRFC': 'Financial Services',
-  'HDFC': 'Financial Services',
-  'HUDCO': 'Financial Services',
-  'J&KBANK': 'Financial Services',
-  'IDFCFIRSTB': 'Financial Services',
-  'PNB': 'Financial Services',
-  'CANBK': 'Financial Services',
-  'UNIONBANK': 'Financial Services',
-  'BOB': 'Financial Services',
-  'FEDERALBNK': 'Financial Services',
+  // Financials
+  'HDFCBANK': 'Financials',
+  'ICICIBANK': 'Financials',
+  'SBIN': 'Financials',
+  'KOTAKBANK': 'Financials',
+  'AXISBANK': 'Financials',
+  'BAJFINANCE': 'Financials',
+  'BAJAJFINSV': 'Financials',
+  'LICHSGFIN': 'Financials',
+  'MUTHOOTFIN': 'Financials',
+  'CHOLAFIN': 'Financials',
+  'PFC': 'Financials',
+  'RECLTD': 'Financials',
+  'IRFC': 'Financials',
+  'HDFC': 'Financials',
+  'HUDCO': 'Financials',
+  'J&KBANK': 'Financials',
+  'IDFCFIRSTB': 'Financials',
+  'PNB': 'Financials',
+  'CANBK': 'Financials',
+  'UNIONBANK': 'Financials',
+  'BOB': 'Financials',
+  'FEDERALBNK': 'Financials',
+  'BSE': 'Financials',
+  'CDSL': 'Financials',
+  'MCX': 'Financials',
+  'IEX': 'Financials',
+  'PAYTM': 'Financials',
+  'IREDA': 'Financials',
   
-  // Technology
-  'TCS': 'Technology',
-  'INFY': 'Technology',
-  'WIPRO': 'Technology',
-  'HCLTECH': 'Technology',
-  'TECHM': 'Technology',
-  'LTIM': 'Technology',
-  'COFORGE': 'Technology',
-  'MPHASIS': 'Technology',
-  'PERSISTENT': 'Technology',
-  'KPITTECH': 'Technology',
-  'TATAELXSI': 'Technology',
+  // Information Technology
+  'TCS': 'Information Technology',
+  'INFY': 'Information Technology',
+  'WIPRO': 'Information Technology',
+  'HCLTECH': 'Information Technology',
+  'TECHM': 'Information Technology',
+  'LTIM': 'Information Technology',
+  'COFORGE': 'Information Technology',
+  'MPHASIS': 'Information Technology',
+  'PERSISTENT': 'Information Technology',
+  'KPITTECH': 'Information Technology',
+  'TATAELXSI': 'Information Technology',
+  'CYIENT': 'Information Technology',
+  'OFSS': 'Information Technology',
+  'BSOFT': 'Information Technology',
   
   // Energy
   'RELIANCE': 'Energy',
@@ -45,75 +69,90 @@ const LOCAL_SECTOR_MAP = {
   'BPCL': 'Energy',
   'IOC': 'Energy',
   'HPCL': 'Energy',
-  'POWERGRID': 'Energy',
-  'NTPC': 'Energy',
-  'ADANIGREEN': 'Energy',
-  'ADANITRANS': 'Energy',
-  'SJVN': 'Energy',
-  'NHPC': 'Energy',
   'COALINDIA': 'Energy',
   'GAIL': 'Energy',
-  'TATAPOWER': 'Energy',
-  'IREDA': 'Energy',
   
-  // Consumer Defensive (FMCG)
-  'ITC': 'Consumer Defensive',
-  'HINDUNILVR': 'Consumer Defensive',
-  'NESTLEIND': 'Consumer Defensive',
-  'BRITANNIA': 'Consumer Defensive',
-  'COLPAL': 'Consumer Defensive',
-  'DABUR': 'Consumer Defensive',
-  'MARICO': 'Consumer Defensive',
-  'TATACONSUM': 'Consumer Defensive',
-  'PGHH': 'Consumer Defensive',
-  'GODREJCP': 'Consumer Defensive',
-  'VBL': 'Consumer Defensive',
-  'EMAMILTD': 'Consumer Defensive',
-  'GILLETTE': 'Consumer Defensive',
+  // Utilities
+  'POWERGRID': 'Utilities',
+  'NTPC': 'Utilities',
+  'ADANIGREEN': 'Utilities',
+  'SJVN': 'Utilities',
+  'NHPC': 'Utilities',
+  'TATAPOWER': 'Utilities',
+  'ADANIPOWER': 'Utilities',
+  'JSWENERGY': 'Utilities',
+  'TORNTPOWER': 'Utilities',
+  'WAAREEINDO': 'Utilities',
+  'VIKRAMSOLR': 'Utilities',
   
-  // Automobile & Travel/Tourism (Consumer Cyclical)
-  'TATAMOTORS': 'Consumer Cyclical',
-  'MARUTI': 'Consumer Cyclical',
-  'M&M': 'Consumer Cyclical',
-  'BAJAJ-AUTO': 'Consumer Cyclical',
-  'HEROMOTOCO': 'Consumer Cyclical',
-  'TVSMOTOR': 'Consumer Cyclical',
-  'EICHERMOT': 'Consumer Cyclical',
-  'ASHOKLEY': 'Consumer Cyclical',
-  'BALKRISIND': 'Consumer Cyclical',
-  'IRCTC': 'Consumer Cyclical',
-  'EIHOTEL': 'Consumer Cyclical',
-  'LEMONTREE': 'Consumer Cyclical',
-  'INDHOTEL': 'Consumer Cyclical',
+  // Consumer Staples
+  'ITC': 'Consumer Staples',
+  'HINDUNILVR': 'Consumer Staples',
+  'NESTLEIND': 'Consumer Staples',
+  'BRITANNIA': 'Consumer Staples',
+  'COLPAL': 'Consumer Staples',
+  'DABUR': 'Consumer Staples',
+  'MARICO': 'Consumer Staples',
+  'TATACONSUM': 'Consumer Staples',
+  'PGHH': 'Consumer Staples',
+  'GODREJCP': 'Consumer Staples',
+  'VBL': 'Consumer Staples',
+  'EMAMILTD': 'Consumer Staples',
+  'GILLETTE': 'Consumer Staples',
+  'AVANTIFEED': 'Consumer Staples',
+  'SKMEGGPROD': 'Consumer Staples',
   
-  // Healthcare / Pharma
-  'SUNPHARMA': 'Healthcare',
-  'CIPLA': 'Healthcare',
-  'DRREDDY': 'Healthcare',
-  'DIVISLAB': 'Healthcare',
-  'APOLLOHOSP': 'Healthcare',
-  'AUROPHARMA': 'Healthcare',
-  'LUPIN': 'Healthcare',
-  'BIOCON': 'Healthcare',
-  'TORNTPHARM': 'Healthcare',
-  'IPCALAB': 'Healthcare',
-  'MAXHEALTH': 'Healthcare',
+  // Consumer Discretionary
+  'TATAMOTORS': 'Consumer Discretionary',
+  'MARUTI': 'Consumer Discretionary',
+  'M&M': 'Consumer Discretionary',
+  'BAJAJ-AUTO': 'Consumer Discretionary',
+  'HEROMOTOCO': 'Consumer Discretionary',
+  'TVSMOTOR': 'Consumer Discretionary',
+  'EICHERMOT': 'Consumer Discretionary',
+  'ASHOKLEY': 'Consumer Discretionary',
+  'BALKRISIND': 'Consumer Discretionary',
+  'TITAN': 'Consumer Discretionary',
+  'TRENT': 'Consumer Discretionary',
+  'DMART': 'Consumer Discretionary',
+  'ZOMATO': 'Consumer Discretionary',
+  'IRCTC': 'Consumer Discretionary',
+  'EIHOTEL': 'Consumer Discretionary',
+  'LEMONTREE': 'Consumer Discretionary',
+  'INDHOTEL': 'Consumer Discretionary',
+  'REDTAPE': 'Consumer Discretionary',
+  'SULA': 'Consumer Discretionary',
   
-  // Materials / Mining / Cement
-  'TATASTEEL': 'Basic Materials',
-  'JSWSTEEL': 'Basic Materials',
-  'HINDALCO': 'Basic Materials',
-  'VEDL': 'Basic Materials',
-  'GRASIM': 'Basic Materials',
-  'ULTRACEMCO': 'Basic Materials',
-  'SHREECEM': 'Basic Materials',
-  'AMBUJACEM': 'Basic Materials',
-  'ACC': 'Basic Materials',
-  'NMDC': 'Basic Materials',
-  'SAIL': 'Basic Materials',
-  'NATIONALUM': 'Basic Materials',
+  // Health Care
+  'SUNPHARMA': 'Health Care',
+  'CIPLA': 'Health Care',
+  'DRREDDY': 'Health Care',
+  'DIVISLAB': 'Health Care',
+  'APOLLOHOSP': 'Health Care',
+  'AUROPHARMA': 'Health Care',
+  'LUPIN': 'Health Care',
+  'BIOCON': 'Health Care',
+  'TORNTPHARM': 'Health Care',
+  'IPCALAB': 'Health Care',
+  'MAXHEALTH': 'Health Care',
   
-  // Industrials / Infrastructure / Defense
+  // Materials
+  'TATASTEEL': 'Materials',
+  'JSWSTEEL': 'Materials',
+  'HINDALCO': 'Materials',
+  'VEDL': 'Materials',
+  'GRASIM': 'Materials',
+  'ULTRACEMCO': 'Materials',
+  'SHREECEM': 'Materials',
+  'AMBUJACEM': 'Materials',
+  'ACC': 'Materials',
+  'NMDC': 'Materials',
+  'SAIL': 'Materials',
+  'NATIONALUM': 'Materials',
+  'SRF': 'Materials',
+  'TATACHEM': 'Materials',
+  
+  // Industrials
   'LT': 'Industrials',
   'ADANIENT': 'Industrials',
   'ADANIPORTS': 'Industrials',
@@ -124,23 +163,10 @@ const LOCAL_SECTOR_MAP = {
   'SIEMENS': 'Industrials',
   'CONCOR': 'Industrials',
   'GMRINFRA': 'Industrials',
-  'TATACOMM': 'Industrials',
   'RVNL': 'Industrials',
   'IRCON': 'Industrials',
   
-  // Consumer Cyclical / Retail
-  'TITAN': 'Consumer Cyclical',
-  'TRENT': 'Consumer Cyclical',
-  'DMART': 'Consumer Cyclical',
-  'AVENUE': 'Consumer Cyclical',
-  'ABFRL': 'Consumer Cyclical',
-  'JUBILANT': 'Consumer Cyclical',
-  'NYKAA': 'Consumer Cyclical',
-  'ZOMATO': 'Consumer Cyclical',
-  'PAGEIND': 'Consumer Cyclical',
-  'BATAINDIA': 'Consumer Cyclical',
-  
-  // Telecommunication & Media (Communication Services)
+  // Communication Services
   'BHARTIARTL': 'Communication Services',
   'IDEA': 'Communication Services',
   'INDUSTOWER': 'Communication Services',
@@ -148,12 +174,49 @@ const LOCAL_SECTOR_MAP = {
   'ZEEL': 'Communication Services'
 };
 
-export async function getStockSector(symbol) {
+// Heuristic backup classifier using symbol name keywords
+function heuristicClassify(symbol, stockName = '') {
+  const cleanSymbol = symbol.split('.')[0].toUpperCase().trim();
+  const name = (stockName || '').toUpperCase();
+  const combined = `${cleanSymbol} ${name}`;
+
+  if (/\b(SOLAR|RENEWABLE|WIND|GREEN POWER|POWER|ELECTRIC|CESC)\b/i.test(combined)) {
+    return 'Utilities';
+  }
+  if (/\b(PETRO|OIL|GAS|HPCL|BPCL|IOC|RELIANCE|COAL)\b/i.test(combined)) {
+    return 'Energy';
+  }
+  if (/\b(FOOD|FEED|FEEDS|DAIRY|EGG|EGGS|POULTRY|SUGAR|BEVERAGE|BREWERY|AGRO|STAPLE|KIRANA|MILK|SPICE|STAPLES)\b/i.test(combined)) {
+    return 'Consumer Staples';
+  }
+  if (/\b(HOTEL|HOTELS|RESORT|RESORTS|RETAIL|APPAREL|FOOTWEAR|SHOE|SHOES|CLOTH|CLOTHES|FASHION|GARMENT|TRAVEL|TOURISM|CATERING|AUTOMOBILE|MOTOR|MOTORS|CYCLE|TYRE|TYRES|CAR|CARS|JEWELLERY|GOLD)\b/i.test(combined)) {
+    return 'Consumer Discretionary';
+  }
+  if (/\b(BANK|BANKS|FINANCE|FINANCIAL|MUTUAL|INSURANCE|CAPITAL|INVESTMENT|INVESTMENTS|HOLDINGS|SECURITIES|EXCHANGE|BROKER)\b/i.test(combined)) {
+    return 'Financials';
+  }
+  if (/\b(PHARMA|PHARMACEUTICAL|PHARMACEUTICALS|LABS|LABORATORIES|HEALTH|HEALTHCARE|CLINIC|HOSPITAL|HOSPITALS|BIOTECH|MEDICINE|DRUG|DRUGS)\b/i.test(combined)) {
+    return 'Health Care';
+  }
+  if (/\b(SOFTWARE|TECH|TECHNOLOGY|TECHNOLOGIES|INFOSYS|COMPUTERS|SYSTEMS|DIGITAL|CHIP|SEMICONDUCTOR)\b/i.test(combined)) {
+    return 'Information Technology';
+  }
+  if (/\b(STEEL|METAL|METALS|IRON|COPPER|ALUMINIUM|ZINC|MINING|CEMENT|CHEMICAL|CHEMICALS|PAPER|WOOD|CLAY)\b/i.test(combined)) {
+    return 'Materials';
+  }
+  if (/\b(REALTY|ESTATE|REIT|REITS|INFRASTRUCTURE|CONSTRUCTION|MACHINERY|AIRLINE|SHIPPING|PORT|PORTS|CARGO|LOGISTICS|DEFENSE|AEROSPACE)\b/i.test(combined)) {
+    return 'Industrials';
+  }
+
+  return 'Other';
+}
+
+export async function getStockSector(symbol, stockName = '') {
   if (!symbol) return 'Other';
   
   const cleanSymbol = symbol.split('.')[0].toUpperCase().trim();
   
-  // 1. Check local static dictionary
+  // 1. Check local static GICS dictionary
   if (LOCAL_SECTOR_MAP[cleanSymbol]) {
     return LOCAL_SECTOR_MAP[cleanSymbol];
   }
@@ -171,45 +234,76 @@ export async function getStockSector(symbol) {
       return cached.price_data.sector;
     }
   } catch (err) {
-    // If table doesn't support cache or fails, bypass
+    // bypass cache fetch errors
   }
   
-  // 3. Fallback: Fetch from Yahoo Finance modules API
-  const ticker = symbol.includes('.') ? symbol : `${cleanSymbol}.NS`;
-  const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=assetProfile`;
+  // 3. Fallback: Query Gemini AI for official GICS sector mapping if configured
+  const apiKey = process.env.GEMINI_API_KEY;
+  const hasGemini = apiKey && apiKey !== 'your_gemini_api_key_here';
   
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-    
-    if (response.ok) {
-      const json = await response.json();
-      const profile = json?.quoteSummary?.result?.[0]?.assetProfile;
-      if (profile && profile.sector) {
-        const sector = profile.sector;
-        
-        // Cache the result in DB
+  if (hasGemini) {
+    try {
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+      
+      const prompt = `Classify the stock ticker symbol "${cleanSymbol}" (Company Name: "${stockName || cleanSymbol}") into exactly one of these 11 global GICS sectors:
+- Communication Services
+- Consumer Discretionary
+- Consumer Staples
+- Energy
+- Financials
+- Health Care
+- Industrials
+- Information Technology
+- Materials
+- Real Estate
+- Utilities
+
+Respond with ONLY the name of the sector in plain text. Do not include markdown, explanations, or punctuation.`;
+      
+      const response = await model.generateContent(prompt);
+      const text = response.response.text().trim();
+      
+      // Match against GICS sectors to ensure validity
+      const matchedSector = GICS_SECTORS.find(s => text.toLowerCase().includes(s.toLowerCase()));
+      if (matchedSector) {
+        // Cache result in DB
         try {
           await supabase
             .from('price_cache')
             .upsert({
               stock_symbol: cleanSymbol,
               period: 'SECTOR',
-              price_data: { sector },
+              price_data: { sector: matchedSector },
               updated_at: new Date().toISOString()
             });
         } catch (cacheErr) {
           console.error('[SectorService] Cache save failed:', cacheErr.message);
         }
-        
-        return sector;
+        return matchedSector;
       }
+    } catch (aiErr) {
+      console.error(`[SectorService] Gemini classification failed for ${cleanSymbol}:`, aiErr.message);
     }
-  } catch (err) {
-    console.error(`[SectorService] Live fetch failed for ${ticker}:`, err.message);
+  }
+  
+  // 4. Heuristic classifier backup
+  const backupSector = heuristicClassify(cleanSymbol, stockName);
+  if (backupSector !== 'Other') {
+    // Cache the heuristic result
+    try {
+      await supabase
+        .from('price_cache')
+        .upsert({
+          stock_symbol: cleanSymbol,
+          period: 'SECTOR',
+          price_data: { sector: backupSector },
+          updated_at: new Date().toISOString()
+            });
+    } catch (cacheErr) {
+      // Ignore
+    }
+    return backupSector;
   }
   
   return 'Other';

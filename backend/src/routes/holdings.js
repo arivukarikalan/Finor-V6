@@ -97,7 +97,7 @@ router.get('/', requireAuth, async (req, res) => {
     const enriched = await Promise.all(data.map(async (h) => {
       let sector = 'Other';
       try {
-        sector = await getStockSector(h.stock_symbol);
+        sector = await getStockSector(h.stock_symbol, h.stock_name);
       } catch (err) {
         console.error(`[HoldingsRoute] Sector fetch failed for ${h.stock_symbol}:`, err.message);
       }
@@ -573,7 +573,7 @@ router.get('/finor-score', requireAuth, async (req, res) => {
     const enrichedHoldings = await Promise.all((holdings || []).map(async (h) => {
       let sector = 'Other';
       try {
-        sector = await getStockSector(h.stock_symbol);
+        sector = await getStockSector(h.stock_symbol, h.stock_name);
       } catch (err) {
         console.error(`[FinorScore] Sector resolution failed for ${h.stock_symbol}:`, err.message);
       }
