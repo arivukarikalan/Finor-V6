@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
   Edit2, UserMinus, UserPlus, Users, X, Link2, Briefcase,
-  Receipt, TrendingUp, BarChart3, Check, Search, AlertTriangle, Sparkles
+  Receipt, TrendingUp, BarChart3, Check, Search, AlertTriangle, Sparkles, Loader2
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { 
@@ -22,6 +22,8 @@ interface Transaction {
   linked_tx_id?: string | null;
   is_claimable?: boolean;
   claim_status?: 'UNCLAIMED' | 'CLAIMED';
+  is_auto_filled?: boolean;
+  needs_review?: boolean;
 }
 
 interface Debt {
@@ -141,7 +143,20 @@ const isAvoidableExpense = (category: string, description: string) => {
 };
 
 export const Finance: React.FC = () => {
-  const [subTab, setSubTab] = useState<'wealth' | 'expenses' | 'debts'>('wealth');
+  const [subTab, setSubTab] = useState<'wealth' | 'expenses' | 'debts' | 'report'>('wealth');
+  
+  // Suggestion & Report states
+  const [suggestion, setSuggestion] = useState<{ description: string; category: string; confidence: number } | null>(null);
+  const [reportMonth, setReportMonth] = useState(() => {
+    const d = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(d.getTime() + istOffset);
+    return istDate.toISOString().substring(0, 7); // YYYY-MM
+  });
+  const [reportData, setReportData] = useState<any>(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reviewForms, setReviewForms] = useState<{ [id: string]: { description: string; category: string } }>({});
+
   
   // Dashboard states
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -357,6 +372,139 @@ export const Finance: React.FC = () => {
     setToast({ type, message });
     setTimeout(() => setToast(null), 4000);
   };
+
+  // 1. Fetch suggestions dynamically when manual creation modal values change
+  useEffect(() => {
+    if (!showTxModal || txForm.type !== 'EXPENSE' || !txForm.amount || parseFloat(txForm.amount) <= 0) {
+      setSuggestion(null);
+      return;
+    }
+
+    const delayDebounce = setTimeout(async () => {
+      try {
+        const queryDate = txForm.date ? new Date(txForm.date).toISOString() : new Date().toISOString();
+        const data = await apiRequest(`/finance/recurring-suggestions?amount=${txForm.amount}&date=${queryDate}`, { bypassCache: true });
+        if (data && data.isMatched) {
+          setSuggestion({
+            description: data.description,
+            category: data.category,
+            confidence: data.confidence
+          });
+        } else {
+          setSuggestion(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch recurring suggestion:', err);
+        setSuggestion(null);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounce);
+  }, [txForm.amount, txForm.type, txForm.date, showTxModal]);
+
+  // 2. Fetch monthly report data
+  const fetchMonthlyReport = async (monthStr: string) => {
+    setReportLoading(true);
+    try {
+      const data = await apiRequest(`/finance/monthly-report?month=${monthStr}`, { bypassCache: true });
+      setReportData(data);
+    } catch (err: any) {
+      console.error('Failed to fetch monthly report:', err);
+      triggerToast('error', err.message || 'Failed to generate monthly report.');
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  // 3. Trigger report fetch on tab or month change
+  useEffect(() => {
+    if (subTab === 'report') {
+      fetchMonthlyReport(reportMonth);
+    }
+  }, [subTab, reportMonth]);
+
+  // 4. Memoized grouped transactions queue needing review
+  const groupedReviewQueue = useMemo(() => {
+    const queue = transactions.filter(t => t.needs_review);
+    const groups: { [key: string]: Transaction[] } = {};
+    
+    // Sort queue by date descending
+    const sorted = [...queue].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    sorted.forEach(t => {
+      const dateObj = new Date(t.date);
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+      
+      let dateLabel = '';
+      if (dateObj.toDateString() === today.toDateString()) {
+        dateLabel = 'Today';
+      } else if (dateObj.toDateString() === yesterday.toDateString()) {
+        dateLabel = 'Yesterday';
+      } else {
+        dateLabel = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+      }
+      
+      if (!groups[dateLabel]) {
+        groups[dateLabel] = [];
+      }
+      groups[dateLabel].push(t);
+    });
+    
+    return groups;
+  }, [transactions]);
+
+  // 5. Handlers for Review Inbox changes and approvals
+  const handleReviewChange = (id: string, field: 'description' | 'category', value: string) => {
+    setReviewForms(prev => ({
+      ...prev,
+      [id]: {
+        ...((prev[id] || { description: '', category: 'Food' })),
+        [field]: value
+      }
+    }));
+  };
+
+  const handleConfirmReview = async (tx: Transaction, approvedDesc?: string, approvedCat?: string) => {
+    try {
+      const formInput = reviewForms[tx.id];
+      const finalDesc = approvedDesc !== undefined ? approvedDesc : (formInput?.description || tx.description);
+      const finalCat = approvedCat !== undefined ? approvedCat : (formInput?.category || tx.category);
+
+      if (!finalDesc || finalDesc.trim() === '' || finalDesc.toLowerCase().includes('spent via sms alert')) {
+        triggerToast('error', 'Please enter a valid description for this transaction.');
+        return;
+      }
+
+      const payload = {
+        ...tx,
+        description: finalDesc,
+        category: finalCat,
+        needs_review: false
+      };
+
+      const res = await apiRequest('/finance/transaction', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      // Update state locally
+      setTransactions(prev => prev.map(t => t.id === tx.id ? res.transaction : t));
+      triggerToast('success', 'Transaction details confirmed.');
+      
+      // Clean up form state
+      setReviewForms(prev => {
+        const copy = { ...prev };
+        delete copy[tx.id];
+        return copy;
+      });
+    } catch (err: any) {
+      console.error('Failed to confirm transaction review:', err);
+      triggerToast('error', err.message || 'Failed to save review details.');
+    }
+  };
+
 
   const fetchDashboardData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -878,6 +1026,16 @@ export const Finance: React.FC = () => {
           <span className="hidden md:inline">Debt Ledger</span>
           <span className="md:hidden">Debts</span>
         </button>
+        <button
+          onClick={() => setSubTab('report')}
+          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 flex items-center gap-1.5 ${
+            subTab === 'report' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
+          }`}
+        >
+          <Receipt className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">Monthly Report</span>
+          <span className="md:hidden">Report</span>
+        </button>
       </div>
 
       {/* ─── TAB 1: WEALTH & GOALS ─── */}
@@ -1005,6 +1163,117 @@ export const Finance: React.FC = () => {
       {subTab === 'expenses' && (
         <div className="space-y-6">
           
+          {/* Daily Review Inbox Block */}
+          {Object.keys(groupedReviewQueue).length > 0 && (
+            <div className="glass-panel rounded-3xl p-6 border border-brand-500/35 bg-gradient-to-r from-brand-500/5 via-dark-depth-1 to-indigo-500/5 space-y-4 animate-in fade-in duration-300">
+              <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
+                <div>
+                  <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-brand-400 animate-pulse" />
+                    Transaction Review Inbox ({transactions.filter(t => t.needs_review).length} pending)
+                  </h3>
+                  <p className="text-[10px] text-gray-400 mt-0.5">AI suggests details for your recurring transactions. Confirm or edit them day-by-day.</p>
+                </div>
+              </div>
+
+              <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
+                {Object.keys(groupedReviewQueue).map(day => (
+                  <div key={day} className="space-y-2">
+                    <h4 className="text-[10px] font-extrabold uppercase text-brand-400 tracking-wider sticky top-0 bg-dark-depth-1/90 py-1 backdrop-blur-sm z-10">{day}</h4>
+                    <div className="space-y-2">
+                      {groupedReviewQueue[day].map(tx => {
+                        const formState = reviewForms[tx.id] || { description: tx.is_auto_filled ? tx.description : '', category: tx.is_auto_filled ? tx.category : 'Food' };
+                        const isAuto = tx.is_auto_filled;
+                        const txTime = new Date(tx.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+                        return (
+                          <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-dark-depth-2/80 rounded-2xl border border-dark-border/50 hover:border-dark-border transition-colors">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-black text-white">₹{parseFloat(tx.amount.toString()).toFixed(2)}</span>
+                                <span className="text-[10px] bg-dark-depth-3 px-2 py-0.5 rounded-lg border border-dark-border text-gray-400 font-bold">{tx.method} ({txTime})</span>
+                                {isAuto && (
+                                  <span className="text-[9px] bg-brand-500/20 text-brand-300 px-2.5 py-0.5 rounded-lg border border-brand-500/30 font-extrabold flex items-center gap-1">
+                                    <Sparkles className="w-2.5 h-2.5 text-brand-400 animate-pulse" />
+                                    AI Recurrence Auto-filled
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] text-gray-400 italic">Original SMS alert: "{tx.description}"</p>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {isAuto ? (
+                                <div className="flex items-center gap-2">
+                                  <div className="bg-dark-depth-3 px-3 py-1.5 rounded-xl border border-brand-500/20 text-left">
+                                    <span className="text-[9px] font-bold text-brand-400 block uppercase">✨ Auto-fill</span>
+                                    <span className="text-[10px] text-white font-extrabold">"{tx.description}"</span>
+                                    <span className="text-[9px] text-gray-400 block mt-0.5">Category: {tx.category}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => handleConfirmReview(tx, tx.description, tx.category)}
+                                    className="p-2 bg-emerald-500 hover:bg-emerald-600 text-black rounded-xl transition-colors cursor-pointer"
+                                    title="Confirm suggested details"
+                                  >
+                                    <Check className="w-4 h-4 stroke-[3]" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <input
+                                    type="text"
+                                    placeholder="Enter description..."
+                                    value={formState.description}
+                                    onChange={(e) => handleReviewChange(tx.id, 'description', e.target.value)}
+                                    className="bg-dark-depth-3 border border-dark-border rounded-xl px-2.5 py-1.5 text-[10px] text-white placeholder-gray-500 focus:outline-none w-[150px]"
+                                  />
+                                  <select
+                                    value={formState.category}
+                                    onChange={(e) => handleReviewChange(tx.id, 'category', e.target.value)}
+                                    className="bg-dark-depth-3 border border-dark-border rounded-xl px-2 py-1.5 text-[10px] text-white focus:outline-none"
+                                  >
+                                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                                  </select>
+                                  <button
+                                    onClick={() => handleConfirmReview(tx, formState.description, formState.category)}
+                                    className="p-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl transition-colors cursor-pointer"
+                                    title="Save transaction details"
+                                  >
+                                    <Check className="w-4 h-4 stroke-[3]" />
+                                  </button>
+                                </div>
+                              )}
+                              <button
+                                onClick={() => {
+                                  setTxForm({
+                                    id: tx.id,
+                                    date: new Date(tx.date).toISOString().substring(0, 16),
+                                    amount: tx.amount.toString(),
+                                    type: tx.type,
+                                    category: tx.category,
+                                    method: tx.method,
+                                    description: isAuto ? tx.description : formState.description,
+                                    is_claimable: tx.is_claimable || false,
+                                    claim_status: tx.claim_status || 'UNCLAIMED'
+                                  });
+                                  setShowTxModal(true);
+                                }}
+                                className="p-2 bg-dark-depth-3 hover:bg-dark-depth-2 border border-dark-border text-gray-400 hover:text-white rounded-xl transition-colors cursor-pointer"
+                                title="Edit full record"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* AI Finor Essential vs Avoidable Expense Smart Breakdown Banner */}
           <div className="glass-panel rounded-3xl p-6 border border-amber-500/30 bg-gradient-to-r from-amber-500/5 via-dark-depth-1 to-brand-500/5 space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-dark-border/40 pb-4">
@@ -1955,6 +2224,214 @@ export const Finance: React.FC = () => {
         </div>
       )}
 
+      {/* ─── TAB 4: MONTHLY REPORT ─── */}
+      {subTab === 'report' && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          {/* Header & Control Panel */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel rounded-3xl p-6 border border-dark-border bg-dark-depth-1/40">
+            <div>
+              <h2 className="text-base font-black text-white flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-brand-400" />
+                Monthly Outflow & Activity Report
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5">Comprehensive audit of category distributions, transaction frequency, and burn rate velocity.</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-[10px] text-gray-400 font-extrabold uppercase shrink-0">Report Month</label>
+              <input
+                type="month"
+                value={reportMonth}
+                onChange={(e) => setReportMonth(e.target.value)}
+                className="bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none cursor-pointer"
+                style={{ colorScheme: 'dark' }}
+              />
+            </div>
+          </div>
+
+          {reportLoading ? (
+            <div className="glass-panel rounded-3xl p-16 flex flex-col items-center justify-center border border-dark-border">
+              <Loader2 className="w-8 h-8 text-brand-500 animate-spin mb-4" />
+              <p className="text-xs text-gray-400">Compiling ledger events and generating calculations...</p>
+            </div>
+          ) : reportData ? (
+            <div className="space-y-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Total Spend */}
+                <div className="glass-panel rounded-3xl p-6 border border-dark-border bg-gradient-to-br from-dark-depth-1 via-dark-depth-1 to-rose-500/5 flex flex-col justify-between space-y-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Total Month Spend</span>
+                    {reportData.comparison.percentDiff !== 0 && (
+                      <span className={`text-[9px] px-2 py-0.5 rounded-lg border font-extrabold flex items-center gap-1 ${
+                        reportData.comparison.percentDiff > 0
+                          ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+                          : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                      }`}>
+                        <TrendingUp className={`w-2.5 h-2.5 ${reportData.comparison.percentDiff > 0 ? '' : 'rotate-180'}`} />
+                        {Math.abs(reportData.comparison.percentDiff)}% {reportData.comparison.percentDiff > 0 ? 'more' : 'less'}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <span className="text-2xl font-black text-rose-400 block">₹{parseFloat(reportData.totalExpense).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    <span className="text-[10px] text-gray-500 block mt-1">Previous Month: ₹{parseFloat(reportData.comparison.prevTotalExpense).toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                {/* Daily Averages */}
+                <div className="glass-panel rounded-3xl p-6 border border-dark-border bg-gradient-to-br from-dark-depth-1 via-dark-depth-1 to-brand-500/5 flex flex-col justify-between space-y-4">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Daily Activity Rates</span>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-300 flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5 text-brand-400" />
+                        Burn Rate
+                      </span>
+                      <span className="text-xs font-black text-white">₹{parseFloat(reportData.dailyAverages.spendPerDay).toFixed(2)}/day</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-300 flex items-center gap-1.5">
+                        <Receipt className="w-3.5 h-3.5 text-brand-400" />
+                        Transaction Count
+                      </span>
+                      <span className="text-xs font-black text-white">{parseFloat(reportData.dailyAverages.transactionsPerDay).toFixed(2)} tx/day</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Savings & Peak Day */}
+                <div className="glass-panel rounded-3xl p-6 border border-dark-border bg-gradient-to-br from-dark-depth-1 via-dark-depth-1 to-emerald-500/5 flex flex-col justify-between space-y-4">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">Net Ledger Savings</span>
+                  <div>
+                    <span className={`text-2xl font-black block ${reportData.netSavings >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      ₹{parseFloat(reportData.netSavings).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                    <span className="text-[10px] text-gray-500 block mt-1">
+                      {reportData.netSavings >= 0 
+                        ? '🟢 Month ended in surplus' 
+                        : '⚠️ Month ended in deficit (exceeded income)'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Category distribution and Peak stats */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Category Table */}
+                <div className="lg:col-span-2 glass-panel rounded-3xl p-6 border border-dark-border space-y-4">
+                  <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-emerald-400" />
+                    Category Allocation Audit
+                  </h3>
+                  
+                  {reportData.categoryWise.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-dark-border text-gray-400">
+                            <th className="pb-2 font-bold uppercase text-[9px] tracking-wider">Category</th>
+                            <th className="pb-2 font-bold uppercase text-[9px] tracking-wider text-right">Outflow Amount</th>
+                            <th className="pb-2 font-bold uppercase text-[9px] tracking-wider text-right">Transactions</th>
+                            <th className="pb-2 font-bold uppercase text-[9px] tracking-wider text-right">Avg / Tx</th>
+                            <th className="pb-2 font-bold uppercase text-[9px] tracking-wider text-right">Ratio</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {reportData.categoryWise.map((c: any) => {
+                            const ratio = reportData.totalExpense > 0 ? Math.round((c.amount / reportData.totalExpense) * 100) : 0;
+                            const avgTx = c.count > 0 ? c.amount / c.count : 0;
+                            return (
+                              <tr key={c.category} className="border-b border-dark-border/40 hover:bg-dark-depth-2/40 transition-colors">
+                                <td className="py-2.5 font-bold text-white">{c.category}</td>
+                                <td className="py-2.5 font-black text-right text-rose-400">₹{parseFloat(c.amount).toLocaleString('en-IN')}</td>
+                                <td className="py-2.5 font-bold text-right text-gray-300">{c.count} times</td>
+                                <td className="py-2.5 font-bold text-right text-gray-400">₹{parseFloat(avgTx.toFixed(2)).toLocaleString('en-IN')}</td>
+                                <td className="py-2.5 text-right font-extrabold text-brand-400">{ratio}%</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="py-8 text-center text-gray-500">
+                      No expense records logged for this month.
+                    </div>
+                  )}
+                </div>
+
+                {/* Peaks card & details */}
+                <div className="glass-panel rounded-3xl p-6 border border-dark-border space-y-6 flex flex-col justify-between">
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      Activity Peak Audits
+                    </h3>
+                    
+                    <div className="space-y-4">
+                      {/* Peak Spend Day */}
+                      <div className="p-3 bg-dark-depth-2/50 border border-dark-border rounded-2xl space-y-1">
+                        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3 text-rose-400" />
+                          Single Peak Spending Day
+                        </span>
+                        {reportData.peaks.maxSpendDay ? (
+                          <>
+                            <span className="text-sm font-black text-rose-400 block">₹{parseFloat(reportData.peaks.maxSpendAmount).toLocaleString('en-IN')}</span>
+                            <span className="text-[10px] text-gray-300 block">on {new Date(reportData.peaks.maxSpendDay).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-gray-500 block">No expenses recorded</span>
+                        )}
+                      </div>
+
+                      {/* Peak Transaction Count Day */}
+                      <div className="p-3 bg-dark-depth-2/50 border border-dark-border rounded-2xl space-y-1">
+                        <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider block flex items-center gap-1">
+                          <Receipt className="w-3 h-3 text-brand-400" />
+                          Peak Activity Day (Frequency)
+                        </span>
+                        {reportData.peaks.maxTxDay ? (
+                          <>
+                            <span className="text-sm font-black text-brand-300 block">{reportData.peaks.maxTxCount} transactions</span>
+                            <span className="text-[10px] text-gray-300 block">on {new Date(reportData.peaks.maxTxDay).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                          </>
+                        ) : (
+                          <span className="text-xs text-gray-500 block">No activity recorded</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AI Assistant Context Quick Advice */}
+                  <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-[10px] text-amber-300 leading-relaxed">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <strong className="uppercase font-extrabold tracking-wider">AI Activity Insight</strong>
+                    </div>
+                    {reportData.totalExpense > 0 ? (
+                      `Your average transaction value is ₹${(reportData.totalExpense / (reportData.totalExpense > 0 ? (reportData.categoryWise.reduce((a: any, b: any) => a + b.count, 0) || 1) : 1)).toFixed(2)}. ${
+                        reportData.comparison.percentDiff > 0 
+                          ? `You are spending ${reportData.comparison.percentDiff}% more compared to the previous month. Try setting budget caps on your highest categories.` 
+                          : 'You are spending less than the previous month. Keep maintaining this outflow discipline!'
+                      }`
+                    ) : (
+                      'No spending alerts detected. Connect your phone SMS or Zerodha terminal to populate your financial indicators.'
+                    )}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          ) : (
+            <div className="glass-panel rounded-3xl p-16 text-center text-gray-500 border border-dark-border">
+              Select a month to compile transactions and generate a monthly report.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ─── MODAL 1: ADD/EDIT TRANSACTION ─── */}
       {showTxModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -2053,6 +2530,26 @@ export const Finance: React.FC = () => {
                   onChange={(e) => setTxForm({ ...txForm, description: e.target.value })}
                   className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
                 />
+                {suggestion && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTxForm({
+                        ...txForm,
+                        description: suggestion.description,
+                        category: suggestion.category
+                      });
+                      setSuggestion(null);
+                    }}
+                    className="mt-2 text-left w-full p-2 bg-brand-500/10 border border-brand-500/35 rounded-xl text-[10px] text-brand-300 font-bold hover:bg-brand-500/20 flex items-center justify-between cursor-pointer transition-all duration-200 animate-in fade-in slide-in-from-top-1"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-brand-400 animate-pulse" />
+                      Apply suggested details: <strong>"{suggestion.description}"</strong> ({suggestion.category})
+                    </span>
+                    <span className="text-[9px] bg-brand-500/30 px-1.5 py-0.5 rounded text-white shrink-0 font-extrabold">{suggestion.confidence}% match</span>
+                  </button>
+                )}
               </div>
 
               <button

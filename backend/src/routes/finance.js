@@ -5,6 +5,8 @@ import { requireAuth } from '../middleware/auth.js';
 import { google } from 'googleapis';
 import { reconcileAllStagingTransactions } from '../utils/reconcile.js';
 import { fetchLTPYahoo } from '../services/yahooFinance.js';
+import { detectRecurringPattern } from '../services/recurringService.js';
+
 
 const router = express.Router();
 
@@ -145,7 +147,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
 router.post('/transaction', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { id, date, amount, type, category, method, description, source, linked_tx_id, is_claimable, claim_status } = req.body;
+    const { id, date, amount, type, category, method, description, source, linked_tx_id, is_claimable, claim_status, is_auto_filled, needs_review } = req.body;
 
     const payload = {
       user_id: userId,
@@ -158,8 +160,11 @@ router.post('/transaction', requireAuth, async (req, res) => {
       source: source || 'MANUAL',
       linked_tx_id: linked_tx_id || null,
       is_claimable: typeof is_claimable === 'boolean' ? is_claimable : false,
-      claim_status: claim_status || 'UNCLAIMED'
+      claim_status: claim_status || 'UNCLAIMED',
+      is_auto_filled: typeof is_auto_filled === 'boolean' ? is_auto_filled : false,
+      needs_review: typeof needs_review === 'boolean' ? needs_review : false
     };
+
 
     let result;
     if (id && !id.startsWith('temp_')) {
@@ -246,6 +251,7 @@ router.post('/transaction', requireAuth, async (req, res) => {
         .maybeSingle();
 
       if (fetchError) throw fetchError;
+      result = insertedTx;
     }
 
     if (result && result.id) {
@@ -644,6 +650,25 @@ router.post('/sms-webhook', async (req, res) => {
     const category = autoCategorize(description);
     const txDate = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
 
+    // AI recurring auto-fill detection
+    let finalDescription = description;
+    let finalCategory = category;
+    let isAutoFilled = false;
+    let needsReview = true; // All incoming SMS entries require review by default
+
+    if (type === 'EXPENSE') {
+      try {
+        const autoFill = await detectRecurringPattern(userId, amount, txDate);
+        if (autoFill.isMatched) {
+          finalDescription = autoFill.description;
+          finalCategory = autoFill.category;
+          isAutoFilled = true;
+        }
+      } catch (autoErr) {
+        console.error('[SMS Webhook] Recurring pattern detection failed:', autoErr.message);
+      }
+    }
+
     const txDateObj = new Date(txDate);
     const dateStr = txDateObj.toLocaleDateString('en-IN', {
       timeZone: 'Asia/Kolkata',
@@ -653,9 +678,10 @@ router.post('/sms-webhook', async (req, res) => {
     }).split('/').reverse().join('-');
     const amountStr = parseFloat(amount || 0).toFixed(2);
 
+    // Hash based on final description/amount to prevent duplicate insertions
     const defaultHash = crypto
       .createHash('md5')
-      .update(`${userId}_${dateStr}_${type}_${amountStr}_${description}`)
+      .update(`${userId}_${dateStr}_${type}_${amountStr}_${finalDescription}`)
       .digest('hex');
 
     const stagingPayload = {
@@ -664,10 +690,12 @@ router.post('/sms-webhook', async (req, res) => {
         date: txDate,
         amount,
         type,
-        category,
+        category: finalCategory,
         method: 'UPI',
-        description,
-        source: 'SMS'
+        description: finalDescription,
+        source: 'SMS',
+        is_auto_filled: isAutoFilled,
+        needs_review: needsReview
       },
       raw_data_hash: defaultHash,
       status: 'PENDING'
@@ -880,5 +908,173 @@ async function syncTransactionToDebts(tx) {
     console.error('[syncTransactionToDebts] unexpected error:', err.message);
   }
 }
+
+// ─── GET /api/finance/recurring-suggestions ──────────────────────────────────
+router.get('/recurring-suggestions', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const amount = parseFloat(req.query.amount);
+    const date = req.query.date ? new Date(req.query.date) : new Date();
+
+    if (isNaN(amount) || amount <= 0) {
+      return res.status(400).json({ error: 'Valid amount query parameter is required.' });
+    }
+
+    const autoFill = await detectRecurringPattern(userId, amount, date);
+    res.json(autoFill);
+  } catch (err) {
+    console.error('[FinanceRoute] Suggestion error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/finance/monthly-report ──────────────────────────────────────────
+router.get('/monthly-report', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    // Default to current month in Indian Standard Time (IST)
+    const d = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const istDate = new Date(d.getTime() + istOffset);
+    const defaultMonth = istDate.toISOString().substring(0, 7); // YYYY-MM
+    
+    const targetMonth = req.query.month || defaultMonth;
+    if (!/^\d{4}-\d{2}$/.test(targetMonth)) {
+      return res.status(400).json({ error: 'Month must be in YYYY-MM format.' });
+    }
+
+    const [year, month] = targetMonth.split('-').map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    
+    // Construct local-time ISO bounds
+    const startDate = `${targetMonth}-01T00:00:00+05:30`;
+    const endDate = `${targetMonth}-${String(lastDay).padStart(2, '0')}T23:59:59+05:30`;
+
+    // Fetch transactions
+    const { data: txs, error } = await supabaseAdmin
+      .from('finance_transactions')
+      .select('*')
+      .eq('user_id', userId)
+      .gte('date', startDate)
+      .lte('date', endDate);
+
+    if (error) throw error;
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+    const categoryMap = {};
+    const dayMap = {};
+
+    // Filter and aggregate transactions
+    (txs || []).forEach(tx => {
+      const amt = parseFloat(tx.amount || 0);
+      if (tx.type === 'INCOME') {
+        totalIncome += amt;
+      } else if (tx.type === 'EXPENSE') {
+        totalExpense += amt;
+
+        // Category breakdown
+        const cat = tx.category || 'Uncategorized';
+        if (!categoryMap[cat]) {
+          categoryMap[cat] = { amount: 0, count: 0 };
+        }
+        categoryMap[cat].amount += amt;
+        categoryMap[cat].count += 1;
+
+        // Daily breakdown
+        const txDate = new Date(tx.date);
+        const txIst = new Date(txDate.getTime() + istOffset);
+        const dateKey = txIst.toISOString().split('T')[0]; // YYYY-MM-DD
+        
+        if (!dayMap[dateKey]) {
+          dayMap[dateKey] = { amount: 0, count: 0 };
+        }
+        dayMap[dateKey].amount += amt;
+        dayMap[dateKey].count += 1;
+      }
+    });
+
+    const categoryWise = Object.keys(categoryMap).map(cat => ({
+      category: cat,
+      amount: parseFloat(categoryMap[cat].amount.toFixed(2)),
+      count: categoryMap[cat].count
+    })).sort((a, b) => b.amount - a.amount);
+
+    // Calculate days elapsed for averages
+    const isCurrentMonth = (year === istDate.getFullYear() && month === (istDate.getMonth() + 1));
+    const daysElapsed = isCurrentMonth ? istDate.getDate() : lastDay;
+
+    const spendPerDay = totalExpense / daysElapsed;
+    const expenseTxCount = (txs || []).filter(tx => tx.type === 'EXPENSE').length;
+    const transactionsPerDay = expenseTxCount / daysElapsed;
+
+    // Find peak spending and transaction days
+    let maxSpendDay = null;
+    let maxSpendAmount = 0;
+    let maxTxDay = null;
+    let maxTxCount = 0;
+
+    Object.keys(dayMap).forEach(day => {
+      if (dayMap[day].amount > maxSpendAmount) {
+        maxSpendAmount = dayMap[day].amount;
+        maxSpendDay = day;
+      }
+      if (dayMap[day].count > maxTxCount) {
+        maxTxCount = dayMap[day].count;
+        maxTxDay = day;
+      }
+    });
+
+    // Calculate previous month statistics
+    let prevYear = year;
+    let prevMonthVal = month - 1;
+    if (prevMonthVal === 0) {
+      prevMonthVal = 12;
+      prevYear -= 1;
+    }
+    const prevMonthStr = `${prevYear}-${String(prevMonthVal).padStart(2, '0')}`;
+    const prevLastDay = new Date(prevYear, prevMonthVal, 0).getDate();
+    const prevStartDate = `${prevMonthStr}-01T00:00:00+05:30`;
+    const prevEndDate = `${prevMonthStr}-${String(prevLastDay).padStart(2, '0')}T23:59:59+05:30`;
+
+    const { data: prevTxs } = await supabaseAdmin
+      .from('finance_transactions')
+      .select('amount')
+      .eq('user_id', userId)
+      .eq('type', 'EXPENSE')
+      .gte('date', prevStartDate)
+      .lte('date', prevEndDate);
+
+    const prevTotalExpense = (prevTxs || []).reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
+    const percentDiff = prevTotalExpense > 0 ? parseFloat((((totalExpense - prevTotalExpense) / prevTotalExpense) * 100).toFixed(2)) : 0;
+
+    res.json({
+      month: targetMonth,
+      totalIncome: parseFloat(totalIncome.toFixed(2)),
+      totalExpense: parseFloat(totalExpense.toFixed(2)),
+      netSavings: parseFloat((totalIncome - totalExpense).toFixed(2)),
+      categoryWise,
+      dailyAverages: {
+        spendPerDay: parseFloat(spendPerDay.toFixed(2)),
+        transactionsPerDay: parseFloat(transactionsPerDay.toFixed(2))
+      },
+      peaks: {
+        maxSpendDay,
+        maxSpendAmount: parseFloat(maxSpendAmount.toFixed(2)),
+        maxTxDay,
+        maxTxCount
+      },
+      comparison: {
+        prevMonth: prevMonthStr,
+        prevTotalExpense: parseFloat(prevTotalExpense.toFixed(2)),
+        percentDiff
+      }
+    });
+  } catch (err) {
+    console.error('[FinanceRoute] Monthly report error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;
