@@ -2992,15 +2992,104 @@ export const Holdings = () => {
       {isAiAdvisorOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto"
-          style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(12px)' }}
+          style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(12px)' }}
           onClick={(e) => { if (e.target === e.currentTarget && !generatingAdvice) setIsAiAdvisorOpen(false); }}
         >
+          {/* Custom style block to render GICS tables, code progress bars, and custom alerts colorfully */}
+          <style dangerouslySetInnerHTML={{ __html: `
+            .ai-advice-container h3 {
+              color: #a5b4fc !important;
+              font-weight: 900 !important;
+              text-transform: uppercase !important;
+              letter-spacing: 0.05em !important;
+              margin-top: 1.75rem !important;
+              margin-bottom: 0.75rem !important;
+              border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+              padding-bottom: 0.5rem !important;
+              font-size: 0.85rem !important;
+            }
+            .ai-advice-container h4 {
+              color: #e2e8f0 !important;
+              font-weight: 800 !important;
+              margin-top: 1.25rem !important;
+              margin-bottom: 0.5rem !important;
+              font-size: 0.8rem !important;
+            }
+            .ai-advice-container p {
+              margin-bottom: 1rem !important;
+              color: #94a3b8 !important;
+              line-height: 1.6 !important;
+            }
+            .ai-advice-container ul {
+              list-style-type: none !important;
+              padding-left: 0 !important;
+              margin-bottom: 1.5rem !important;
+            }
+            .ai-advice-container li {
+              position: relative !important;
+              padding-left: 1.5rem !important;
+              margin-bottom: 0.5rem !important;
+              color: #cbd5e1 !important;
+            }
+            .ai-advice-container li::before {
+              content: "✦" !important;
+              position: absolute !important;
+              left: 0 !important;
+              top: 0.05rem !important;
+              color: #818cf8 !important;
+              font-size: 0.85rem !important;
+            }
+            .ai-advice-container table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              margin: 1.5rem 0 !important;
+              font-size: 0.75rem !important;
+              border: 1px solid rgba(255,255,255,0.08) !important;
+              border-radius: 0.75rem !important;
+              overflow: hidden !important;
+            }
+            .ai-advice-container th {
+              background: rgba(99, 102, 241, 0.15) !important;
+              color: #a5b4fc !important;
+              font-weight: 800 !important;
+              text-transform: uppercase !important;
+              letter-spacing: 0.05em !important;
+              padding: 0.75rem 1rem !important;
+              border-bottom: 2px solid rgba(255, 255, 255, 0.1) !important;
+            }
+            .ai-advice-container td {
+              padding: 0.75rem 1rem !important;
+              border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+              color: #e2e8f0 !important;
+            }
+            .ai-advice-container tr:nth-child(even) {
+              background: rgba(255,255,255,0.01) !important;
+            }
+            .ai-advice-container pre {
+              background: #07090e !important;
+              border: 1px solid rgba(255, 255, 255, 0.06) !important;
+              border-radius: 0.75rem !important;
+              padding: 1rem !important;
+              overflow-x: auto !important;
+              font-family: monospace !important;
+              color: #38bdf8 !important;
+              margin: 1rem 0 !important;
+            }
+            .ai-advice-container code {
+              font-family: monospace !important;
+              color: #f472b6 !important;
+              background: rgba(244, 114, 182, 0.1) !important;
+              padding: 0.15rem 0.4rem !important;
+              border-radius: 0.25rem !important;
+            }
+          `}} />
+
           <div
-            className="relative w-full max-w-2xl rounded-3xl border border-dark-border bg-dark-depth-1 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            className="relative w-full max-w-2xl rounded-3xl border border-slate-800 bg-[#0e121f] text-white shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             style={{ animation: 'scaleIn 0.22s cubic-bezier(0.34,1.56,0.64,1) both' }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-5 border-b border-dark-border bg-dark-depth-2/40">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-slate-800 bg-[#151a29]/80 text-white">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400">
                   <Sparkles className="w-5 h-5 animate-pulse" />
@@ -3012,7 +3101,7 @@ export const Holdings = () => {
               </div>
               <button 
                 onClick={() => { if (!generatingAdvice) setIsAiAdvisorOpen(false); }} 
-                className="p-2 rounded-xl hover:bg-dark-depth-2 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                className="p-2 rounded-xl hover:bg-slate-850 text-gray-400 hover:text-white transition-colors cursor-pointer"
                 disabled={generatingAdvice}
               >
                 <X className="w-4 h-4" />
@@ -3020,7 +3109,7 @@ export const Holdings = () => {
             </div>
 
             {/* Content Container (Scrollable) */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-[#0e121f] text-white custom-scrollbar">
               
               {generatingAdvice && (
                 <div className="py-12 flex flex-col items-center justify-center space-y-4">
@@ -3059,7 +3148,7 @@ export const Holdings = () => {
                           max="80"
                           value={aiAge}
                           onChange={(e) => setAiAge(e.target.value)}
-                          className="flex-1 accent-brand-500 bg-dark-depth-3 h-1.5 rounded-lg cursor-pointer"
+                          className="flex-1 accent-brand-500 bg-slate-800 h-1.5 rounded-lg cursor-pointer"
                         />
                         <input
                           type="number"
@@ -3070,10 +3159,10 @@ export const Holdings = () => {
                             const val = Math.min(80, Math.max(18, parseInt(e.target.value) || 18));
                             setAiAge(String(val));
                           }}
-                          className="w-16 px-2.5 py-1.5 text-center text-xs font-bold text-white bg-dark-depth-3 border border-dark-border rounded-xl focus:border-brand-500 focus:outline-none"
+                          className="w-16 px-2.5 py-1.5 text-center text-xs font-bold text-white bg-slate-900 border border-slate-800 rounded-xl focus:border-brand-500 focus:outline-none"
                         />
                       </div>
-                      <p className="text-[10px] text-gray-500">Helps determine the target equity/MF ratio (e.g. using the standard 100 - Age guideline).</p>
+                      <p className="text-[10px] text-gray-550">Helps determine the target equity/MF ratio (e.g. using the standard 100 - Age guideline).</p>
                     </div>
 
                     {/* Risk Appetite */}
@@ -3084,28 +3173,33 @@ export const Holdings = () => {
                           {
                             key: 'Conservative',
                             title: 'Conservative',
-                            desc: 'Focus on wealth preservation, larger cash & gold buffers, lower equity volatility.'
+                            desc: 'Focus on wealth preservation, larger cash & gold buffers, lower equity volatility.',
+                            colorClass: aiRisk === 'Conservative'
+                              ? 'bg-emerald-500/10 border-emerald-500 text-emerald-450 shadow-lg shadow-emerald-950/20'
+                              : 'bg-slate-900/60 border-slate-800 hover:border-emerald-500/40 text-slate-400'
                           },
                           {
                             key: 'Moderate',
                             title: 'Moderate',
-                            desc: 'Balanced growth. Core index stocks, moderate sector diversification weights.'
+                            desc: 'Balanced growth. Core index stocks, moderate sector diversification weights.',
+                            colorClass: aiRisk === 'Moderate'
+                              ? 'bg-indigo-500/10 border-indigo-500 text-indigo-400 shadow-lg shadow-indigo-950/20'
+                              : 'bg-slate-900/60 border-slate-800 hover:border-indigo-500/40 text-slate-400'
                           },
                           {
                             key: 'Aggressive',
                             title: 'Aggressive',
-                            desc: 'Maximise returns. High stock/MF ratio, accepts higher sector volatility.'
+                            desc: 'Maximise returns. High stock/MF ratio, accepts higher sector volatility.',
+                            colorClass: aiRisk === 'Aggressive'
+                              ? 'bg-rose-500/10 border-rose-500 text-rose-450 shadow-lg shadow-rose-950/20'
+                              : 'bg-slate-900/60 border-slate-800 hover:border-rose-500/40 text-slate-400'
                           }
                         ].map(item => (
                           <button
                             key={item.key}
                             type="button"
                             onClick={() => setAiRisk(item.key as any)}
-                            className={`p-4 rounded-2xl text-left border transition-all cursor-pointer flex flex-col justify-between h-28 ${
-                              aiRisk === item.key
-                                ? 'bg-brand-500/10 border-brand-500 text-white shadow-lg shadow-brand-900/10'
-                                : 'bg-dark-depth-2 border-dark-border hover:border-gray-600 text-gray-400'
-                            }`}
+                            className={`p-4 rounded-2xl text-left border transition-all cursor-pointer flex flex-col justify-between h-28 ${item.colorClass}`}
                           >
                             <span className="text-xs font-black uppercase tracking-wider block">{item.title}</span>
                             <span className="text-[10px] leading-relaxed text-gray-400 mt-2 block font-normal">{item.desc}</span>
@@ -3117,7 +3211,7 @@ export const Holdings = () => {
                     {/* Investment Horizon */}
                     <div className="space-y-2">
                       <label className="text-xs font-extrabold text-gray-300 uppercase tracking-wider block">Investment Horizon</label>
-                      <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-dark-depth-3 border border-dark-border">
+                      <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-slate-900 border border-slate-800">
                         {[
                           { key: 'Short-term', val: 'Short-term (<3y)' },
                           { key: 'Mid-term', val: 'Mid-term (3-7y)' },
@@ -3130,7 +3224,7 @@ export const Holdings = () => {
                             className={`py-2 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                               aiHorizon === t.key
                                 ? 'bg-brand-500 text-white shadow-lg shadow-brand-900/30'
-                                : 'text-gray-400 hover:text-white'
+                                : 'text-slate-400 hover:text-white'
                             }`}
                           >
                             {t.val}
@@ -3153,21 +3247,57 @@ export const Holdings = () => {
               {!generatingAdvice && aiAdviceResult && (
                 <div className="space-y-6">
                   {/* Markdown Audit Report */}
-                  <div className="glass-panel p-6 rounded-2xl border border-dark-border bg-dark-depth-2/40 overflow-hidden select-text">
+                  <div className="p-6 rounded-2xl border border-slate-800 bg-[#07090e]/40 overflow-hidden select-text">
                     <div 
-                      className="text-xs text-gray-300 space-y-4 leading-relaxed font-sans prose prose-invert max-w-none 
-                                 prose-headings:text-white prose-headings:font-black prose-headings:uppercase prose-headings:tracking-wider prose-headings:border-b prose-headings:border-dark-border/40 prose-headings:pb-2
-                                 prose-p:text-gray-300 prose-ul:list-disc prose-ul:pl-4 prose-li:my-1
-                                 prose-strong:text-white prose-strong:font-extrabold
-                                 prose-blockquote:border-l-4 prose-blockquote:border-brand-500 prose-blockquote:pl-4 prose-blockquote:italic"
-                      dangerouslySetInnerHTML={{ __html: marked.parse(aiAdviceResult) as string }}
+                      className="ai-advice-container text-xs text-slate-300 space-y-4 leading-relaxed font-sans max-w-none"
+                      dangerouslySetInnerHTML={{ 
+                        __html: marked.parse(
+                          aiAdviceResult
+                            .replace(/>\s*\[!WARNING\]\s*\n(>[^\n]*\n?)*/g, (match) => {
+                              const content = match.replace(/>\s*\[!WARNING\]\s*\n?/, '').replace(/>\s*/g, '');
+                              return `<div class="my-4 p-4 bg-amber-500/10 border-l-4 border-amber-500 rounded-r-xl text-amber-300 text-xs">
+                                <div class="flex items-center gap-2 font-black uppercase tracking-wider text-amber-400 mb-1">
+                                  <span>⚠️</span> Warning
+                                </div>
+                                <div>${content}</div>
+                              </div>`;
+                            })
+                            .replace(/>\s*\[!CAUTION\]\s*\n(>[^\n]*\n?)*/g, (match) => {
+                              const content = match.replace(/>\s*\[!CAUTION\]\s*\n?/, '').replace(/>\s*/g, '');
+                              return `<div class="my-4 p-4 bg-rose-500/10 border-l-4 border-rose-500 rounded-r-xl text-rose-300 text-xs">
+                                <div class="flex items-center gap-2 font-black uppercase tracking-wider text-rose-450 mb-1">
+                                  <span>🚨</span> Caution
+                                </div>
+                                <div>${content}</div>
+                              </div>`;
+                            })
+                            .replace(/>\s*\[!TIP\]\s*\n(>[^\n]*\n?)*/g, (match) => {
+                              const content = match.replace(/>\s*\[!TIP\]\s*\n?/, '').replace(/>\s*/g, '');
+                              return `<div class="my-4 p-4 bg-emerald-500/10 border-l-4 border-emerald-500 rounded-r-xl text-emerald-300 text-xs">
+                                <div class="flex items-center gap-2 font-black uppercase tracking-wider text-emerald-450 mb-1">
+                                  <span>💡</span> AI Coaching Tip
+                                </div>
+                                <div>${content}</div>
+                              </div>`;
+                            })
+                            .replace(/>\s*\[!NOTE\]\s*\n(>[^\n]*\n?)*/g, (match) => {
+                              const content = match.replace(/>\s*\[!NOTE\]\s*\n?/, '').replace(/>\s*/g, '');
+                              return `<div class="my-4 p-4 bg-blue-500/10 border-l-4 border-blue-500 rounded-r-xl text-blue-300 text-xs">
+                                <div class="flex items-center gap-2 font-black uppercase tracking-wider text-blue-450 mb-1">
+                                  <span>ℹ️</span> System Note
+                                </div>
+                                <div>${content}</div>
+                              </div>`;
+                            })
+                        ) as string 
+                      }}
                     />
                   </div>
 
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => setAiAdviceResult(null)}
-                      className="flex-1 py-3 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border text-gray-400 hover:text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                      className="flex-1 py-3 rounded-xl bg-slate-900 hover:bg-slate-850 border border-slate-800 text-slate-400 hover:text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                     >
                       <ArrowLeft className="w-3.5 h-3.5" />
                       Run New Audit

@@ -9,13 +9,13 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const router = express.Router();
 
-// Helper to get all previous closes from system_settings table
-async function getPreviousCloses() {
+// Helper to get all previous closes from system_settings table (user separated)
+async function getPreviousCloses(userId) {
   try {
     const { data } = await supabaseAdmin
       .from('system_settings')
       .select('value')
-      .eq('key', 'previous_closes')
+      .eq('key', `previous_closes_${userId}`)
       .maybeSingle();
 
     if (data?.value) {
@@ -33,15 +33,15 @@ async function getPreviousCloses() {
   }
 }
 
-// Helper to save previous closes to system_settings table using atomic upsert
-async function savePreviousCloses(closes) {
+// Helper to save previous closes to system_settings table using atomic upsert (user separated)
+async function savePreviousCloses(userId, closes) {
   try {
     const valueString = JSON.stringify(closes);
     const { error } = await supabaseAdmin
       .from('system_settings')
       .upsert(
         {
-          key: 'previous_closes',
+          key: `previous_closes_${userId}`,
           value: valueString,
           updated_at: new Date().toISOString()
         },
@@ -70,7 +70,7 @@ router.get('/', requireAuth, async (req, res) => {
 
     if (error) throw error;
 
-    const previousCloses = await getPreviousCloses();
+    const previousCloses = await getPreviousCloses(userId);
 
     // Check if cache needs seeding
     const missingSymbols = data
@@ -89,7 +89,7 @@ router.get('/', requireAuth, async (req, res) => {
             }
           });
           if (changed) {
-            await savePreviousCloses(freshCloses);
+            await savePreviousCloses(userId, freshCloses);
           }
         })
         .catch(err => console.error('[HoldingsRoute] Background previousClose seeding failed:', err.message));
@@ -159,7 +159,7 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
       console.log(`[PriceCache] Cache hit for all symbols! No external requests made.`);
     }
 
-    const previousCloses = await getPreviousCloses();
+    const previousCloses = await getPreviousCloses(userId);
     let cacheChanged = false;
 
     // Update prices in db
@@ -182,7 +182,7 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
 
     await Promise.all(updatePromises);
     if (cacheChanged) {
-      await savePreviousCloses(previousCloses);
+      await savePreviousCloses(userId, previousCloses);
     }
 
     // Fetch updated holdings
@@ -536,12 +536,12 @@ router.post('/force-recalculate', requireAuth, async (req, res) => {
       console.warn('[ForceSync] Failed to clear price_cache:', dbErr.message);
     }
 
-    // 2. Clear previous closes settings
+    // 2. Clear previous closes settings (user separated)
     try {
       const { error: settErr } = await supabaseAdmin
         .from('system_settings')
         .delete()
-        .eq('key', 'previous_closes');
+        .eq('key', `previous_closes_${userId}`);
 
       if (settErr) throw settErr;
     } catch (settErr) {

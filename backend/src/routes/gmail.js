@@ -599,7 +599,7 @@ router.post('/sync', requireAuth, async (req, res) => {
     // Always recalculate holdings on sync to ensure trades are reflected correctly in holdings
     await recalculateHoldings(userId);
     await supabaseAdmin.from('system_settings').upsert(
-      { key: 'gmail_last_sync', value: new Date().toISOString() },
+      { key: `gmail_last_sync_${userId}`, value: new Date().toISOString() },
       { onConflict: 'key' }
     );
 
@@ -637,7 +637,11 @@ router.post('/sync', requireAuth, async (req, res) => {
 
 // ─── GET /api/gmail/last-sync ─────────────────────────────────────────────────
 router.get('/last-sync', requireAuth, async (req, res) => {
-  const { data } = await supabaseAdmin.from('system_settings').select('value').eq('key', 'gmail_last_sync').maybeSingle();
+  const { data } = await supabaseAdmin
+    .from('system_settings')
+    .select('value')
+    .eq('key', `gmail_last_sync_${req.user.id}`)
+    .maybeSingle();
   res.json({ lastSync: data?.value || null });
 });
 
@@ -654,13 +658,7 @@ router.post('/reset-cache', requireAuth, async (req, res) => {
 
     if (err1) throw err1;
 
-    // Optional: Also support clearing legacy key names if needed by checking for user context
-    const { error: err2 } = await supabaseAdmin
-      .from('system_settings')
-      .delete()
-      .like('key', 'gmail_processed_%');
-      
-    if (err2) throw err2;
+
 
     // Delete failed staging trades for this user to allow reprocessing them
     const { error: errStaging } = await supabaseAdmin
