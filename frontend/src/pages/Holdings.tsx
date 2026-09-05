@@ -31,7 +31,8 @@ import {
   Table,
   List,
   RotateCcw,
-  Camera
+  Camera,
+  Coins
 } from 'lucide-react';
 
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
@@ -157,7 +158,30 @@ export const Holdings = () => {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [activeSubTab, setActiveSubTab] = useState<'holdings' | 'simulator'>('holdings');
+  const [activeSubTab, setActiveSubTab] = useState<'holdings' | 'simulator' | 'mutual_funds'>('holdings');
+
+  // Mutual Funds (Zerodha Coin) State
+  const [mfHoldings, setMfHoldings] = useState<any[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_mf_holdings') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [mfSummary, setMfSummary] = useState<any | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_mf_summary') || 'null');
+    } catch {
+      return null;
+    }
+  });
+  const [loadingMf, setLoadingMf] = useState(false);
+  const [syncingCoin, setSyncingCoin] = useState(false);
+  const [refreshingNav, setRefreshingNav] = useState(false);
+  const [lastMfSyncedAt, setLastMfSyncedAt] = useState<string | null>(null);
+  const [mfSearchQuery, setMfSearchQuery] = useState('');
+  const [mfFilter, setMfFilter] = useState<'all' | 'profit' | 'loss'>('all');
+  const [mfSortBy, setMfSortBy] = useState<'value' | 'invested' | 'pnl' | 'name'>('value');
 
   // Stock Deep Dive Analyzer State
   const [activeDetailSymbol, setActiveDetailSymbol] = useState<string | null>(null);
@@ -272,8 +296,93 @@ export const Holdings = () => {
     }
   };
 
+  const fetchMutualFunds = async (silent = false) => {
+    if (!silent && mfHoldings.length === 0) {
+      setLoadingMf(true);
+    }
+    try {
+      const res = await apiRequest('/mutual-funds');
+      if (res && Array.isArray(res.holdings)) {
+        setMfHoldings(res.holdings);
+        setMfSummary(res.summary || null);
+        setLastMfSyncedAt(res.lastSyncedAt || null);
+        localStorage.setItem('finor_cached_mf_holdings', JSON.stringify(res.holdings));
+        if (res.summary) {
+          localStorage.setItem('finor_cached_mf_summary', JSON.stringify(res.summary));
+        }
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch mutual funds:', err);
+    } finally {
+      setLoadingMf(false);
+    }
+  };
+
+  const handleSyncCoin = async () => {
+    setSyncingCoin(true);
+    const toastId = useToastStore.getState().addToast('Connecting to Zerodha Coin & fetching MF holdings...', 'loading');
+    try {
+      const res = await apiRequest('/mutual-funds/sync-coin', { method: 'POST' });
+      useToastStore.getState().removeToast(toastId);
+      if (res.status === 'SUCCESS') {
+        setMfHoldings(res.holdings || []);
+        setMfSummary(res.summary || null);
+        setLastMfSyncedAt(new Date().toISOString());
+        localStorage.setItem('finor_cached_mf_holdings', JSON.stringify(res.holdings || []));
+        if (res.summary) {
+          localStorage.setItem('finor_cached_mf_summary', JSON.stringify(res.summary));
+        }
+        useToastStore.getState().addToast(res.message || `Synced ${res.count || 0} mutual funds from Zerodha Coin!`, 'success');
+      } else {
+        useToastStore.getState().addToast(res.message || 'Failed to sync with Zerodha Coin.', 'error');
+        triggerAlert('error', 'Coin Sync Notice', res.message || 'Failed to sync with Zerodha Coin.');
+      }
+    } catch (err: any) {
+      useToastStore.getState().removeToast(toastId);
+      const msg = err.message || 'Failed to sync with Zerodha Coin.';
+      useToastStore.getState().addToast(msg, 'error');
+      triggerAlert(
+        'error',
+        'Zerodha Coin Sync',
+        msg.includes('session') || msg.includes('400')
+          ? 'No active Zerodha broker session found for today. Please sign in to Zerodha on the Orders page first to authenticate your Kite session, then click Sync again.'
+          : msg
+      );
+    } finally {
+      setSyncingCoin(false);
+    }
+  };
+
+  const handleRefreshMfNav = async () => {
+    setRefreshingNav(true);
+    const toastId = useToastStore.getState().addToast('Refreshing mutual fund NAV prices...', 'loading');
+    try {
+      const res = await apiRequest('/mutual-funds/refresh-nav', { method: 'POST' });
+      useToastStore.getState().removeToast(toastId);
+      if (res.holdings && Array.isArray(res.holdings)) {
+        setMfHoldings(res.holdings);
+        setMfSummary(res.summary || null);
+        localStorage.setItem('finor_cached_mf_holdings', JSON.stringify(res.holdings));
+        if (res.summary) {
+          localStorage.setItem('finor_cached_mf_summary', JSON.stringify(res.summary));
+        }
+      }
+      if (res.status === 'SUCCESS') {
+        useToastStore.getState().addToast('Mutual fund NAV prices updated from Zerodha Coin.', 'success');
+      } else {
+        useToastStore.getState().addToast(res.message || 'NAV prices updated.', 'info');
+      }
+    } catch (err: any) {
+      useToastStore.getState().removeToast(toastId);
+      useToastStore.getState().addToast(err.message || 'Failed to refresh NAV prices.', 'error');
+    } finally {
+      setRefreshingNav(false);
+    }
+  };
+
   useEffect(() => {
     fetchCoreData();
+    fetchMutualFunds(true);
 
     // Subscribe to Zerodha-style live background price ticks
     const unsubscribePriceSync = priceSyncEngine.subscribe(livePrices => {
@@ -900,6 +1009,307 @@ export const Holdings = () => {
       ltpVal,
       stepResults
     };
+  };
+
+  const renderMutualFunds = () => {
+    // Filter and sort holdings
+    const filteredMf = mfHoldings.filter(h => {
+      const q = mfSearchQuery.toLowerCase().trim();
+      const matchQuery = !q || 
+        (h.scheme_name && h.scheme_name.toLowerCase().includes(q)) || 
+        (h.folio && h.folio.toLowerCase().includes(q)) ||
+        (h.tradingsymbol && h.tradingsymbol.toLowerCase().includes(q));
+
+      if (!matchQuery) return false;
+      if (mfFilter === 'profit') return (parseFloat(h.pnl) || 0) >= 0;
+      if (mfFilter === 'loss') return (parseFloat(h.pnl) || 0) < 0;
+      return true;
+    }).sort((a, b) => {
+      if (mfSortBy === 'value') return (parseFloat(b.current_value) || 0) - (parseFloat(a.current_value) || 0);
+      if (mfSortBy === 'invested') return (parseFloat(b.invested_value) || 0) - (parseFloat(a.invested_value) || 0);
+      if (mfSortBy === 'pnl') return (parseFloat(b.pnl) || 0) - (parseFloat(a.pnl) || 0);
+      if (mfSortBy === 'name') return (a.scheme_name || '').localeCompare(b.scheme_name || '');
+      return 0;
+    });
+
+    const totalVal = mfSummary?.totalCurrentValue ?? mfHoldings.reduce((s, h) => s + (parseFloat(h.current_value) || 0), 0);
+    const totalInv = mfSummary?.totalInvested ?? mfHoldings.reduce((s, h) => s + (parseFloat(h.invested_value) || 0), 0);
+    const totalPnl = mfSummary?.totalPnl ?? (totalVal - totalInv);
+    const totalPnlPct = totalInv > 0 ? (totalPnl / totalInv) * 100 : 0;
+
+    return (
+      <div className="space-y-6">
+        {/* Top Summary Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Current Value */}
+          <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-xl pointer-events-none" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">MF Current Value</span>
+              <Coins className="w-4 h-4 text-brand-400" />
+            </div>
+            <h3 className="text-2xl font-extrabold text-white mt-1.5">
+              ₹{totalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </h3>
+            <div className="flex items-center gap-1.5 mt-2">
+              <span className="text-xs text-gray-500 font-medium">Invested:</span>
+              <span className="text-xs text-gray-300 font-semibold">
+                ₹{totalInv.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+
+          {/* Invested Value */}
+          <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Invested</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                Purchase Cost
+              </span>
+            </div>
+            <h3 className="text-2xl font-extrabold text-white mt-1.5">
+              ₹{totalInv.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </h3>
+            <div className="flex items-center gap-1.5 mt-2">
+              <span className="text-xs text-gray-400">Active Capital Allocation</span>
+            </div>
+          </div>
+
+          {/* Total Profit / Loss */}
+          <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
+            <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-xl pointer-events-none ${totalPnl >= 0 ? 'bg-emerald-500/5' : 'bg-rose-500/5'}`} />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Overall Return</span>
+              {totalPnl >= 0 ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-rose-400" />}
+            </div>
+            <h3 className={`text-2xl font-extrabold mt-1.5 flex items-center gap-1.5 ${totalPnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+              {totalPnl >= 0 ? '+' : ''}₹{Math.abs(totalPnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </h3>
+            <div className="flex items-center gap-1.5 mt-2">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                totalPnl >= 0 
+                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                  : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+              }`}>
+                {totalPnl >= 0 ? '+' : ''}{totalPnlPct.toFixed(2)}%
+              </span>
+              <span className="text-xs text-gray-500 font-medium">Unrealized P&L</span>
+            </div>
+          </div>
+
+          {/* Schemes Count & Status */}
+          <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Active Folios</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                Coin
+              </span>
+            </div>
+            <h3 className="text-2xl font-extrabold text-white mt-1.5">
+              {mfHoldings.length} <span className="text-sm font-semibold text-gray-400">Schemes</span>
+            </h3>
+            <div className="flex items-center gap-1.5 mt-2 text-xs text-gray-400">
+              <span>Goal Linked:</span>
+              <span className="text-brand-400 font-semibold">Wealth Target</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Daily NAV Information Alert */}
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-brand-950/40 via-dark-depth-1 to-dark-depth-1 border border-brand-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-start gap-3">
+            <div className="p-2 rounded-xl bg-brand-500/10 text-brand-400 shrink-0">
+              <Coins className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-gray-200 font-medium">
+                <span className="text-white font-semibold">Daily NAV Valuation: </span>
+                Indian Mutual Funds declare official NAVs once daily on business days after 9:00 PM IST based on AMFI data.
+              </p>
+              <p className="text-gray-400 mt-0.5">
+                Finor links your mutual fund portfolio directly towards your Wealth & Goals in the Financial dashboard.
+              </p>
+            </div>
+          </div>
+          {lastMfSyncedAt && (
+            <div className="text-[11px] text-gray-400 bg-dark-depth-2 px-3 py-1.5 rounded-lg shrink-0 border border-dark-border/40">
+              Last synced: <span className="text-gray-300 font-medium">{new Date(lastMfSyncedAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Filter & Search Bar */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 glass-panel rounded-2xl p-3 border border-dark-border">
+          <div className="flex items-center gap-2 flex-1">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search scheme name, folio, or symbol..."
+                value={mfSearchQuery}
+                onChange={e => setMfSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 text-xs bg-dark-depth-2/70 border border-dark-border/60 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-brand-500 transition-colors"
+              />
+              {mfSearchQuery && (
+                <button
+                  onClick={() => setMfSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Profit/Loss Filter */}
+            <div className="flex items-center bg-dark-depth-2/70 p-1 rounded-xl border border-dark-border/60 text-xs">
+              {(['all', 'profit', 'loss'] as const).map(flt => (
+                <button
+                  key={flt}
+                  onClick={() => setMfFilter(flt)}
+                  className={`px-3 py-1 rounded-lg font-semibold capitalize transition-all cursor-pointer ${
+                    mfFilter === flt ? 'bg-brand-600 text-white shadow' : 'text-gray-400 hover:text-gray-200'
+                  }`}
+                >
+                  {flt === 'all' ? 'All' : flt === 'profit' ? 'Profit' : 'Loss'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Sort Selector */}
+          <div className="flex items-center gap-2 text-xs text-gray-400">
+            <span className="hidden md:inline">Sort:</span>
+            <select
+              value={mfSortBy}
+              onChange={e => setMfSortBy(e.target.value as any)}
+              className="bg-dark-depth-2/70 border border-dark-border/60 text-gray-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500 cursor-pointer"
+            >
+              <option value="value">Current Value (High to Low)</option>
+              <option value="invested">Invested Amount (High to Low)</option>
+              <option value="pnl">Total Return (High to Low)</option>
+              <option value="name">Scheme Name (A to Z)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Holdings Table or Empty State */}
+        {loadingMf ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+            <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
+            <p className="text-sm font-medium text-gray-400">Loading Mutual Fund holdings...</p>
+          </div>
+        ) : filteredMf.length === 0 ? (
+          <div className="glass-panel rounded-3xl p-12 border border-dark-border text-center flex flex-col items-center justify-center">
+            <div className="w-16 h-16 rounded-3xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 mb-4 shadow-lg shadow-brand-500/5">
+              <Coins className="w-8 h-8" />
+            </div>
+            <h4 className="text-lg font-bold text-white mb-2">
+              {mfSearchQuery ? 'No matching mutual funds found' : 'No Mutual Fund Holdings Synced Yet'}
+            </h4>
+            <p className="text-xs text-gray-400 max-w-md mb-6 leading-relaxed">
+              {mfSearchQuery
+                ? `No schemes match "${mfSearchQuery}". Try clearing the search query.`
+                : 'Connect your Zerodha Coin portfolio to automatically track scheme names, folios, units, daily NAVs, and total returns directly alongside your equity holdings.'}
+            </p>
+            {mfSearchQuery ? (
+              <button
+                onClick={() => setMfSearchQuery('')}
+                className="px-4 py-2 rounded-xl bg-dark-depth-2 border border-dark-border text-xs font-semibold text-gray-200 hover:text-white cursor-pointer"
+              >
+                Clear Search
+              </button>
+            ) : (
+              <button
+                onClick={handleSyncCoin}
+                disabled={syncingCoin}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {syncingCoin ? <Loader2 className="w-4 h-4 animate-spin" /> : <Coins className="w-4 h-4" />}
+                Sync Zerodha Coin Now
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="glass-panel rounded-3xl border border-dark-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-dark-border/60 bg-dark-depth-2/40 text-gray-400 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="py-3.5 px-4">Scheme & Folio</th>
+                    <th className="py-3.5 px-4 text-right">Units</th>
+                    <th className="py-3.5 px-4 text-right">Avg NAV</th>
+                    <th className="py-3.5 px-4 text-right">Current NAV</th>
+                    <th className="py-3.5 px-4 text-right">Invested</th>
+                    <th className="py-3.5 px-4 text-right">Current Value</th>
+                    <th className="py-3.5 px-4 text-right">Total Return (P&L)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-dark-border/30">
+                  {filteredMf.map(h => {
+                    const isProfit = (parseFloat(h.pnl) || 0) >= 0;
+                    return (
+                      <tr key={h.id || `${h.folio}_${h.tradingsymbol}`} className="hover:bg-dark-depth-2/30 transition-colors">
+                        <td className="py-4 px-4">
+                          <div className="font-bold text-white text-sm max-w-xs sm:max-w-md truncate" title={h.scheme_name}>
+                            {h.scheme_name}
+                          </div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] px-2 py-0.5 rounded-md bg-dark-depth-2 border border-dark-border text-gray-400 font-mono">
+                              Folio: {h.folio}
+                            </span>
+                            {h.tradingsymbol && (
+                              <span className="text-[10px] text-gray-500 font-mono">
+                                {h.tradingsymbol}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-4 px-4 text-right font-medium text-gray-300">
+                          {Number(h.quantity).toFixed(3)}
+                        </td>
+                        <td className="py-4 px-4 text-right font-medium text-gray-300">
+                          ₹{Number(h.average_price).toFixed(4)}
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <div className="font-semibold text-white">
+                            ₹{Number(h.last_price).toFixed(4)}
+                          </div>
+                          {h.last_price_date && (
+                            <div className="text-[10px] text-gray-500">
+                              {h.last_price_date}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 text-right font-medium text-gray-300">
+                          ₹{Number(h.invested_value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-4 px-4 text-right font-bold text-white">
+                          ₹{Number(h.current_value).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-4 px-4 text-right">
+                          <div className={`font-bold flex items-center justify-end gap-1 ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {isProfit ? '+' : ''}₹{Number(h.pnl).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="mt-0.5">
+                            <span className={`inline-block text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              isProfit ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                            }`}>
+                              {isProfit ? '+' : ''}{Number(h.pnl_percentage).toFixed(2)}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderSimulator = () => {
@@ -1828,59 +2238,86 @@ export const Holdings = () => {
             </button>
           </div>
 
-          <button
-            onClick={handleSyncPrices}
-            disabled={syncing || forceRebuilding || holdings.length === 0}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-dark-border bg-dark-depth-2/40 text-xs font-semibold text-gray-200 hover:text-white hover:border-brand-500/40 transition-all cursor-pointer disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-brand-500' : ''}`} />
-            Refresh Prices
-          </button>
+          {activeSubTab === 'mutual_funds' ? (
+            <>
+              <button
+                onClick={handleRefreshMfNav}
+                disabled={refreshingNav || syncingCoin}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-dark-border bg-dark-depth-2/40 text-xs font-semibold text-gray-200 hover:text-white hover:border-brand-500/40 transition-all cursor-pointer disabled:opacity-50"
+                title="Refresh NAV prices using latest daily AMFI closing values"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshingNav ? 'animate-spin text-brand-500' : ''}`} />
+                Refresh NAV
+              </button>
 
-          <button
-            onClick={handleForceRecalculate}
-            disabled={syncing || forceRebuilding || holdings.length === 0}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 text-xs font-semibold text-rose-400 hover:text-white hover:bg-rose-500/25 hover:border-rose-500/40 transition-all cursor-pointer disabled:opacity-50"
-            title="Clear all price caches and rebuild positions from scratch"
-          >
-            <AlertTriangle className={`w-3.5 h-3.5 ${forceRebuilding ? 'animate-pulse text-rose-500' : ''}`} />
-            Force Rebuild
-          </button>
+              <button
+                onClick={handleSyncCoin}
+                disabled={syncingCoin || refreshingNav}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer disabled:opacity-50"
+                title="Fetch latest mutual fund holdings and folios from Zerodha Coin"
+              >
+                {syncingCoin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Coins className="w-3.5 h-3.5" />}
+                Sync Zerodha Coin
+              </button>
+            </>
+          ) : activeSubTab === 'simulator' ? (
+            null
+          ) : (
+            <>
+              <button
+                onClick={handleSyncPrices}
+                disabled={syncing || forceRebuilding || holdings.length === 0}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-dark-border bg-dark-depth-2/40 text-xs font-semibold text-gray-200 hover:text-white hover:border-brand-500/40 transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-brand-500' : ''}`} />
+                Refresh Prices
+              </button>
 
+              <button
+                onClick={handleForceRecalculate}
+                disabled={syncing || forceRebuilding || holdings.length === 0}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 text-xs font-semibold text-rose-400 hover:text-white hover:bg-rose-500/25 hover:border-rose-500/40 transition-all cursor-pointer disabled:opacity-50"
+                title="Clear all price caches and rebuild positions from scratch"
+              >
+                <AlertTriangle className={`w-3.5 h-3.5 ${forceRebuilding ? 'animate-pulse text-rose-500' : ''}`} />
+                Force Rebuild
+              </button>
 
-          <button
-            onClick={handleOpenRestoreSnapshotModal}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs font-semibold text-amber-300 hover:text-white hover:bg-amber-500/25 transition-all cursor-pointer"
-            title="Load your live portfolio baseline from a historical snapshot date (e.g. July 30)"
-          >
-            <Camera className="w-3.5 h-3.5 text-amber-400" />
-            <span>Load Baseline Snapshot</span>
-          </button>
-          
-          <button
-            onClick={() => { setIsAddTradeOpen(true); setAddTradeResult(null); }}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
-          >
-            <PlusCircle className="w-3.5 h-3.5" />
-            Add Trade
-          </button>
+              <button
+                onClick={handleOpenRestoreSnapshotModal}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs font-semibold text-amber-300 hover:text-white hover:bg-amber-500/25 transition-all cursor-pointer"
+                title="Load your live portfolio baseline from a historical snapshot date (e.g. July 30)"
+              >
+                <Camera className="w-3.5 h-3.5 text-amber-400" />
+                <span>Load Baseline Snapshot</span>
+              </button>
+              
+              <button
+                onClick={() => { setIsAddTradeOpen(true); setAddTradeResult(null); }}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
+              >
+                <PlusCircle className="w-3.5 h-3.5" />
+                Add Trade
+              </button>
 
-          <button
-            onClick={() => setIsImportOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white shadow-lg shadow-brand-700/10 transition-all cursor-pointer"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Import CSV
-          </button>
+              <button
+                onClick={() => setIsImportOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white shadow-lg shadow-brand-700/10 transition-all cursor-pointer"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Import CSV
+              </button>
 
-          {holdings.length > 0 && (
-            <button
-              onClick={handleClearAll}
-              className="p-2.5 rounded-xl border border-dark-border text-gray-400 hover:text-rose-500 hover:border-rose-500/20 transition-all cursor-pointer"
-              title="Clear all trades and holdings"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+              {holdings.length > 0 && (
+                <button
+                  onClick={handleClearAll}
+                  className="p-2.5 rounded-xl border border-dark-border text-gray-400 hover:text-rose-500 hover:border-rose-500/20 transition-all cursor-pointer"
+                  title="Clear all trades and holdings"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1901,8 +2338,21 @@ export const Holdings = () => {
             activeSubTab === 'holdings' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
           }`}
         >
-          Holdings Summary (${holdings.length})
+          Holdings Summary ({holdings.length})
           {activeSubTab === 'holdings' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-full" />}
+        </button>
+        <button
+          onClick={() => {
+            setActiveSubTab('mutual_funds');
+            if (mfHoldings.length === 0) fetchMutualFunds(true);
+          }}
+          className={`pb-3 text-xs font-bold uppercase tracking-wider relative transition-colors cursor-pointer flex items-center gap-1.5 ${
+            activeSubTab === 'mutual_funds' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
+          }`}
+        >
+          <Coins className="w-3.5 h-3.5" />
+          Mutual Funds (Coin) ({mfHoldings.length})
+          {activeSubTab === 'mutual_funds' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-full" />}
         </button>
         <button
           onClick={() => setActiveSubTab('simulator')}
@@ -2712,6 +3162,8 @@ export const Holdings = () => {
       )}
 
         </>
+      ) : activeSubTab === 'mutual_funds' ? (
+        renderMutualFunds()
       ) : (
         renderSimulator()
       )}

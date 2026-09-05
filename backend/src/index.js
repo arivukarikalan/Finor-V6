@@ -14,6 +14,7 @@ import snapshotsRouter from './routes/snapshots.js';
 import exportRouter from './routes/export.js';
 import financeRouter from './routes/finance.js';
 import authRouter from './routes/auth.js';
+import mutualFundsRouter from './routes/mutualFunds.js';
 
 dotenv.config();
 
@@ -42,6 +43,7 @@ app.use('/downloads', express.static(path.join(__dirname, '../downloads')));
 // Routes
 app.use('/api/trades', tradesRouter);
 app.use('/api/holdings', holdingsRouter);
+app.use('/api/mutual-funds', mutualFundsRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/news', newsRouter);

@@ -50,6 +50,7 @@ interface Goal {
 interface AutoValuations {
   equity: number;
   etf: number;
+  mutual_fund?: number;
   goldPricePerGram: number;
   silverPricePerGram: number;
 }
@@ -440,6 +441,7 @@ export const Finance: React.FC = () => {
   const getGoalValue = (goal: Goal) => {
     if (goal.asset_class === 'EQUITY_STOCKS') return autoValuations.equity;
     if (goal.asset_class === 'ETF') return autoValuations.etf;
+    if (goal.asset_class === 'MUTUAL_FUND') return (autoValuations.mutual_fund !== undefined && autoValuations.mutual_fund > 0) ? autoValuations.mutual_fund : goal.current_value;
     return goal.current_value;
   };
 
@@ -454,7 +456,7 @@ export const Finance: React.FC = () => {
   // Asset allocation values
   const assetValues = {
     LIQUID_CASH: 0,
-    MUTUAL_FUND: 0,
+    MUTUAL_FUND: autoValuations.mutual_fund || 0,
     GOLD_SILVER: 0,
     EQUITY_STOCKS: autoValuations.equity,
     US_STOCKS: 0,
@@ -462,7 +464,7 @@ export const Finance: React.FC = () => {
   };
 
   goals.forEach(g => {
-    if (g.asset_class !== 'EQUITY_STOCKS' && g.asset_class !== 'ETF') {
+    if (g.asset_class !== 'EQUITY_STOCKS' && g.asset_class !== 'ETF' && !(g.asset_class === 'MUTUAL_FUND' && autoValuations.mutual_fund)) {
       assetValues[g.asset_class] = getGoalValue(g);
     }
   });
@@ -1044,7 +1046,7 @@ export const Finance: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[
                 { class: 'LIQUID_CASH', label: 'Liquid Cash', desc: 'Savings & Bank balances' },
-                { class: 'MUTUAL_FUND', label: 'Mutual Funds', desc: 'P2P & MF Allocations' },
+                { class: 'MUTUAL_FUND', label: 'Mutual Funds', desc: 'Auto-linked to Zerodha Coin & MF folios' },
                 { class: 'GOLD_SILVER', label: 'Gold & Silver', desc: 'Precious metal holdings' },
                 { class: 'EQUITY_STOCKS', label: 'Equity Stocks', desc: 'Auto-linked to active positions' },
                 { class: 'US_STOCKS', label: 'US Stocks', desc: 'Overseas investments' },

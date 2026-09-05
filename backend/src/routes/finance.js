@@ -67,6 +67,35 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       });
     }
 
+    // 4b. Fetch Mutual Fund holdings valuation
+    let mutualFundValue = 0;
+    try {
+      const { data: mfHoldings, error: mfErr } = await supabaseAdmin
+        .from('mutual_fund_holdings')
+        .select('current_value')
+        .eq('user_id', userId);
+
+      if (!mfErr && Array.isArray(mfHoldings)) {
+        mutualFundValue = mfHoldings.reduce((sum, h) => sum + (parseFloat(h.current_value) || 0), 0);
+      } else {
+        // Fallback to system_settings cache if table not yet created
+        const { data: fallbackMf } = await supabaseAdmin
+          .from('system_settings')
+          .select('value')
+          .eq('key', `mutual_funds_${userId}`)
+          .maybeSingle();
+
+        if (fallbackMf?.value) {
+          const parsed = typeof fallbackMf.value === 'string' ? JSON.parse(fallbackMf.value) : fallbackMf.value;
+          if (Array.isArray(parsed)) {
+            mutualFundValue = parsed.reduce((sum, h) => sum + (parseFloat(h.current_value) || 0), 0);
+          }
+        }
+      }
+    } catch (mfEx) {
+      console.error('[FinanceRoute] Mutual fund valuation fetch failed:', mfEx.message);
+    }
+
     // 5. Fetch live commodity prices for Gold & Silver
     let goldPricePerGram = 0;
     let silverPricePerGram = 0;
@@ -99,6 +128,7 @@ router.get('/dashboard', requireAuth, async (req, res) => {
       autoValuations: {
         equity: equityValue,
         etf: etfValue,
+        mutual_fund: mutualFundValue,
         goldPricePerGram,
         silverPricePerGram
       }
