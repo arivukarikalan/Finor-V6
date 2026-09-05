@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
   Edit2, UserMinus, UserPlus, Users, X, Link2,
-  Receipt, TrendingUp, BarChart3, Search, AlertTriangle, Sparkles, Loader2
+  Receipt, TrendingUp, BarChart3, Search, AlertTriangle, Sparkles, Loader2,
+  ChevronLeft, ChevronRight, Calendar
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { 
@@ -161,6 +162,49 @@ export const Finance: React.FC = () => {
 
   // Debt View Mode: Detailed Records vs Merged by Person
   const [debtViewMode, setDebtViewMode] = useState<'detailed' | 'merged'>('detailed');
+
+  // Expense Analysis Month State (defaults to current month YYYY-MM)
+  const currentMonthStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }, []);
+  const [selectedExpenseMonth, setSelectedExpenseMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [categoryViewType, setCategoryViewType] = useState<'OUTFLOW' | 'INFLOW'>('OUTFLOW');
+
+  const handlePrevExpenseMonth = () => {
+    const [yStr, mStr] = selectedExpenseMonth.split('-');
+    let y = parseInt(yStr, 10);
+    let m = parseInt(mStr, 10) - 1;
+    if (m < 1) {
+      m = 12;
+      y -= 1;
+    }
+    setSelectedExpenseMonth(`${y}-${String(m).padStart(2, '0')}`);
+  };
+
+  const handleNextExpenseMonth = () => {
+    const [yStr, mStr] = selectedExpenseMonth.split('-');
+    let y = parseInt(yStr, 10);
+    let m = parseInt(mStr, 10) + 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+    setSelectedExpenseMonth(`${y}-${String(m).padStart(2, '0')}`);
+  };
+
+  const formatExpenseMonthLabel = (monthStr: string) => {
+    try {
+      const [y, m] = monthStr.split('-');
+      const d = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1);
+      return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    } catch {
+      return monthStr;
+    }
+  };
 
   const handleQuickMapCategory = async (tx: Transaction, newCat: string) => {
     setActiveQuickMapTxId(null);
@@ -435,7 +479,7 @@ export const Finance: React.FC = () => {
            t.category !== 'Lent/Friends';
   };
 
-  // Robust current month check helper
+  // Robust current month check helper (for global header cards)
   const isCurrentMonth = (dateStr: string) => {
     if (!dateStr) return false;
     const now = new Date();
@@ -447,7 +491,7 @@ export const Finance: React.FC = () => {
     return dateStr.startsWith(thisMonthStr);
   };
 
-  // Monthly metrics
+  // Top header monthly metrics
   const monthlyExpenses = transactions
     .filter(t => isConsumptionExpense(t) && isCurrentMonth(t.date))
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
@@ -456,39 +500,98 @@ export const Finance: React.FC = () => {
     .filter(t => t.type === 'INCOME' && isCurrentMonth(t.date))
     .reduce((sum, t) => sum + Number(t.amount || 0), 0);
 
-  // Avoidable vs Essential Expense Breakdown Metrics for current month
-  const avoidableExpenses = transactions
-    .filter(t => isConsumptionExpense(t) && isCurrentMonth(t.date) && isAvoidableExpense(t.category, t.description))
-    .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  // Selected Expense Month helper
+  const isSelectedExpenseMonth = (dateStr: string) => {
+    if (!dateStr || !selectedExpenseMonth) return false;
+    const dObj = new Date(dateStr);
+    if (!isNaN(dObj.getTime())) {
+      const y = dObj.getFullYear();
+      const m = String(dObj.getMonth() + 1).padStart(2, '0');
+      return `${y}-${m}` === selectedExpenseMonth;
+    }
+    return dateStr.startsWith(selectedExpenseMonth);
+  };
 
-  const essentialExpenses = Math.max(0, monthlyExpenses - avoidableExpenses);
+  // Selected month metrics
+  const selectedMonthExpenses = useMemo(() => {
+    return transactions
+      .filter(t => isConsumptionExpense(t) && isSelectedExpenseMonth(t.date))
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  }, [transactions, selectedExpenseMonth]);
 
-  // Category wise breakdown (only consumption expenses)
-  const categoryExpensesMap: { [key: string]: number } = {};
-  transactions
-    .filter(isConsumptionExpense)
-    .forEach(t => {
-      const cat = t.category || 'Uncategorized';
-      categoryExpensesMap[cat] = (categoryExpensesMap[cat] || 0) + Number(t.amount || 0);
-    });
+  const selectedMonthIncome = useMemo(() => {
+    return transactions
+      .filter(t => t.type === 'INCOME' && isSelectedExpenseMonth(t.date))
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  }, [transactions, selectedExpenseMonth]);
 
-  const categoryExpensesChartData = Object.keys(categoryExpensesMap).map(cat => ({
-    name: cat,
-    value: categoryExpensesMap[cat]
-  })).sort((a, b) => b.value - a.value);
+  const selectedMonthNet = selectedMonthIncome - selectedMonthExpenses;
+  const selectedMonthSavingsRate = selectedMonthIncome > 0 
+    ? Math.max(0, Math.round((selectedMonthNet / selectedMonthIncome) * 100)) 
+    : 0;
 
-  // Daily Spending Trajectory & Per-day view Data for current month
+  // Avoidable vs Essential Expense Breakdown Metrics for selected month
+  const selectedMonthAvoidable = useMemo(() => {
+    return transactions
+      .filter(t => isConsumptionExpense(t) && isSelectedExpenseMonth(t.date) && isAvoidableExpense(t.category, t.description))
+      .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+  }, [transactions, selectedExpenseMonth]);
+
+  const selectedMonthEssential = Math.max(0, selectedMonthExpenses - selectedMonthAvoidable);
+
+  // Category-wise Breakdown for Selected Month (Outflow / Expenses)
+  const categoryExpensesChartData = useMemo(() => {
+    const map: { [key: string]: number } = {};
+    transactions
+      .filter(t => isConsumptionExpense(t) && isSelectedExpenseMonth(t.date))
+      .forEach(t => {
+        const cat = t.category || 'Uncategorized';
+        map[cat] = (map[cat] || 0) + Number(t.amount || 0);
+      });
+
+    return Object.keys(map).map(cat => ({
+      name: cat,
+      value: map[cat],
+      pct: selectedMonthExpenses > 0 ? Math.round((map[cat] / selectedMonthExpenses) * 100) : 0
+    })).sort((a, b) => b.value - a.value);
+  }, [transactions, selectedExpenseMonth, selectedMonthExpenses]);
+
+  // Category-wise Breakdown for Selected Month (Inflow / Income)
+  const categoryIncomeChartData = useMemo(() => {
+    const map: { [key: string]: number } = {};
+    transactions
+      .filter(t => t.type === 'INCOME' && isSelectedExpenseMonth(t.date))
+      .forEach(t => {
+        const cat = t.category || 'Income';
+        map[cat] = (map[cat] || 0) + Number(t.amount || 0);
+      });
+
+    return Object.keys(map).map(cat => ({
+      name: cat,
+      value: map[cat],
+      pct: selectedMonthIncome > 0 ? Math.round((map[cat] / selectedMonthIncome) * 100) : 0
+    })).sort((a, b) => b.value - a.value);
+  }, [transactions, selectedExpenseMonth, selectedMonthIncome]);
+
+  // Active category data based on toggle
+  const activeCategoryChartData = categoryViewType === 'OUTFLOW' 
+    ? categoryExpensesChartData 
+    : categoryIncomeChartData;
+
+  // Daily Spending Trajectory & Per-day view Data for selected month
   const dailySpendingsData = useMemo(() => {
-    const daysMap: { [day: number]: number } = {};
-    const now = new Date();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+    const [yStr, mStr] = selectedExpenseMonth.split('-');
+    const y = parseInt(yStr, 10);
+    const m = parseInt(mStr, 10);
+    const daysInMonth = (!isNaN(y) && !isNaN(m)) ? new Date(y, m, 0).getDate() : 30;
 
+    const daysMap: { [day: number]: number } = {};
     for (let d = 1; d <= daysInMonth; d++) {
       daysMap[d] = 0;
     }
 
     transactions
-      .filter(t => isConsumptionExpense(t) && isCurrentMonth(t.date))
+      .filter(t => isConsumptionExpense(t) && isSelectedExpenseMonth(t.date))
       .forEach(t => {
         const dObj = new Date(t.date);
         const dayNum = !isNaN(dObj.getTime()) ? dObj.getDate() : parseInt((t.date || '').substring(8, 10), 10);
@@ -508,7 +611,7 @@ export const Finance: React.FC = () => {
         cumulative: runningTotal
       };
     });
-  }, [transactions]);
+  }, [transactions, selectedExpenseMonth]);
 
   // Filtered transactions for the ledger table & cards
   const filteredTransactions = transactions.filter(tx => {
@@ -1003,6 +1106,84 @@ export const Finance: React.FC = () => {
       {/* ─── TAB 2: EXPENSE ANALYSIS & TRANSACTIONS ─── */}
       {subTab === 'expenses' && (
         <div className="space-y-6">
+          
+          {/* Month Selector & Cashflow Overview Bar */}
+          <div className="glass-panel rounded-3xl p-5 border border-dark-border flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            
+            {/* Left: Month Navigation Controls */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="flex items-center gap-1 bg-dark-depth-2/80 p-1.5 rounded-2xl border border-dark-border/60">
+                <button
+                  onClick={handlePrevExpenseMonth}
+                  className="p-1.5 rounded-xl hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                  title="Previous Month"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <div className="flex items-center gap-1.5 px-2">
+                  <Calendar className="w-3.5 h-3.5 text-brand-400" />
+                  <input
+                    type="month"
+                    value={selectedExpenseMonth}
+                    onChange={(e) => setSelectedExpenseMonth(e.target.value)}
+                    className="bg-transparent border-0 text-xs font-black text-white focus:outline-none cursor-pointer"
+                    style={{ colorScheme: 'dark' }}
+                  />
+                </div>
+                <button
+                  onClick={handleNextExpenseMonth}
+                  className="p-1.5 rounded-xl hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                  title="Next Month"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <span className="text-xs font-bold text-gray-300">
+                {formatExpenseMonthLabel(selectedExpenseMonth)}
+              </span>
+
+              {selectedExpenseMonth !== currentMonthStr && (
+                <button
+                  onClick={() => setSelectedExpenseMonth(currentMonthStr)}
+                  className="px-2.5 py-1 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-[10px] font-bold text-brand-300 transition-colors cursor-pointer"
+                >
+                  Current Month
+                </button>
+              )}
+            </div>
+
+            {/* Right: Selected Month Inflow vs Outflow Cashflow Summary */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="bg-dark-depth-2/60 px-4 py-2 rounded-2xl border border-emerald-500/25">
+                <span className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider">🟢 Total Inflow</span>
+                <span className="text-xs sm:text-sm font-black text-emerald-400">+{fmt(selectedMonthIncome)}</span>
+              </div>
+
+              <div className="bg-dark-depth-2/60 px-4 py-2 rounded-2xl border border-rose-500/25">
+                <span className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider">🔴 Total Outflow</span>
+                <span className="text-xs sm:text-sm font-black text-rose-400">-{fmt(selectedMonthExpenses)}</span>
+              </div>
+
+              <div className="bg-dark-depth-2/60 px-4 py-2 rounded-2xl border border-dark-border/60">
+                <span className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider">
+                  {selectedMonthNet >= 0 ? '💼 Net Surplus' : '⚠️ Net Deficit'}
+                </span>
+                <div className="flex items-baseline gap-1.5">
+                  <span className={`text-xs sm:text-sm font-black ${selectedMonthNet >= 0 ? 'text-brand-400' : 'text-amber-400'}`}>
+                    {selectedMonthNet >= 0 ? '+' : ''}{fmt(selectedMonthNet)}
+                  </span>
+                  {selectedMonthIncome > 0 && selectedMonthNet > 0 && (
+                    <span className="text-[9px] text-emerald-400 font-bold">
+                      ({selectedMonthSavingsRate}% saved)
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+          </div>
+
           {/* AI Finor Essential vs Avoidable Expense Smart Breakdown Banner */}
           <div className="glass-panel rounded-3xl p-6 border border-amber-500/30 bg-gradient-to-r from-amber-500/5 via-dark-depth-1 to-brand-500/5 space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-dark-border/40 pb-4">
@@ -1011,20 +1192,22 @@ export const Finance: React.FC = () => {
                   <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
                   Finor AI Expense Segregation (Essential vs Avoidable)
                 </h3>
-                <p className="text-[10px] text-gray-400 mt-0.5">AI automatically tags junk food, snacks, impulse shopping & movies as avoidable expenses.</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">
+                  Analyzing spend patterns across {formatExpenseMonthLabel(selectedExpenseMonth)}.
+                </p>
               </div>
 
               <div className="flex items-center gap-3">
                 <div className="bg-dark-depth-2 px-3 py-1.5 rounded-xl border border-emerald-500/30 text-right">
                   <span className="text-[9px] font-bold text-gray-400 block uppercase">🟢 Essential Spend</span>
-                  <span className="text-xs font-black text-emerald-400">{fmt(essentialExpenses)}</span>
+                  <span className="text-xs font-black text-emerald-400">{fmt(selectedMonthEssential)}</span>
                 </div>
                 <div className="bg-dark-depth-2 px-3 py-1.5 rounded-xl border border-rose-500/30 text-right">
                   <span className="text-[9px] font-bold text-rose-400 block uppercase flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3 text-rose-400" />
                     ⚠️ Avoidable Spend
                   </span>
-                  <span className="text-xs font-black text-rose-400">{fmt(avoidableExpenses)}</span>
+                  <span className="text-xs font-black text-rose-400">{fmt(selectedMonthAvoidable)}</span>
                 </div>
               </div>
             </div>
@@ -1032,28 +1215,28 @@ export const Finance: React.FC = () => {
             {/* Essential vs Avoidable Visual Ratio Bar */}
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-[10px] font-extrabold">
-                <span className="text-emerald-400">Essential Needs ({monthlyExpenses > 0 ? Math.round((essentialExpenses / monthlyExpenses) * 100) : 100}%)</span>
-                <span className="text-rose-400">Avoidable / Impulse ({monthlyExpenses > 0 ? Math.round((avoidableExpenses / monthlyExpenses) * 100) : 0}%)</span>
+                <span className="text-emerald-400">Essential Needs ({selectedMonthExpenses > 0 ? Math.round((selectedMonthEssential / selectedMonthExpenses) * 100) : 100}%)</span>
+                <span className="text-rose-400">Avoidable / Impulse ({selectedMonthExpenses > 0 ? Math.round((selectedMonthAvoidable / selectedMonthExpenses) * 100) : 0}%)</span>
               </div>
               <div className="w-full h-3 bg-dark-depth-2 rounded-full overflow-hidden flex border border-dark-border/60">
                 <div 
                   className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full transition-all duration-500" 
-                  style={{ width: `${monthlyExpenses > 0 ? Math.round((essentialExpenses / monthlyExpenses) * 100) : 100}%` }} 
+                  style={{ width: `${selectedMonthExpenses > 0 ? Math.round((selectedMonthEssential / selectedMonthExpenses) * 100) : 100}%` }} 
                 />
                 <div 
                   className="bg-gradient-to-r from-rose-500 to-amber-500 h-full transition-all duration-500" 
-                  style={{ width: `${monthlyExpenses > 0 ? Math.round((avoidableExpenses / monthlyExpenses) * 100) : 0}%` }} 
+                  style={{ width: `${selectedMonthExpenses > 0 ? Math.round((selectedMonthAvoidable / selectedMonthExpenses) * 100) : 0}%` }} 
                 />
               </div>
             </div>
 
             {/* AI Smart Advice Tip */}
-            {avoidableExpenses > 0 && (
+            {selectedMonthAvoidable > 0 && (
               <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-2xl flex items-center justify-between gap-3 text-xs text-amber-300">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
                   <span>
-                    <strong>Finor AI Tip:</strong> You spent <strong>{fmt(avoidableExpenses)}</strong> on snacks, impulse shopping or movies this month. Cutting this by 50% could add <strong>{fmt(avoidableExpenses / 2)}</strong> to your equity goals!
+                    <strong>Finor AI Tip:</strong> You spent <strong>{fmt(selectedMonthAvoidable)}</strong> on avoidable items in {formatExpenseMonthLabel(selectedExpenseMonth)}. Cutting this could boost your savings!
                   </span>
                 </div>
                 <button
@@ -1078,7 +1261,7 @@ export const Finance: React.FC = () => {
                     {chartMode === 'daily' ? 'Daily Spending Breakdown' : 'Cumulative Spending Trajectory'}
                   </h3>
                   <p className="text-[10px] text-gray-400 mt-0.5">
-                    {chartMode === 'daily' ? 'Exact amount spent per day across current month' : 'Daily burn rate accumulation across current month'} ({new Date().toLocaleString('default', { month: 'long', year: 'numeric' })})
+                    {chartMode === 'daily' ? 'Exact amount spent per day across' : 'Daily burn rate accumulation across'} {formatExpenseMonthLabel(selectedExpenseMonth)}
                   </p>
                 </div>
 
@@ -1105,7 +1288,7 @@ export const Finance: React.FC = () => {
 
                   <div className="text-right hidden sm:block">
                     <span className="text-[9px] font-bold text-gray-400 uppercase block">Total Month Spend</span>
-                    <span className="text-sm font-black text-rose-400">{fmt(monthlyExpenses)}</span>
+                    <span className="text-sm font-black text-rose-400">{fmt(selectedMonthExpenses)}</span>
                   </div>
                 </div>
               </div>
@@ -1151,19 +1334,44 @@ export const Finance: React.FC = () => {
             {/* Category Allocation Donut Chart */}
             <div className="glass-panel rounded-3xl p-6 border border-dark-border flex flex-col justify-between">
               <div>
-                <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-emerald-400" />
-                  Category Breakdown
-                </h3>
-                <p className="text-[10px] text-gray-400 mt-0.5">Distribution across spending categories</p>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
+                    <BarChart3 className="w-4 h-4 text-emerald-400" />
+                    Category Breakdown
+                  </h3>
+
+                  {/* Outflow vs Inflow toggle */}
+                  <div className="flex bg-dark-depth-2 p-0.5 rounded-lg border border-dark-border/60 text-[9px] font-bold">
+                    <button
+                      onClick={() => setCategoryViewType('OUTFLOW')}
+                      className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                        categoryViewType === 'OUTFLOW' ? 'bg-rose-500 text-white shadow' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Outflow
+                    </button>
+                    <button
+                      onClick={() => setCategoryViewType('INFLOW')}
+                      className={`px-2 py-0.5 rounded transition-all cursor-pointer ${
+                        categoryViewType === 'INFLOW' ? 'bg-emerald-500 text-white shadow' : 'text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      Inflow
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[10px] text-gray-400 mt-1">
+                  {categoryViewType === 'OUTFLOW' ? 'Outflow by category' : 'Income by category'} in {formatExpenseMonthLabel(selectedExpenseMonth)}
+                </p>
               </div>
 
-              {categoryExpensesChartData.length > 0 ? (
+              {activeCategoryChartData.length > 0 ? (
                 <div className="h-[170px] my-2" style={{ minWidth: 0 }}>
                   <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                       <Pie
-                        data={categoryExpensesChartData}
+                        data={activeCategoryChartData}
                         cx="50%"
                         cy="50%"
                         innerRadius={45}
@@ -1171,7 +1379,7 @@ export const Finance: React.FC = () => {
                         paddingAngle={3}
                         dataKey="value"
                       >
-                        {categoryExpensesChartData.map((_, idx) => (
+                        {activeCategoryChartData.map((_, idx) => (
                           <Cell key={`cat-${idx}`} fill={COLORS[idx % COLORS.length]} />
                         ))}
                       </Pie>
@@ -1185,19 +1393,22 @@ export const Finance: React.FC = () => {
                 </div>
               ) : (
                 <div className="h-[170px] flex items-center justify-center text-xs text-gray-500">
-                  No expense records available.
+                  No {categoryViewType === 'OUTFLOW' ? 'expense' : 'income'} records in {formatExpenseMonthLabel(selectedExpenseMonth)}.
                 </div>
               )}
 
-              {/* Category Top List */}
-              <div className="space-y-1 max-h-[90px] overflow-y-auto pr-1 text-[10px]">
-                {categoryExpensesChartData.slice(0, 4).map((c, idx) => (
+              {/* Category Top List with % and Amount */}
+              <div className="space-y-1.5 max-h-[110px] overflow-y-auto pr-1 text-[10px]">
+                {activeCategoryChartData.map((c, idx) => (
                   <div key={c.name} className="flex items-center justify-between font-bold">
                     <div className="flex items-center gap-1.5 truncate">
-                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[idx % COLORS.length] }} />
                       <span className="text-gray-300 truncate">{c.name}</span>
                     </div>
-                    <span className="text-white shrink-0">{fmt(c.value)}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-gray-400 font-mono text-[9px]">({c.pct}%)</span>
+                      <span className="text-white">{fmt(c.value)}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1340,6 +1551,36 @@ export const Finance: React.FC = () => {
                     placeholder="End date"
                   />
                 </div>
+              </div>
+
+              {/* Quick Date Helper */}
+              <div className="flex items-center justify-between pt-0.5 text-[10px]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const [y, m] = selectedExpenseMonth.split('-');
+                    const days = new Date(parseInt(y, 10), parseInt(m, 10), 0).getDate();
+                    setFilterStartDate(`${selectedExpenseMonth}-01`);
+                    setFilterEndDate(`${selectedExpenseMonth}-${String(days).padStart(2, '0')}`);
+                  }}
+                  className="text-brand-400 hover:text-brand-300 font-bold transition-colors cursor-pointer flex items-center gap-1"
+                >
+                  <Calendar className="w-3 h-3" />
+                  Filter ledger to {formatExpenseMonthLabel(selectedExpenseMonth)}
+                </button>
+
+                {(filterStartDate || filterEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterStartDate('');
+                      setFilterEndDate('');
+                    }}
+                    className="text-gray-400 hover:text-rose-400 font-bold transition-colors cursor-pointer"
+                  >
+                    Clear Date Filters
+                  </button>
+                )}
               </div>
 
             </div>
