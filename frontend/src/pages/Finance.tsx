@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
   Edit2, UserMinus, UserPlus, Users, X, Link2,
-  Receipt, TrendingUp, BarChart3, Check, Search, AlertTriangle, Sparkles, Loader2
+  Receipt, TrendingUp, BarChart3, Search, AlertTriangle, Sparkles, Loader2
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { 
@@ -372,84 +372,6 @@ export const Finance: React.FC = () => {
       fetchMonthlyReport(reportMonth);
     }
   }, [subTab, reportMonth]);
-
-  // 4. Memoized grouped transactions queue needing review
-  const groupedReviewQueue = useMemo(() => {
-    const queue = transactions.filter(t => t.needs_review);
-    const groups: { [key: string]: Transaction[] } = {};
-    
-    // Sort queue by date descending
-    const sorted = [...queue].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
-    sorted.forEach(t => {
-      const dateObj = new Date(t.date);
-      const today = new Date();
-      const yesterday = new Date();
-      yesterday.setDate(today.getDate() - 1);
-      
-      let dateLabel = '';
-      if (dateObj.toDateString() === today.toDateString()) {
-        dateLabel = 'Today';
-      } else if (dateObj.toDateString() === yesterday.toDateString()) {
-        dateLabel = 'Yesterday';
-      } else {
-        dateLabel = dateObj.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-      }
-      
-      if (!groups[dateLabel]) {
-        groups[dateLabel] = [];
-      }
-      groups[dateLabel].push(t);
-    });
-    
-    return groups;
-  }, [transactions]);
-
-  // 5. Handlers for Review Inbox changes and approvals
-  const handleConfirmReview = async (tx: Transaction, approvedDesc?: string, approvedCat?: string) => {
-    try {
-      const finalDesc = approvedDesc?.trim() || tx.description || 'Expense';
-      const finalCat = approvedCat?.trim() || tx.category || 'Other';
-
-      const payload = {
-        ...tx,
-        description: finalDesc,
-        category: finalCat,
-        needs_review: false
-      };
-
-      const res = await apiRequest('/finance/transaction', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-
-      // Update state locally
-      setTransactions(prev => prev.map(t => t.id === tx.id ? res.transaction : t));
-      triggerToast('success', 'Transaction details confirmed.');
-    } catch (err: any) {
-      console.error('Failed to confirm transaction review:', err);
-      triggerToast('error', err.message || 'Failed to save review details.');
-    }
-  };
-
-  const handleCreateMockSMS = async () => {
-    try {
-      triggerToast('info', 'Simulating incoming SMS alert...');
-      await apiRequest('/finance/create-mock-sms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: 40, description: 'Transport' })
-      });
-      await fetchDashboardData(true);
-      triggerToast('success', 'Mock transaction synced! Check review inbox.');
-    } catch (err: any) {
-      console.error('Failed to create mock SMS:', err);
-      triggerToast('error', err.message || 'Failed to simulate mock SMS.');
-    }
-  };
-
-
-
 
   const fetchDashboardData = async (silent = false) => {
     if (!silent) setLoading(true);
@@ -1081,102 +1003,6 @@ export const Finance: React.FC = () => {
       {/* ─── TAB 2: EXPENSE ANALYSIS & TRANSACTIONS ─── */}
       {subTab === 'expenses' && (
         <div className="space-y-6">
-          
-          {/* Daily Review Inbox Block */}
-          {/* Daily Review Inbox Block */}
-          <div className="glass-panel rounded-3xl p-6 border border-brand-500/25 bg-gradient-to-r from-brand-500/5 via-dark-depth-1 to-indigo-500/5 space-y-4 animate-in fade-in duration-300">
-            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
-              <div>
-                <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-brand-400 animate-pulse" />
-                  Transaction Review Inbox ({transactions.filter(t => t.needs_review).length} pending)
-                </h3>
-                <p className="text-[10px] text-gray-400 mt-0.5">Confirm or label transactions imported from SMS and third-party syncs.</p>
-              </div>
-            </div>
-
-            {Object.keys(groupedReviewQueue).length > 0 ? (
-              <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
-                {Object.keys(groupedReviewQueue).map(day => (
-                  <div key={day} className="space-y-2">
-                    <h4 className="text-[10px] font-extrabold uppercase text-brand-400 tracking-wider sticky top-0 bg-dark-depth-1/90 py-1 backdrop-blur-sm z-10">{day}</h4>
-                    <div className="space-y-2">
-                      {groupedReviewQueue[day].map(tx => {
-                        const txTime = new Date(tx.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-                        return (
-                          <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-dark-depth-2/80 rounded-2xl border border-dark-border/50 hover:border-dark-border transition-colors">
-                            <div className="space-y-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-xs font-black text-white">₹{parseFloat(tx.amount.toString()).toFixed(2)}</span>
-                                <span className="text-[10px] bg-dark-depth-3 px-2 py-0.5 rounded-lg border border-dark-border text-gray-400 font-bold">{tx.method} ({txTime})</span>
-                                <span className="text-[10px] bg-brand-500/15 text-brand-300 px-2 py-0.5 rounded-lg border border-brand-500/30 font-bold">
-                                  {tx.category || 'Other'}
-                                </span>
-                              </div>
-                              <p className="text-xs font-medium text-gray-200 truncate" title={tx.description}>
-                                {tx.description}
-                              </p>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <button
-                                onClick={() => handleConfirmReview(tx, tx.description, tx.category)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs rounded-xl transition-colors cursor-pointer shadow-sm active:scale-95"
-                                title="Confirm transaction"
-                              >
-                                <Check className="w-3.5 h-3.5 stroke-[3]" />
-                                <span className="text-[11px]">Confirm</span>
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setTxForm({
-                                    id: tx.id,
-                                    date: new Date(tx.date).toISOString().substring(0, 16),
-                                    amount: tx.amount.toString(),
-                                    type: tx.type,
-                                    category: tx.category || 'Other',
-                                    method: tx.method,
-                                    description: tx.description,
-                                    is_claimable: false,
-                                    claim_status: 'UNCLAIMED'
-                                  });
-                                  setShowTxModal(true);
-                                }}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-depth-3 hover:bg-dark-depth-2 border border-dark-border text-gray-300 hover:text-white text-xs rounded-xl transition-colors cursor-pointer active:scale-95"
-                                title="Edit description and category"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                                <span className="text-[11px]">Edit</span>
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="py-8 flex flex-col items-center justify-center text-center space-y-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                </div>
-                <div className="space-y-0.5">
-                  <p className="text-xs text-white font-extrabold">All caught up!</p>
-                  <p className="text-[10px] text-gray-400">All synced transactions have category and description details filled in.</p>
-                </div>
-                <button
-                  onClick={handleCreateMockSMS}
-                  className="px-4 py-1.5 rounded-xl bg-brand-500/20 hover:bg-brand-500 text-brand-300 hover:text-white border border-brand-500/30 text-[10px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 shadow-lg shadow-brand-500/5 hover:scale-102"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  Simulate Webhook SMS (₹40)
-                </button>
-              </div>
-            )}
-          </div>
-
           {/* AI Finor Essential vs Avoidable Expense Smart Breakdown Banner */}
           <div className="glass-panel rounded-3xl p-6 border border-amber-500/30 bg-gradient-to-r from-amber-500/5 via-dark-depth-1 to-brand-500/5 space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-dark-border/40 pb-4">

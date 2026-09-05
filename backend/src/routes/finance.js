@@ -621,11 +621,11 @@ router.post('/sms-webhook', async (req, res) => {
 
     const txDate = timestamp ? new Date(timestamp).toISOString() : new Date().toISOString();
 
-    // AI recurring auto-fill detection
+    // Map description and category
     let finalDescription = description;
     let finalCategory = category;
     let isAutoFilled = false;
-    let needsReview = true; // All incoming SMS entries require review by default
+    let needsReview = false;
 
     if (type === 'EXPENSE') {
       try {
@@ -915,7 +915,7 @@ router.post('/create-mock-sms', requireAuth, async (req, res) => {
     let finalDescription = classification.description;
     let finalCategory = classification.category;
     let isAutoFilled = false;
-    let needsReview = true;
+    let needsReview = false;
 
     try {
       const autoFill = await detectRecurringPattern(userId, amount, new Date(txDate));
