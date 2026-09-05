@@ -283,7 +283,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
       </div>
 
       {/* Configuration Checklist / Welcome Guide Banner for New Users */}
-      {profile && (!profile.zerodha_api_key || !profile.gmail_connected_email) && (
+      {profile && !profile.zerodha_api_key && (
         <div className="glass-panel rounded-3xl border border-brand-500/25 p-6 relative overflow-hidden shadow-xl bg-gradient-to-r from-brand-950/15 via-dark-depth-1 to-indigo-950/10 backdrop-blur-md">
           <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
@@ -295,9 +295,9 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
                 </span>
                 <span className="text-[10px] font-black text-brand-400 uppercase tracking-widest bg-brand-500/10 px-2 py-0.5 rounded-md border border-brand-550/20">Setup Guide Checklist</span>
               </div>
-              <h2 className="text-lg font-extrabold text-white tracking-tight">Complete your Account Integration Setup</h2>
+              <h2 className="text-lg font-extrabold text-white tracking-tight">Complete your Broker Integration Setup</h2>
               <p className="text-xs text-gray-305 max-w-xl leading-relaxed">
-                Unlock automated trades ingestion, real-time portfolio tracking, and AI-driven coaching insights by linking your broker API keys or Gmail sync.
+                Unlock automated trades ingestion, real-time portfolio tracking, and AI-driven coaching insights by linking your broker API keys.
               </p>
               
               {/* Checklist list */}
@@ -307,12 +307,6 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
                     {profile.zerodha_api_key ? '✓' : '1'}
                   </div>
                   <span className={profile.zerodha_api_key ? 'text-emerald-400 line-through' : ''}>Broker API Credentials</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <div className={`w-3.5 h-3.5 rounded-full border ${profile.gmail_connected_email ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'border-gray-500 text-gray-555'} flex items-center justify-center text-[9px]`}>
-                    {profile.gmail_connected_email ? '✓' : '2'}
-                  </div>
-                  <span className={profile.gmail_connected_email ? 'text-emerald-400 line-through' : ''}>Gmail Sync Authorization</span>
                 </div>
               </div>
             </div>

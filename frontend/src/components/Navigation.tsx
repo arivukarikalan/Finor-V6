@@ -10,10 +10,6 @@ import {
   Brain,
   Sun,
   Moon,
-  RefreshCw,
-  Mail,
-  CheckCircle2,
-  AlertCircle,
   X,
   Menu,
   Landmark,
@@ -22,7 +18,6 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '../context/authStore';
 import { supabase } from '../services/supabase';
-import { apiRequest } from '../services/api';
 
 export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'finance' | 'more' | 'admin' | 'profile' | 'buy-scanner';
 
@@ -40,12 +35,6 @@ export const Navigation: React.FC<NavigationProps> = ({
   const { user, signOut, role, profile } = useAuthStore();
   const [isOnline, setIsOnline] = React.useState(navigator.onLine);
   const [lastTradeDate, setLastTradeDate] = React.useState<string | null>(null);
-  const [isSyncing, setIsSyncing] = React.useState(false);
-  const [gmailConnected, setGmailConnected] = React.useState<boolean | null>(null);
-  const [syncToast, setSyncToast] = React.useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
-  const [syncDetails, setSyncDetails] = React.useState<any>(null);
-  const [showDetailsModal, setShowDetailsModal] = React.useState<boolean>(false);
-  const [showTimeframeModal, setShowTimeframeModal] = React.useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState<boolean>(false);
 
   const fetchLastTrade = async () => {
@@ -70,19 +59,6 @@ export const Navigation: React.FC<NavigationProps> = ({
   React.useEffect(() => {
     fetchLastTrade();
 
-    // Check if Gmail is connected
-    apiRequest('/gmail/status').then((res: any) => {
-      setGmailConnected(res.connected);
-    }).catch(() => setGmailConnected(false));
-
-    // Handle ?gmail_connected=true redirect from OAuth callback
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('gmail_connected') === 'true') {
-      setGmailConnected(true);
-      setSyncToast({ type: 'success', message: '✅ Gmail connected! Click sync to pull your trades.' });
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-
     const handleSyncComplete = () => {
       fetchLastTrade();
     };
@@ -92,50 +68,6 @@ export const Navigation: React.FC<NavigationProps> = ({
       window.removeEventListener('portfolio-sync-complete', handleSyncComplete);
     };
   }, []);
-
-  const handleSync = async () => {
-    if (isSyncing) return;
-
-    // If Gmail not connected, open the OAuth flow
-    if (!gmailConnected) {
-      const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
-      const base = backendUrl.endsWith('/api') ? backendUrl.replace('/api', '') : backendUrl;
-      window.open(`${base}/api/gmail/auth?userId=${user?.id}`, '_self');
-      return;
-    }
-
-    setShowTimeframeModal(true);
-  };
-
-  const executeSync = async (days: number) => {
-    setShowTimeframeModal(false);
-    setIsSyncing(true);
-    setSyncToast(null);
-    try {
-      const res: any = await apiRequest('/gmail/sync', { 
-        method: 'POST', 
-        body: JSON.stringify({ days })
-      });
-      await fetchLastTrade();
-      window.dispatchEvent(new Event('portfolio-sync-complete'));
-      setSyncDetails(res);
-      setShowDetailsModal(true);
-      setSyncToast({
-        type: res.newTrades > 0 ? 'success' : 'info',
-        message: res.message || 'Sync complete'
-      });
-      setTimeout(() => setSyncToast(null), 5000);
-    } catch (err: any) {
-      const errMsg = err.message || 'Sync failed';
-      if (errMsg.toLowerCase().includes('connect') || errMsg.toLowerCase().includes('expired') || errMsg.toLowerCase().includes('re-authorize') || errMsg.toLowerCase().includes('invalid_grant')) {
-        setGmailConnected(false);
-      }
-      setSyncToast({ type: 'error', message: errMsg });
-      setTimeout(() => setSyncToast(null), 7000);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   const formatLastTradeDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -339,22 +271,6 @@ export const Navigation: React.FC<NavigationProps> = ({
 
         {/* Right Actions */}
         <div className="flex items-center gap-2">
-          
-          {/* Mobile Gmail Sync Badge & Trigger */}
-          <div className="flex items-center gap-1 bg-dark-depth-2/60 border border-dark-border/40 pl-2 pr-1 py-0.5 rounded-lg select-none">
-            <Mail className={`w-3 h-3 ${gmailConnected ? 'text-emerald-500' : 'text-gray-500'}`} />
-            <button
-              onClick={handleSync}
-              disabled={isSyncing}
-              className={`p-0.5 rounded transition-all cursor-pointer ${
-                isSyncing ? 'animate-spin text-brand-400' : gmailConnected ? 'text-emerald-400 hover:text-white' : 'text-amber-400 hover:text-white'
-              }`}
-              title={gmailConnected ? 'Sync trades from Gmail' : 'Connect Gmail to enable auto-sync'}
-            >
-              <RefreshCw className="w-3 h-3" />
-            </button>
-          </div>
-
           {/* Mobile Theme Toggle */}
           <button
             onClick={toggleTheme}
@@ -392,32 +308,11 @@ export const Navigation: React.FC<NavigationProps> = ({
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-dark-depth-2/40 border border-dark-border/40 pl-2.5 pr-1.5 py-1 rounded-xl select-none">
-              <Mail className={`w-3 h-3 ${gmailConnected ? 'text-emerald-500' : 'text-gray-500'}`} />
-              <span className="text-[10px] text-gray-400 font-extrabold uppercase">
-                {lastTradeDate ? `Trades Up-to-date: ${formatLastTradeDate(lastTradeDate)}` : 'No Trades Synced'}
-              </span>
-              <button
-                onClick={handleSync}
-                disabled={isSyncing}
-                className={`p-1 rounded-lg hover:bg-dark-depth-2 transition-all cursor-pointer ${
-                  isSyncing ? 'animate-spin text-brand-400' : gmailConnected ? 'text-emerald-400 hover:text-white' : 'text-amber-400 hover:text-white'
-                }`}
-                title={gmailConnected ? 'Sync trades from Gmail' : 'Connect Gmail to enable auto-sync'}
-              >
-                <RefreshCw className="w-3 h-3" />
-              </button>
-            </div>
-
-            {/* Sync Toast Notification */}
-            {syncToast && (
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold border animate-in slide-in-from-top-2 duration-200 ${
-                syncToast.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-                syncToast.type === 'error'   ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' :
-                'bg-brand-500/10 border-brand-500/20 text-brand-400'
-              }`}>
-                {syncToast.type === 'success' ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                {syncToast.message}
+            {lastTradeDate && (
+              <div className="flex items-center gap-2 bg-dark-depth-2/40 border border-dark-border/40 px-3 py-1 rounded-xl select-none">
+                <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wide">
+                  Trades: {formatLastTradeDate(lastTradeDate)}
+                </span>
               </div>
             )}
 
@@ -514,219 +409,6 @@ export const Navigation: React.FC<NavigationProps> = ({
           });
         })()}
       </nav>
-
-      {/* Gmail Sync Timeframe Picker Modal */}
-      {showTimeframeModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-md rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 p-6 space-y-5">
-            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
-              <div className="flex items-center gap-2">
-                <Mail className="w-5 h-5 text-brand-400" />
-                <div>
-                  <h3 className="text-sm font-bold text-white tracking-wide">Sync Timeframe</h3>
-                  <p className="text-[10px] text-gray-400">Choose scan period for contract notes</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowTimeframeModal(false)}
-                className="p-1.5 rounded-xl hover:bg-dark-depth-2 border border-transparent hover:border-dark-border text-gray-400 hover:text-white transition-all cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <p className="text-xs text-gray-305 leading-relaxed">
-                Scan your connected Gmail inbox for trade confirmation contract notes. Choose a timeframe for a faster response.
-              </p>
-
-              {/* Timeframe Chips */}
-              <div className="grid grid-cols-3 gap-2.5">
-                <button
-                  onClick={() => executeSync(1)}
-                  className="py-3 px-4 rounded-xl border border-dark-border hover:border-emerald-500/40 bg-dark-depth-2 hover:bg-emerald-500/5 text-center transition-all group cursor-pointer"
-                >
-                  <span className="text-sm font-black text-white block group-hover:text-emerald-400">1 Day</span>
-                  <span className="text-[9px] text-gray-500 block mt-0.5">Last 24 Hours</span>
-                </button>
-                <button
-                  onClick={() => executeSync(7)}
-                  className="py-3 px-4 rounded-xl border border-dark-border hover:border-brand-500/40 bg-dark-depth-2 hover:bg-brand-500/5 text-center transition-all group cursor-pointer"
-                >
-                  <span className="text-sm font-black text-white block group-hover:text-brand-400">1 Week</span>
-                  <span className="text-[9px] text-gray-500 block mt-0.5">Last 7 Days</span>
-                </button>
-                <button
-                  onClick={() => executeSync(30)}
-                  className="py-3 px-4 rounded-xl border border-dark-border hover:border-indigo-500/40 bg-dark-depth-2 hover:bg-indigo-500/5 text-center transition-all group cursor-pointer"
-                >
-                  <span className="text-sm font-black text-white block group-hover:text-indigo-400">1 Month</span>
-                  <span className="text-[9px] text-gray-500 block mt-0.5">Last 30 Days</span>
-                </button>
-              </div>
-
-              {/* Uploader info note */}
-              <div className="p-3 bg-amber-500/5 border border-amber-500/10 rounded-2xl text-[9px] text-gray-400 leading-relaxed">
-                <span className="font-extrabold text-amber-400 uppercase block mb-0.5">Sync Limitation</span>
-                Scanning beyond 30 days is not supported via automated Gmail sync to maintain fast response speeds. To import older trades, please use the **Trade Book Import** CSV uploader inside the Holdings portal.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 5. Gmail Sync Details Logs Modal Popup */}
-      {showDetailsModal && syncDetails && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-dark-depth-1 border border-dark-border w-full max-w-2xl rounded-3xl overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]">
-            
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-dark-border/60 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-brand-500/10 text-brand-400">
-                  <Mail className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white tracking-wide">Gmail Sync Log</h3>
-                  <p className="text-[10px] text-gray-400">Real-time contract note parsing results</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowDetailsModal(false)}
-                className="p-1.5 rounded-xl hover:bg-dark-depth-2 border border-transparent hover:border-dark-border text-gray-400 hover:text-white transition-all cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Content (Scrollable) */}
-            <div className="p-6 overflow-y-auto space-y-5 flex-grow">
-              
-              {/* Metrics Grid */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
-                  <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">Emails Checked</span>
-                  <span className="text-xl font-black text-white">{syncDetails.emailsFound || 0}</span>
-                </div>
-                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
-                  <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">Trades Extracted</span>
-                  <span className="text-xl font-black text-white">
-                    {syncDetails.details?.reduce((acc: number, val: any) => acc + (val.tradesFound || 0), 0) || 0}
-                  </span>
-                </div>
-                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
-                  <span className="text-[9px] text-gray-400 font-extrabold uppercase tracking-wider block mb-1">New Trades Synced</span>
-                  <span className="text-xl font-black text-emerald-400">{syncDetails.newTrades || 0}</span>
-                </div>
-              </div>
-
-              {/* Message Banner */}
-              <div className={`p-3 rounded-2xl border text-xs font-semibold flex items-center gap-2.5 ${
-                syncDetails.newTrades > 0 
-                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                  : 'bg-brand-500/10 border-brand-500/20 text-brand-400'
-              }`}>
-                {syncDetails.newTrades > 0 ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
-                <span>{syncDetails.message}</span>
-              </div>
-
-              {/* Detailed Email Log List */}
-              <div className="space-y-4">
-                <h4 className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider">Processed Emails Log</h4>
-                
-                {(!syncDetails.details || syncDetails.details.length === 0) ? (
-                  <div className="text-center py-6 bg-dark-depth-2/50 border border-dashed border-dark-border/40 rounded-2xl">
-                    <span className="text-xs text-gray-400">No emails matched the search parameters.</span>
-                  </div>
-                ) : (
-                  syncDetails.details.map((email: any, idx: number) => (
-                    <div key={idx} className="bg-dark-depth-2/45 border border-dark-border/40 rounded-2xl overflow-hidden">
-                      
-                      {/* Email Header */}
-                      <div className="px-4 py-3 bg-dark-depth-2/80 border-b border-dark-border/40 flex items-center justify-between gap-4">
-                        <div className="min-w-0">
-                          <span className="text-[11px] font-bold text-white block truncate">{email.subject}</span>
-                          <span className="text-[9px] text-gray-400 mt-0.5 block">Trade Date: {email.tradeDate}</span>
-                        </div>
-                        <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border ${
-                          email.status === 'Processed' 
-                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
-                            : 'bg-gray-500/10 border-gray-500/20 text-gray-400'
-                        }`}>
-                          {email.status}
-                        </span>
-                      </div>
-
-                      {/* Trades inside this email */}
-                      <div className="p-4">
-                        {email.status === 'Already Synced' ? (
-                          <p className="text-[10px] text-gray-400 italic">
-                            All trades from this contract note have already been processed in your portfolio.
-                          </p>
-                        ) : (!email.trades || email.trades.length === 0) ? (
-                          <p className="text-[10px] text-rose-400 italic">
-                            No trades could be parsed from this PDF. Please check if the PDF password or layout is correct.
-                          </p>
-                        ) : (
-                          <div className="overflow-x-auto">
-                            <table className="w-full text-[10px] text-left">
-                              <thead>
-                                <tr className="text-gray-400 uppercase tracking-wider border-b border-dark-border/30">
-                                  <th className="pb-1.5 font-bold">Symbol</th>
-                                  <th className="pb-1.5 font-bold">Action</th>
-                                  <th className="pb-1.5 font-bold">Quantity</th>
-                                  <th className="pb-1.5 font-bold">Price</th>
-                                  <th className="pb-1.5 font-bold text-right">Status</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-dark-border/20">
-                                {email.trades.map((t: any, tIdx: number) => (
-                                  <tr key={tIdx} className="hover:bg-white/5 transition-colors">
-                                    <td className="py-2 text-white font-bold">{t.stock_symbol}</td>
-                                    <td className="py-2">
-                                      <span className={`font-extrabold uppercase text-[9px] px-1.5 py-0.5 rounded ${
-                                        t.trade_type === 'BUY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
-                                      }`}>
-                                        {t.trade_type}
-                                      </span>
-                                    </td>
-                                    <td className="py-2 text-white">{t.quantity}</td>
-                                    <td className="py-2 text-white">₹{t.price.toFixed(2)}</td>
-                                    <td className="py-2 text-right">
-                                      <span className={`font-bold ${
-                                        t.status === 'Synced' ? 'text-emerald-400' : 'text-amber-500'
-                                      }`}>
-                                        {t.status === 'Synced' ? '✅ Synced' : '⚠️ Duplicate'}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        )}
-                      </div>
-
-                    </div>
-                  ))
-                )}
-              </div>
-
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-dark-border/60 flex items-center justify-end bg-dark-depth-1">
-              <button
-                onClick={() => setShowDetailsModal(false)}
-                className="px-5 py-2 rounded-2xl bg-brand-500 hover:bg-brand-600 text-xs text-white font-bold transition-all cursor-pointer"
-              >
-                Close Logs
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* 6. Sliding Mobile Menu Drawer Overlay */}
       {isMobileMenuOpen && (

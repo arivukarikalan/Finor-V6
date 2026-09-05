@@ -49,17 +49,6 @@ export const ProfileSettings = () => {
   const [kiteStatus, setKiteStatus] = useState<'CONNECTED' | 'DISCONNECTED' | 'MOCK_MODE'>('MOCK_MODE');
   const [kiteLoginUrl, setKiteLoginUrl] = useState('');
 
-  // Gmail integration state
-  const [disconnectingGmail, setDisconnectingGmail] = useState(false);
-  const [gmailFilterFrom, setGmailFilterFrom] = useState('noreply@zerodha.com');
-  const [gmailFilterSubject, setGmailFilterSubject] = useState('contract note');
-  const [gmailClientId, setGmailClientId] = useState('');
-  const [gmailClientSecret, setGmailClientSecret] = useState('');
-  const [showGmailSecret, setShowGmailSecret] = useState(false);
-  const [savingGmailCredentials, setSavingGmailCredentials] = useState(false);
-  const [savingGmailFilters, setSavingGmailFilters] = useState(false);
-  const [clearingCache, setClearingCache] = useState(false);
-
   // Custom Confirmation Modal state
   interface ConfirmModalState {
     isOpen: boolean;
@@ -91,8 +80,6 @@ export const ProfileSettings = () => {
         setZerodhaApiKey(credentials.zerodha_api_key || '');
         setZerodhaApiSecret(credentials.zerodha_api_secret || '');
         setZerodhaPdfPassword(credentials.zerodha_pdf_password || '');
-        setGmailClientId(credentials.gmail_client_id || '');
-        setGmailClientSecret(credentials.gmail_client_secret || '');
       } catch (err) {
         console.error('Failed to fetch decrypted credentials:', err);
       }
@@ -103,8 +90,6 @@ export const ProfileSettings = () => {
       setCountry(profile.country || '');
       setGender(profile.gender || 'Male');
       setSessionExpiryDays(profile.session_expiry_days || 1);
-      setGmailFilterFrom(profile.gmail_filter_from || 'noreply@zerodha.com');
-      setGmailFilterSubject(profile.gmail_filter_subject || 'contract note');
       fetchDecryptedCredentials();
     }
   }, [profile]);
@@ -228,101 +213,6 @@ export const ProfileSettings = () => {
     } finally {
       setSavingZerodha(false);
     }
-  };
-
-  const handleUpdateGmailCredentials = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingGmailCredentials(true);
-    try {
-      await apiRequest('/auth/update-gmail-credentials', {
-        method: 'POST',
-        body: JSON.stringify({
-          gmail_client_id: gmailClientId,
-          gmail_client_secret: gmailClientSecret
-        })
-      });
-      await fetchProfile();
-      useToastStore.getState().addToast('Google Cloud App credentials saved successfully!', 'success');
-    } catch (err: any) {
-      console.error(err);
-      useToastStore.getState().addToast(err.message || 'Failed to save Google Cloud credentials.', 'error');
-    } finally {
-      setSavingGmailCredentials(false);
-    }
-  };
-
-  const handleSaveGmailFilters = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSavingGmailFilters(true);
-    try {
-      await apiRequest('/auth/update-profile', {
-        method: 'POST',
-        body: JSON.stringify({
-          gmail_filter_from: gmailFilterFrom,
-          gmail_filter_subject: gmailFilterSubject
-        })
-      });
-      await fetchProfile();
-      useToastStore.getState().addToast('Gmail sync filter queries updated successfully!', 'success');
-    } catch (err: any) {
-      console.error(err);
-      useToastStore.getState().addToast(err.message || 'Failed to save filter configs.', 'error');
-    } finally {
-      setSavingGmailFilters(false);
-    }
-  };
-
-  const handleConnectGmail = () => {
-    const backendUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
-    const base = backendUrl.endsWith('/api') ? backendUrl.replace('/api', '') : backendUrl;
-    window.open(`${base}/api/gmail/auth?userId=${profile?.id}`, '_self');
-  };
-
-  const handleDisconnectGmail = () => {
-    setConfirmConfig({
-      isOpen: true,
-      title: 'Disconnect Gmail Integration',
-      message: 'Are you sure you want to disconnect your Gmail integration? Auto-syncing of trades will stop.',
-      confirmText: 'Disconnect',
-      cancelText: 'Cancel',
-      isDanger: true,
-      onConfirm: async () => {
-        setDisconnectingGmail(true);
-        try {
-          await apiRequest('/auth/disconnect-gmail', { method: 'POST' });
-          await fetchProfile();
-          useToastStore.getState().addToast('Gmail connection disconnected successfully!', 'success');
-        } catch (err: any) {
-          console.error(err);
-          useToastStore.getState().addToast(err.message || 'Failed to disconnect Gmail.', 'error');
-        } finally {
-          setDisconnectingGmail(false);
-        }
-      }
-    });
-  };
-
-  const handleResetSyncCache = () => {
-    setConfirmConfig({
-      isOpen: true,
-      title: 'Reset Gmail Sync Cache',
-      message: 'This will reset your sync history. The next sync will re-process your emails from the last selected timeframe. Proceed?',
-      confirmText: 'Reset Cache',
-      cancelText: 'Cancel',
-      isDanger: false,
-      onConfirm: async () => {
-        setClearingCache(true);
-        try {
-          await apiRequest('/gmail/reset-cache', { method: 'POST' });
-          useToastStore.getState().addToast('Gmail sync history cache cleared! You can now re-run Gmail sync.', 'success');
-        } catch (err: any) {
-          console.error(err);
-          useToastStore.getState().addToast(err.message || 'Failed to clear sync cache.', 'error');
-        } finally {
-          setClearingCache(false);
-        }
-      }
-    });
   };
 
   const backendBaseUrl = (import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api').replace(/\/$/, '');
@@ -874,205 +764,6 @@ export const ProfileSettings = () => {
             </form>
           </div>
 
-          {/* Gmail Integration Card */}
-          <div className="glass-panel rounded-3xl border border-dark-border p-6 space-y-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
-              <div className="flex items-center gap-2">
-                <Mail className="w-4 h-4 text-emerald-400" />
-                <h3 className="font-extrabold text-sm text-white uppercase tracking-wider">Gmail Integration</h3>
-              </div>
-              <span className={`text-[9px] font-black uppercase px-2 py-0.5 border rounded-full select-none ${
-                profile?.gmail_connected_email
-                  ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
-                  : 'text-gray-400 bg-gray-500/10 border-gray-500/20'
-              }`}>
-                {profile?.gmail_connected_email ? 'Connected' : 'Disconnected'}
-              </span>
-            </div>
-
-            <div className="space-y-6">
-              <p className="text-xs text-gray-300 leading-relaxed">
-                Connect your personal Gmail account directly to synchronize transaction contract notes automatically.
-              </p>
-
-              {/* 1. Custom Google Cloud Credentials Configuration */}
-              <form onSubmit={handleUpdateGmailCredentials} className="space-y-3.5 border-t border-dark-border/40 pt-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider">Custom Google App ID Credentials</span>
-                  <span className="text-[8px] font-black text-indigo-400 uppercase tracking-wider bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-550/20 select-none">Optional Client</span>
-                </div>
-                
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="gmailClientId">
-                    Google OAuth Client ID
-                  </label>
-                  <input
-                    id="gmailClientId"
-                    type="text"
-                    placeholder="Enter custom Google Client ID"
-                    value={gmailClientId}
-                    onChange={(e) => setGmailClientId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all font-mono"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="gmailClientSecret">
-                    Google OAuth Client Secret
-                  </label>
-                  <div className="relative">
-                    <input
-                      id="gmailClientSecret"
-                      type={showGmailSecret ? "text" : "password"}
-                      placeholder="Enter custom Google Client Secret"
-                      value={gmailClientSecret}
-                      onChange={(e) => setGmailClientSecret(e.target.value)}
-                      className="w-full pl-3.5 pr-10 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowGmailSecret(!showGmailSecret)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors"
-                    >
-                      {showGmailSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={savingGmailCredentials}
-                  className="w-full py-2.5 px-4 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-300 hover:text-white border border-dark-border/40 font-bold text-xs uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                >
-                  {savingGmailCredentials ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Saving API Keys...
-                    </>
-                  ) : (
-                    'Save Google API Credentials'
-                  )}
-                </button>
-              </form>
-
-              {/* 2. Connection Status & OAuth linking */}
-              <div className="border-t border-dark-border/40 pt-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-gray-400 block uppercase tracking-wider">Authentication Link</span>
-                </div>
-
-                {profile?.gmail_connected_email ? (
-                  <div className="space-y-4">
-                    <div className="p-3.5 rounded-2xl bg-dark-depth-2 border border-dark-border flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <span className="text-[10px] font-bold text-gray-400 block uppercase">Connected Inbox</span>
-                        <span className="text-xs text-white block font-bold truncate mt-0.5">{profile.gmail_connected_email}</span>
-                      </div>
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                    </div>
-
-                    {/* Gmail Filters Configuration Form */}
-                    <form onSubmit={handleSaveGmailFilters} className="space-y-3.5 bg-dark-depth-2/40 p-4 rounded-2xl border border-dark-border/60">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-gray-350 block uppercase tracking-wider">Sync Ingestion Filters</span>
-                        <span className="text-[8px] font-black text-indigo-400 uppercase tracking-wider bg-indigo-500/10 px-1.5 py-0.5 rounded border border-indigo-550/20 select-none">Active</span>
-                      </div>
-                      
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="gmailFilterFrom">
-                          From Email (Sender)
-                        </label>
-                        <input
-                          id="gmailFilterFrom"
-                          type="text"
-                          placeholder="noreply@zerodha.com"
-                          value={gmailFilterFrom}
-                          onChange={(e) => setGmailFilterFrom(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all font-mono"
-                        />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <label className="text-[10px] font-bold text-gray-300 block ml-1 uppercase" htmlFor="gmailFilterSubject">
-                          Subject Query Filter
-                        </label>
-                        <input
-                          id="gmailFilterSubject"
-                          type="text"
-                          placeholder="contract note"
-                          value={gmailFilterSubject}
-                          onChange={(e) => setGmailFilterSubject(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 transition-all font-mono"
-                        />
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={savingGmailFilters}
-                        className="w-full py-2.5 px-4 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 text-gray-350 hover:text-white border border-dark-border/40 font-bold text-xs uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-                      >
-                        {savingGmailFilters ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            Saving Filters...
-                          </>
-                        ) : (
-                          'Save Filters'
-                        )}
-                      </button>
-                    </form>
-
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      <button
-                        onClick={handleResetSyncCache}
-                        disabled={clearingCache}
-                        className="py-2.5 px-3 rounded-xl bg-dark-depth-2 hover:bg-dark-depth-3 text-indigo-400 hover:text-white border border-dark-border/40 font-bold text-[10px] uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
-                        title="Resets processed message history tags so you can re-run sync on older contract notes."
-                      >
-                        {clearingCache ? (
-                          <>
-                            <Loader2 className="w-3 animate-spin" />
-                            Resetting...
-                          </>
-                        ) : (
-                          'Reset Sync Cache'
-                        )}
-                      </button>
-
-                      <button
-                        onClick={handleDisconnectGmail}
-                        disabled={disconnectingGmail}
-                        className="py-2.5 px-3 rounded-xl border border-rose-500/30 hover:border-rose-500 text-rose-400 hover:text-white hover:bg-rose-500/10 font-bold text-[10px] uppercase tracking-wider focus:outline-none transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 cursor-pointer"
-                      >
-                        {disconnectingGmail ? (
-                          <>
-                            <Loader2 className="w-3 animate-spin" />
-                            Disconnecting...
-                          </>
-                        ) : (
-                          'Disconnect Inbox'
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="p-3 rounded-2xl bg-amber-500/5 border border-amber-500/10 text-[9px] text-gray-400 leading-relaxed">
-                      <span className="font-extrabold text-amber-400 uppercase block mb-0.5">Authorization Notice</span>
-                      Connecting your inbox allows Finor to scan emails from **Zerodha** matching subjects like **"contract note"** to automatically ingest trades. Your password is never shared.
-                    </div>
-                    <button
-                      onClick={handleConnectGmail}
-                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-700 text-white font-bold text-xs uppercase tracking-wider hover:from-emerald-500 hover:to-emerald-600 focus:outline-none active:scale-[0.98] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-lg shadow-emerald-700/20"
-                    >
-                      Link Gmail Inbox
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
         </div>
 
         {/* Setup Walkthrough & Help Section */}
@@ -1092,7 +783,7 @@ export const ProfileSettings = () => {
                 Finor is a secure, read-only analytical platform. Linking your broker API credentials allows the app to fetch your active stock holdings, average purchase costs, and session trade listings directly. 
               </p>
               <p className="text-xs text-gray-350 leading-relaxed">
-                Authorizing Gmail synchronization scans only designated automated messages (from Zerodha contract notes) to record transaction logs instantly without manual entries. Your account password is never shared, and no transactional permissions are available to the app.
+                Broker API credentials are used strictly for read-only order and holding synchronization. Your account password is never shared, and no transactional trading permissions are available to the app.
               </p>
             </div>
 
@@ -1102,7 +793,7 @@ export const ProfileSettings = () => {
                 Alternative: Manual Sync Operations
               </h4>
               <p className="text-xs text-gray-300 leading-relaxed">
-                If you choose not to link your broker accounts or Gmail inbox, you can still experience all analytical features of Finor using manual sync modes:
+                If you choose not to link your broker accounts, you can still experience all analytical features of Finor using manual sync modes:
               </p>
               <ul className="text-xs text-gray-350 list-disc list-inside space-y-1.5 pl-1 leading-relaxed">
                 <li>

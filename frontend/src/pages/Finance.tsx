@@ -145,17 +145,10 @@ const isAvoidableExpense = (category: string, description: string) => {
 export const Finance: React.FC = () => {
   const [subTab, setSubTab] = useState<'wealth' | 'expenses' | 'debts' | 'report'>('wealth');
   
-  // Suggestion & Report states
-  const [suggestion, setSuggestion] = useState<{ description: string; category: string; confidence: number } | null>(null);
-  const [reportMonth, setReportMonth] = useState(() => {
-    const d = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000;
-    const istDate = new Date(d.getTime() + istOffset);
-    return istDate.toISOString().substring(0, 7); // YYYY-MM
-  });
+  // Monthly Report states
+  const [reportMonth, setReportMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [reportData, setReportData] = useState<any>(null);
-  const [reportLoading, setReportLoading] = useState(false);
-  const [reviewForms, setReviewForms] = useState<{ [id: string]: { description: string; category: string } }>({});
+  const [reportLoading, setReportLoading] = useState<boolean>(false);
 
   
   // Dashboard states
@@ -358,34 +351,6 @@ export const Finance: React.FC = () => {
     setTimeout(() => setToast(null), 4000);
   };
 
-  // 1. Fetch suggestions dynamically when manual creation modal values change
-  useEffect(() => {
-    if (!showTxModal || txForm.type !== 'EXPENSE' || !txForm.amount || parseFloat(txForm.amount) <= 0) {
-      setSuggestion(null);
-      return;
-    }
-
-    const delayDebounce = setTimeout(async () => {
-      try {
-        const queryDate = txForm.date ? new Date(txForm.date).toISOString() : new Date().toISOString();
-        const data = await apiRequest(`/finance/recurring-suggestions?amount=${txForm.amount}&date=${queryDate}`, { bypassCache: true });
-        if (data && data.isMatched) {
-          setSuggestion({
-            description: data.description,
-            category: data.category,
-            confidence: data.confidence
-          });
-        } else {
-          setSuggestion(null);
-        }
-      } catch (err) {
-        console.error('Failed to fetch recurring suggestion:', err);
-        setSuggestion(null);
-      }
-    }, 500);
-
-    return () => clearTimeout(delayDebounce);
-  }, [txForm.amount, txForm.type, txForm.date, showTxModal]);
 
   // 2. Fetch monthly report data
   const fetchMonthlyReport = async (monthStr: string) => {
@@ -441,26 +406,10 @@ export const Finance: React.FC = () => {
   }, [transactions]);
 
   // 5. Handlers for Review Inbox changes and approvals
-  const handleReviewChange = (id: string, field: 'description' | 'category', value: string) => {
-    setReviewForms(prev => ({
-      ...prev,
-      [id]: {
-        ...((prev[id] || { description: '', category: 'Food' })),
-        [field]: value
-      }
-    }));
-  };
-
   const handleConfirmReview = async (tx: Transaction, approvedDesc?: string, approvedCat?: string) => {
     try {
-      const formInput = reviewForms[tx.id];
-      const finalDesc = approvedDesc !== undefined ? approvedDesc : (formInput?.description || tx.description);
-      const finalCat = approvedCat !== undefined ? approvedCat : (formInput?.category || tx.category);
-
-      if (!finalDesc || finalDesc.trim() === '' || finalDesc.toLowerCase().includes('spent via sms alert')) {
-        triggerToast('error', 'Please enter a valid description for this transaction.');
-        return;
-      }
+      const finalDesc = approvedDesc?.trim() || tx.description || 'Expense';
+      const finalCat = approvedCat?.trim() || tx.category || 'Other';
 
       const payload = {
         ...tx,
@@ -477,13 +426,6 @@ export const Finance: React.FC = () => {
       // Update state locally
       setTransactions(prev => prev.map(t => t.id === tx.id ? res.transaction : t));
       triggerToast('success', 'Transaction details confirmed.');
-      
-      // Clean up form state
-      setReviewForms(prev => {
-        const copy = { ...prev };
-        delete copy[tx.id];
-        return copy;
-      });
     } catch (err: any) {
       console.error('Failed to confirm transaction review:', err);
       triggerToast('error', err.message || 'Failed to save review details.');
@@ -1160,67 +1102,32 @@ export const Finance: React.FC = () => {
                     <h4 className="text-[10px] font-extrabold uppercase text-brand-400 tracking-wider sticky top-0 bg-dark-depth-1/90 py-1 backdrop-blur-sm z-10">{day}</h4>
                     <div className="space-y-2">
                       {groupedReviewQueue[day].map(tx => {
-                        const formState = reviewForms[tx.id] || { description: tx.is_auto_filled ? tx.description : '', category: tx.is_auto_filled ? tx.category : 'Food' };
-                        const isAuto = tx.is_auto_filled;
                         const txTime = new Date(tx.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
                         return (
                           <div key={tx.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-dark-depth-2/80 rounded-2xl border border-dark-border/50 hover:border-dark-border transition-colors">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-black text-white">₹{parseFloat(tx.amount.toString()).toFixed(2)}</span>
                                 <span className="text-[10px] bg-dark-depth-3 px-2 py-0.5 rounded-lg border border-dark-border text-gray-400 font-bold">{tx.method} ({txTime})</span>
-                                {isAuto && (
-                                  <span className="text-[9px] bg-brand-500/20 text-brand-300 px-2.5 py-0.5 rounded-lg border border-brand-500/30 font-extrabold flex items-center gap-1">
-                                    <Sparkles className="w-2.5 h-2.5 text-brand-400 animate-pulse" />
-                                    AI Recurrence Auto-filled
-                                  </span>
-                                )}
+                                <span className="text-[10px] bg-brand-500/15 text-brand-300 px-2 py-0.5 rounded-lg border border-brand-500/30 font-bold">
+                                  {tx.category || 'Other'}
+                                </span>
                               </div>
-                              <p className="text-[10px] text-gray-400 italic">Original SMS alert: "{tx.description}"</p>
+                              <p className="text-xs font-medium text-gray-200 truncate" title={tx.description}>
+                                {tx.description}
+                              </p>
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
-                              {isAuto ? (
-                                <div className="flex items-center gap-2">
-                                  <div className="bg-dark-depth-3 px-3 py-1.5 rounded-xl border border-brand-500/20 text-left">
-                                    <span className="text-[9px] font-bold text-brand-400 block uppercase">✨ Auto-fill</span>
-                                    <span className="text-[10px] text-white font-extrabold">"{tx.description}"</span>
-                                    <span className="text-[9px] text-gray-400 block mt-0.5">Category: {tx.category}</span>
-                                  </div>
-                                  <button
-                                    onClick={() => handleConfirmReview(tx, tx.description, tx.category)}
-                                    className="p-2 bg-emerald-500 hover:bg-emerald-600 text-black rounded-xl transition-colors cursor-pointer"
-                                    title="Confirm suggested details"
-                                  >
-                                    <Check className="w-4 h-4 stroke-[3]" />
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <input
-                                    type="text"
-                                    placeholder="Enter description..."
-                                    value={formState.description}
-                                    onChange={(e) => handleReviewChange(tx.id, 'description', e.target.value)}
-                                    className="bg-dark-depth-3 border border-dark-border rounded-xl px-2.5 py-1.5 text-[10px] text-white placeholder-gray-500 focus:outline-none w-[150px]"
-                                  />
-                                  <select
-                                    value={formState.category}
-                                    onChange={(e) => handleReviewChange(tx.id, 'category', e.target.value)}
-                                    className="bg-dark-depth-3 border border-dark-border rounded-xl px-2 py-1.5 text-[10px] text-white focus:outline-none"
-                                  >
-                                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                                  </select>
-                                  <button
-                                    onClick={() => handleConfirmReview(tx, formState.description, formState.category)}
-                                    className="p-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl transition-colors cursor-pointer"
-                                    title="Save transaction details"
-                                  >
-                                    <Check className="w-4 h-4 stroke-[3]" />
-                                  </button>
-                                </div>
-                              )}
+                              <button
+                                onClick={() => handleConfirmReview(tx, tx.description, tx.category)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-black font-bold text-xs rounded-xl transition-colors cursor-pointer shadow-sm active:scale-95"
+                                title="Confirm transaction"
+                              >
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                <span className="text-[11px]">Confirm</span>
+                              </button>
                               <button
                                 onClick={() => {
                                   setTxForm({
@@ -1228,18 +1135,19 @@ export const Finance: React.FC = () => {
                                     date: new Date(tx.date).toISOString().substring(0, 16),
                                     amount: tx.amount.toString(),
                                     type: tx.type,
-                                    category: tx.category,
+                                    category: tx.category || 'Other',
                                     method: tx.method,
-                                    description: isAuto ? tx.description : formState.description,
+                                    description: tx.description,
                                     is_claimable: false,
                                     claim_status: 'UNCLAIMED'
                                   });
                                   setShowTxModal(true);
                                 }}
-                                className="p-2 bg-dark-depth-3 hover:bg-dark-depth-2 border border-dark-border text-gray-400 hover:text-white rounded-xl transition-colors cursor-pointer"
-                                title="Edit full record"
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-depth-3 hover:bg-dark-depth-2 border border-dark-border text-gray-300 hover:text-white text-xs rounded-xl transition-colors cursor-pointer active:scale-95"
+                                title="Edit description and category"
                               >
-                                <Edit2 className="w-4 h-4" />
+                                <Edit2 className="w-3.5 h-3.5" />
+                                <span className="text-[11px]">Edit</span>
                               </button>
                             </div>
                           </div>
@@ -2476,26 +2384,6 @@ export const Finance: React.FC = () => {
                   onChange={(e) => setTxForm({ ...txForm, description: e.target.value })}
                   className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none"
                 />
-                {suggestion && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTxForm({
-                        ...txForm,
-                        description: suggestion.description,
-                        category: suggestion.category
-                      });
-                      setSuggestion(null);
-                    }}
-                    className="mt-2 text-left w-full p-2 bg-brand-500/10 border border-brand-500/35 rounded-xl text-[10px] text-brand-300 font-bold hover:bg-brand-500/20 flex items-center justify-between cursor-pointer transition-all duration-200 animate-in fade-in slide-in-from-top-1"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5 text-brand-400 animate-pulse" />
-                      Apply suggested details: <strong>"{suggestion.description}"</strong> ({suggestion.category})
-                    </span>
-                    <span className="text-[9px] bg-brand-500/30 px-1.5 py-0.5 rounded text-white shrink-0 font-extrabold">{suggestion.confidence}% match</span>
-                  </button>
-                )}
               </div>
 
               <button

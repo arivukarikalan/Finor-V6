@@ -1314,7 +1314,7 @@ export const Orders = () => {
                   <FileText className="w-10 h-10 text-gray-700" />
                   <div>
                     <h5 className="font-bold text-white">No Trade Ledger Records</h5>
-                    <p className="mt-1 leading-relaxed">Imported Zerodha statements, synced Gmail confirmations, and manual trades will be logged here.</p>
+                    <p className="mt-1 leading-relaxed">Imported Zerodha statements, synced broker orders, and manual trades will be logged here.</p>
                   </div>
                 </div>
               ) : (
