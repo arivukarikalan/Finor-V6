@@ -2146,15 +2146,7 @@ export const More = ({
                       <span>Finor AI Coach</span>
                     </span>
 
-                    <button
-                      type="button"
-                      onClick={handleNewChat}
-                      className="px-2.5 py-1 rounded-xl border border-brand-500/30 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95"
-                      title="Start New Chat"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>New Chat</span>
-                    </button>
+
                   </div>
 
                   {/* Center Content: Model selector */}

@@ -5,7 +5,7 @@ import { supabase, supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
 import { reconcileAllStagingTrades } from '../utils/reconcile.js';
-import { getActiveSession, placeGttOrderInternal, getUserZerodhaCredentials } from '../services/orderService.js';
+import { getActiveSession, placeGttOrderInternal, getUserZerodhaCredentials, detectInstrumentMeta } from '../services/orderService.js';
 
 const { KiteConnect } = pkg;
 const router = express.Router();
@@ -407,12 +407,14 @@ router.post('/place', requireAuth, async (req, res) => {
         access_token: session.access_token
       });
 
+      const { exchange: resolvedExchange, product: resolvedProduct, symbol: cleanSymbol } = detectInstrumentMeta(stock_symbol, req.body.exchange, req.body.product);
+
       const orderParams = {
-        exchange: 'NSE',
-        tradingsymbol: stock_symbol.toUpperCase(),
+        exchange: resolvedExchange,
+        tradingsymbol: cleanSymbol,
         transaction_type: transaction_type.toUpperCase(),
         quantity: parseInt(quantity),
-        product: 'CNC',
+        product: resolvedProduct,
         order_type: order_type.toUpperCase(),
         price: order_type.toUpperCase() === 'LIMIT' ? parseFloat(price) : 0,
         validity: 'DAY'
@@ -637,7 +639,7 @@ router.post('/cancel', requireAuth, async (req, res) => {
  */
 router.post('/gtt/place', requireAuth, async (req, res) => {
   try {
-    const { stock_symbol, trigger_type, quantity, trigger_price_1, trigger_price_2, transaction_type } = req.body;
+    const { stock_symbol, trigger_type, quantity, trigger_price_1, trigger_price_2, transaction_type, exchange, product } = req.body;
 
     if (!stock_symbol || !trigger_type || !quantity || !trigger_price_1) {
       return res.status(400).json({ error: 'Missing trigger parameters.' });
@@ -650,7 +652,9 @@ router.post('/gtt/place', requireAuth, async (req, res) => {
       quantity,
       trigger_price_1,
       trigger_price_2,
-      transaction_type
+      transaction_type,
+      exchange,
+      product
     });
 
     return res.json(result);

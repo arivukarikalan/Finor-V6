@@ -1333,14 +1333,14 @@ router.post('/chat', requireAuth, async (req, res) => {
           functionDeclarations: [
             {
               name: "placeGttOrder",
-              description: "Places a Good-Till-Triggered (GTT) trigger order for buying or selling CNC stock on behalf of the user. Inform the user whether it was placed as a Paper Trade (Mock mode) or sent to Zerodha (Real mode) based on the return message.",
+              description: "Places a Good-Till-Triggered (GTT) trigger order for buying or selling equity stocks (NSE/BSE) or F&O derivatives (NFO/BFO options/futures) on behalf of the user. Automatically routes to NFO with NRML for options and futures, and NSE with CNC for equities. Inform the user whether it was placed as a Paper Trade (Mock mode) or sent to Zerodha (Real mode) based on the return message.",
               parameters: {
                 type: "OBJECT",
                 properties: {
-                  stock_symbol: { type: "STRING", description: "The ticker symbol of the stock, e.g., RELIANCE, DABUR, EIHOTEL (must be uppercase)." },
+                  stock_symbol: { type: "STRING", description: "The ticker symbol of the stock or derivative, e.g., RELIANCE, DABUR, NATIONALUM26SEP410CE, NIFTY26SEPFUT (must be uppercase)." },
                   trigger_type: { type: "STRING", enum: ["SINGLE", "OCO"], description: "The GTT trigger type. Choose OCO if both target and stoploss trigger prices are specified, otherwise SINGLE." },
                   transaction_type: { type: "STRING", enum: ["BUY", "SELL"], description: "The transaction type: BUY or SELL." },
-                  quantity: { type: "NUMBER", description: "The integer quantity of shares to buy or sell." },
+                  quantity: { type: "NUMBER", description: "The integer quantity of shares or contract lots to buy or sell." },
                   trigger_price_1: { type: "NUMBER", description: "The primary trigger price (e.g. target price, or single trigger price)." },
                   trigger_price_2: { type: "NUMBER", description: "The secondary trigger price (e.g. stop-loss price for OCO). Only required if trigger_type is OCO." }
                 },

@@ -73,8 +73,70 @@ export async function getActiveSession(userId) {
 }
 
 /**
+ * Automatically detects the appropriate Exchange and Product for an Indian market instrument.
+ * Supports NSE/BSE Equities, NFO/BFO Futures & Options, MCX Commodities, and CDS Currencies.
+ */
+export function detectInstrumentMeta(symbol, customExchange = null, customProduct = null) {
+  let sym = String(symbol || '').toUpperCase().trim();
+  let explicitExchange = null;
+
+  // Explicit exchange prefix like "NFO:SYMBOL" or "BSE:SYMBOL"
+  if (sym.includes(':')) {
+    const parts = sym.split(':');
+    explicitExchange = parts[0].toUpperCase();
+    sym = parts[1].toUpperCase();
+  }
+
+  // 1. Options: ends with strike + CE/PE (e.g., NATIONALUM26SEP410CE, NIFTY24SEP25000PE, BANKNIFTY2491252000CE)
+  const isOption = /\d+(?:CE|PE)$/i.test(sym);
+
+  // 2. Futures: ends with FUT or FUTURES (e.g., NATIONALUM26SEPFUT, NIFTY24SEPFUT)
+  const isFuture = /(?:FUT|FUTURES)$/i.test(sym);
+
+  // 3. MCX Commodities (e.g. CRUDEOIL24OCTFUT, GOLD24OCTFUT)
+  const isCommodity = /^(?:CRUDEOIL|GOLD|SILVER|COPPER|NATURALGAS|ZINC|NICKEL|ALUMINIUM|LEAD)/i.test(sym) && (isOption || isFuture || /\d{2}[A-Z]{3}/.test(sym));
+
+  // 4. Currency Derivatives (e.g. USDINR24SEPFUT)
+  const isCurrency = /^(?:USDINR|EURINR|GBPINR|JPYINR)/i.test(sym) && (isOption || isFuture || /\d{2}[A-Z]{3}/.test(sym));
+
+  // 5. BSE Index derivatives (e.g. SENSEX24SEP... or BANKEX...)
+  const isBseDeriv = /^(?:SENSEX|BANKEX)/i.test(sym) && (isOption || isFuture);
+
+  let exchange = customExchange || explicitExchange;
+  if (!exchange) {
+    if (isBseDeriv) {
+      exchange = 'BFO';
+    } else if (isCommodity) {
+      exchange = 'MCX';
+    } else if (isCurrency) {
+      exchange = 'CDS';
+    } else if (isOption || isFuture) {
+      exchange = 'NFO';
+    } else if (/^\d{6}$/.test(sym) || sym.endsWith('.BO')) {
+      exchange = 'BSE';
+    } else {
+      exchange = 'NSE';
+    }
+  }
+
+  const isDerivative = ['NFO', 'BFO', 'MCX', 'CDS'].includes(exchange);
+  let product = customProduct;
+  if (!product) {
+    product = isDerivative ? 'NRML' : 'CNC';
+  }
+
+  return {
+    exchange,
+    symbol: sym,
+    product,
+    isDerivative
+  };
+}
+
+/**
  * Internal business logic to place a Good-Till-Triggered order.
  * Works for both REAL (Zerodha Kite) and MOCK (Paper trading) configurations.
+ * Supports Equity (NSE/BSE) and Derivatives (NFO/BFO/MCX/CDS).
  */
 export async function placeGttOrderInternal({
   userId,
@@ -83,14 +145,17 @@ export async function placeGttOrderInternal({
   quantity,
   trigger_price_1,
   trigger_price_2,
-  transaction_type
+  transaction_type,
+  exchange: customExchange,
+  product: customProduct
 }) {
   const qtyVal = parseInt(quantity);
-  const symbolUpper = stock_symbol.toUpperCase();
   const typeUpper = trigger_type.toUpperCase(); // SINGLE or OCO
   const price1 = parseFloat(trigger_price_1);
   const price2 = trigger_price_2 ? parseFloat(trigger_price_2) : null;
   const actionUpper = (transaction_type || 'SELL').toUpperCase();
+
+  let { exchange: resolvedExchange, product: resolvedProduct, symbol: symbolUpper } = detectInstrumentMeta(stock_symbol, customExchange, customProduct);
 
   const session = await getActiveSession(userId);
 
@@ -104,19 +169,46 @@ export async function placeGttOrderInternal({
 
     // Fetch current LTP for base price comparison directly from Zerodha
     let currentLTP = price1;
+    let ltpResolved = false;
+
+    // 1. Try primary resolved exchange
     try {
-      const ltpRes = await kc.getLTP([`NSE:${symbolUpper}`]);
-      if (ltpRes && ltpRes[`NSE:${symbolUpper}`]) {
-        currentLTP = ltpRes[`NSE:${symbolUpper}`].last_price;
+      const ltpKey = `${resolvedExchange}:${symbolUpper}`;
+      const ltpRes = await kc.getLTP([ltpKey]);
+      if (ltpRes && ltpRes[ltpKey] && ltpRes[ltpKey].last_price) {
+        currentLTP = ltpRes[ltpKey].last_price;
+        ltpResolved = true;
       }
     } catch (ltpErr) {
-      console.error('[OrderService GTT] Error fetching LTP from Zerodha:', ltpErr.message);
-      // Fallback to Yahoo Finance
+      console.warn(`[OrderService GTT] Primary LTP check failed for ${resolvedExchange}:${symbolUpper}:`, ltpErr.message);
+    }
+
+    // 2. If not resolved, probe alternate exchanges to find exact instrument exchange
+    if (!ltpResolved) {
+      const candidateExchanges = ['NFO', 'NSE', 'BSE', 'MCX', 'BFO', 'CDS'].filter(e => e !== resolvedExchange);
+      for (const altEx of candidateExchanges) {
+        try {
+          const altKey = `${altEx}:${symbolUpper}`;
+          const altRes = await kc.getLTP([altKey]);
+          if (altRes && altRes[altKey] && altRes[altKey].last_price) {
+            currentLTP = altRes[altKey].last_price;
+            resolvedExchange = altEx;
+            resolvedProduct = ['NFO', 'BFO', 'MCX', 'CDS'].includes(altEx) ? 'NRML' : 'CNC';
+            ltpResolved = true;
+            console.log(`[OrderService GTT] Dynamically identified instrument on ${altEx}:${symbolUpper} (LTP: ₹${currentLTP})`);
+            break;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 3. Fallback to Yahoo Finance if still not resolved (equity only)
+    if (!ltpResolved) {
       try {
         const ltpData = await fetchMultipleLTPs([symbolUpper]);
         currentLTP = ltpData[symbolUpper]?.ltp || price1;
       } catch (yfErr) {
-        console.error('[OrderService GTT] Error fetching LTP from Yahoo Finance:', yfErr.message);
+        console.warn('[OrderService GTT] Fallback LTP error from Yahoo Finance:', yfErr.message);
       }
     }
 
@@ -124,32 +216,32 @@ export async function placeGttOrderInternal({
     if (typeUpper === 'OCO' && price2 !== null) {
       // Stoploss order first (Index 0)
       gttOrders.push({
-        exchange: 'NSE',
+        exchange: resolvedExchange,
         tradingsymbol: symbolUpper,
         transaction_type: actionUpper,
         quantity: qtyVal,
-        product: 'CNC',
+        product: resolvedProduct,
         order_type: 'LIMIT',
         price: price2 // Stoploss limit price
       });
       // Target order second (Index 1)
       gttOrders.push({
-        exchange: 'NSE',
+        exchange: resolvedExchange,
         tradingsymbol: symbolUpper,
         transaction_type: actionUpper,
         quantity: qtyVal,
-        product: 'CNC',
+        product: resolvedProduct,
         order_type: 'LIMIT',
         price: price1 // Target limit price
       });
     } else {
       // Single trigger GTT order
       gttOrders.push({
-        exchange: 'NSE',
+        exchange: resolvedExchange,
         tradingsymbol: symbolUpper,
         transaction_type: actionUpper,
         quantity: qtyVal,
-        product: 'CNC',
+        product: resolvedProduct,
         order_type: 'LIMIT',
         price: price1
       });
@@ -159,7 +251,7 @@ export async function placeGttOrderInternal({
     const gttParams = {
       trigger_type: typeUpper === 'OCO' ? kc.GTT_TYPE_OCO : kc.GTT_TYPE_SINGLE,
       tradingsymbol: symbolUpper,
-      exchange: 'NSE',
+      exchange: resolvedExchange,
       trigger_values: typeUpper === 'OCO' ? [price2, price1] : [price1],
       orders: gttOrders,
       last_price: currentLTP
@@ -186,7 +278,9 @@ export async function placeGttOrderInternal({
       status: 'SUCCESS',
       mode: 'REAL',
       gtt_id: result.trigger_id,
-      message: `GTT trigger registered on Zerodha successfully. ID: ${result.trigger_id}`
+      exchange: resolvedExchange,
+      product: resolvedProduct,
+      message: `GTT trigger registered on Zerodha (${resolvedExchange} - ${resolvedProduct}) successfully. ID: ${result.trigger_id}`
     };
 
   } else {
@@ -210,7 +304,9 @@ export async function placeGttOrderInternal({
       status: 'SUCCESS',
       mode: 'MOCK',
       gtt_id: mockGttId,
-      message: `Mock GTT Trigger placed successfully.`
+      exchange: resolvedExchange,
+      product: resolvedProduct,
+      message: `Mock GTT Trigger placed successfully (${resolvedExchange} - ${resolvedProduct}).`
     };
   }
 }

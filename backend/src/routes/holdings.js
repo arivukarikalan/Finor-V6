@@ -1,4 +1,5 @@
 import express from 'express';
+import pkg from 'kiteconnect';
 import { supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import { fetchMultipleLTPs } from '../services/yahooFinance.js';
@@ -6,7 +7,9 @@ import { recalculateHoldings } from './trades.js';
 import { priceCache } from '../services/priceCache.js';
 import { getStockSector } from '../services/sectorService.js';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { getActiveSession, getUserZerodhaCredentials, detectInstrumentMeta } from '../services/orderService.js';
 
+const { KiteConnect } = pkg;
 const router = express.Router();
 
 // Helper to get all previous closes from system_settings table (user separated)
@@ -211,15 +214,47 @@ router.post('/sync-prices', requireAuth, async (req, res) => {
 
 /**
  * GET /api/holdings/ltp/:symbol
- * Fetch a single stock quote LTP from Yahoo Finance
+ * Fetch a single stock or F&O derivative quote LTP from Zerodha (if connected) or Yahoo Finance
  */
 router.get('/ltp/:symbol', requireAuth, async (req, res) => {
   try {
     const symbol = req.params.symbol.toUpperCase().trim();
-    const ltpData = await fetchMultipleLTPs([symbol]);
-    const price = ltpData[symbol]?.ltp || null;
-    const high52 = ltpData[symbol]?.fiftyTwoWeekHigh || null;
-    const low52 = ltpData[symbol]?.fiftyTwoWeekLow || null;
+    let price = null;
+    let high52 = null;
+    let low52 = null;
+
+    // 1. If user has active Zerodha session, query KiteConnect LTP first (supports F&O and Equities)
+    try {
+      const session = await getActiveSession(req.user.id);
+      if (session) {
+        const credentials = await getUserZerodhaCredentials(req.user.id);
+        const kc = new KiteConnect({
+          api_key: credentials.apiKey || process.env.ZERODHA_API_KEY,
+          access_token: session.access_token
+        });
+        const meta = detectInstrumentMeta(symbol);
+        const ltpKey = `${meta.exchange}:${meta.symbol}`;
+        const ltpRes = await kc.getLTP([ltpKey]);
+        if (ltpRes && ltpRes[ltpKey] && ltpRes[ltpKey].last_price) {
+          price = ltpRes[ltpKey].last_price;
+        }
+      }
+    } catch (kcErr) {
+      // Fallback silently
+    }
+
+    // 2. Fallback to Yahoo Finance (primarily for NSE/BSE cash equities)
+    if (!price) {
+      try {
+        const ltpData = await fetchMultipleLTPs([symbol]);
+        price = ltpData[symbol]?.ltp || null;
+        high52 = ltpData[symbol]?.fiftyTwoWeekHigh || null;
+        low52 = ltpData[symbol]?.fiftyTwoWeekLow || null;
+      } catch (yfErr) {
+        console.warn(`[HoldingsRoute] Fallback LTP fetch failed for ${symbol}:`, yfErr.message);
+      }
+    }
+
     res.json({ 
       symbol, 
       ltp: price,
