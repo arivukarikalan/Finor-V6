@@ -12,7 +12,7 @@ import { Finance } from './pages/Finance';
 import { AdminPortal } from './pages/AdminPortal';
 import { ProfileSettings } from './pages/ProfileSettings';
 import { BuyConsiderations } from './pages/BuyConsiderations';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Megaphone, X } from 'lucide-react';
 import { ToastContainer } from './components/ToastContainer';
 import { FloatingAssistantBar } from './components/FloatingAssistantBar';
 import { useToastStore } from './context/toastStore';
@@ -90,6 +90,27 @@ function App() {
       setActiveTab('dashboard');
     }
   }, [activeTab, role]);
+
+  const [broadcastBanner, setBroadcastBanner] = useState<{ message: string; severity: 'INFO' | 'WARNING' | 'SUCCESS'; active: boolean } | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // Fetch global announcement broadcast
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const { apiRequest } = await import('./services/api');
+        const res = await apiRequest('/admin/broadcast');
+        if (res?.banner && res.banner.active && res.banner.message) {
+          setBroadcastBanner(res.banner);
+        } else {
+          setBroadcastBanner(null);
+        }
+      } catch {
+        // Silently skip
+      }
+    })();
+  }, [user]);
 
   useEffect(() => {
     initialize();
@@ -171,6 +192,27 @@ function App() {
     <>
       <Navigation activeTab={activeTab} setActiveTab={setActiveTab}>
         <div className={`w-full transition-opacity duration-200 animate-in fade-in ${activeTab === 'ai-chat' ? 'h-full flex-1 flex flex-col min-h-0' : ''}`}>
+          {broadcastBanner && broadcastBanner.active && !bannerDismissed && (
+            <div className={`mb-4 px-4 py-3 rounded-2xl flex items-center justify-between gap-3 text-xs font-semibold animate-in slide-in-from-top-2 border ${
+              broadcastBanner.severity === 'WARNING'
+                ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                : broadcastBanner.severity === 'SUCCESS'
+                  ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                  : 'bg-brand-500/15 border-brand-500/30 text-brand-300'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                <Megaphone className="w-4 h-4 shrink-0" />
+                <span>{broadcastBanner.message}</span>
+              </div>
+              <button 
+                onClick={() => setBannerDismissed(true)} 
+                className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                title="Dismiss banner"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
           {activeTab === 'dashboard' && <Dashboard setActiveTab={setActiveTab} />}
           {activeTab === 'holdings' && <Holdings />}
           {activeTab === 'orders' && <Orders />}
