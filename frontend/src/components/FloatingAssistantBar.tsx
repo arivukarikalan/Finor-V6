@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Brain, Sparkles, X, Send, Bot, User, ArrowUpRight, RefreshCw } from 'lucide-react';
+import { Brain, Sparkles, X, Send, Bot, User, ArrowUpRight, RefreshCw, Paperclip } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import type { TabId } from './Navigation';
 
@@ -11,6 +11,50 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: string;
+  imagePreview?: string;
+}
+
+interface UploadedImage {
+  data: string; // base64 string
+  mimeType: string;
+  previewUrl: string;
+}
+
+const DRAFT_KEY = 'finor_ai_assistant_draft';
+const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours expiry ("delete one day once")
+
+function loadDraftMessage(): string {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return '';
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.text === 'string' && parsed.timestamp) {
+      if (Date.now() - parsed.timestamp > DRAFT_MAX_AGE_MS) {
+        localStorage.removeItem(DRAFT_KEY);
+        return '';
+      }
+      return parsed.text;
+    }
+  } catch {
+    localStorage.removeItem(DRAFT_KEY);
+  }
+  return '';
+}
+
+function saveDraftMessage(text: string) {
+  try {
+    if (!text.trim()) {
+      localStorage.removeItem(DRAFT_KEY);
+    } else {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ text, timestamp: Date.now() }));
+    }
+  } catch {}
+}
+
+function clearDraftMessage() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {}
 }
 
 export const FloatingAssistantBar: React.FC<FloatingAssistantBarProps> = ({ setActiveTab }) => {
@@ -18,13 +62,15 @@ export const FloatingAssistantBar: React.FC<FloatingAssistantBarProps> = ({ setA
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: '👋 Hi! I am **Finor AI Assistant**. I can analyze your spending, identify avoidable expenses (like junk food & impulse shopping), track company reimbursements, and review your portfolio!',
+      content: '👋 Hi! I am **Finor AI Assistant**. I can analyze your spending, identify avoidable expenses (like junk food & impulse shopping), track company reimbursements, and review your portfolio! You can also upload stock charts or receipt screenshots for instant visual analysis.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(() => loadDraftMessage());
+  const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(null);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isLightMode, setIsLightMode] = useState<boolean>(() => localStorage.getItem('finor_theme') === 'light');
 
@@ -46,25 +92,70 @@ export const FloatingAssistantBar: React.FC<FloatingAssistantBarProps> = ({ setA
     }
   }, [messages, isOpen]);
 
+  const handleInputChange = (val: string) => {
+    setInput(val);
+    saveDraftMessage(val);
+  };
+
+  const handleImageFile = (file: File) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64Data = result.split(',')[1];
+      setSelectedImage({
+        data: base64Data,
+        mimeType: file.type,
+        previewUrl: result
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          handleImageFile(file);
+        }
+      }
+    }
+  };
+
   const handleSend = async (customPrompt?: string) => {
     const textToSend = customPrompt || input.trim();
-    if (!textToSend || loading) return;
+    if ((!textToSend && !selectedImage) || loading) return;
+
+    const currentImg = selectedImage;
+    const promptMessage = textToSend || 'Please analyze this uploaded image in the context of my portfolio and finances.';
 
     const userMsg: Message = {
       role: 'user',
-      content: textToSend,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      content: promptMessage,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      imagePreview: currentImg?.previewUrl
     };
 
     setMessages(prev => [...prev, userMsg]);
-    if (!customPrompt) setInput('');
+    if (!customPrompt) {
+      setInput('');
+      clearDraftMessage();
+    }
+    setSelectedImage(null);
     setLoading(true);
 
     try {
       const res: any = await apiRequest('/assistant/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: textToSend })
+        body: JSON.stringify({ 
+          message: promptMessage,
+          image: currentImg ? { data: currentImg.data, mimeType: currentImg.mimeType } : undefined
+        })
       });
 
       const assistantMsg: Message = {
@@ -179,6 +270,15 @@ export const FloatingAssistantBar: React.FC<FloatingAssistantBarProps> = ({ setA
                         ? 'bg-white border border-slate-200 text-slate-800 rounded-bl-none whitespace-pre-wrap shadow-sm' 
                         : 'bg-dark-depth-2 border border-dark-border text-gray-200 rounded-bl-none whitespace-pre-wrap'
                   }`}>
+                    {msg.imagePreview && (
+                      <div className="mb-2">
+                        <img 
+                          src={msg.imagePreview} 
+                          alt="User upload" 
+                          className="max-h-44 max-w-full rounded-xl object-contain border border-white/20 shadow-sm" 
+                        />
+                      </div>
+                    )}
                     {msg.content}
                     {msg.timestamp && (
                       <span className={`block text-[8px] mt-1.5 font-mono ${
@@ -215,15 +315,67 @@ export const FloatingAssistantBar: React.FC<FloatingAssistantBarProps> = ({ setA
               <div ref={messagesEndRef} />
             </div>
 
+            {/* Image Preview if selected */}
+            {selectedImage && (
+              <div className={`px-3 py-2 border-t flex items-center justify-between ${
+                isLightMode ? 'bg-slate-100 border-slate-200' : 'bg-dark-depth-3/80 border-dark-border/60'
+              }`}>
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <img 
+                    src={selectedImage.previewUrl} 
+                    alt="Upload preview" 
+                    className="w-10 h-10 rounded-lg object-cover border border-brand-500/40" 
+                  />
+                  <div className="text-[10px] truncate">
+                    <span className="font-bold text-brand-400 block truncate">Image Attached</span>
+                    <span className="text-gray-400 text-[9px]">Ready for visual AI analysis</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedImage(null)}
+                  className="p-1 rounded-full text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+                  title="Remove image"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             {/* Input Bar */}
             <form onSubmit={(e) => { e.preventDefault(); handleSend(); }} className={`p-3 border-t flex items-center gap-2 ${
               isLightMode ? 'border-slate-200 bg-white' : 'border-dark-border/60 bg-dark-depth-2/40'
             }`}>
               <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleImageFile(file);
+                  e.target.value = '';
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className={`p-2.5 rounded-xl border transition-colors cursor-pointer shrink-0 ${
+                  selectedImage 
+                    ? 'bg-brand-500/20 border-brand-500 text-brand-400' 
+                    : (isLightMode ? 'bg-slate-100 border-slate-200 text-slate-500 hover:bg-slate-200' : 'bg-dark-depth-3 border-dark-border/60 text-gray-400 hover:text-white')
+                }`}
+                title="Attach chart or receipt image"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+
+              <input
                 type="text"
-                placeholder="Ask Finor AI about expenses, budget, portfolio..."
+                placeholder="Ask Finor AI about expenses, portfolio, charts..."
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value)}
+                onPaste={handlePaste}
                 className={`flex-1 border rounded-xl px-3.5 py-2.5 text-xs focus:outline-none focus:border-brand-500 ${
                   isLightMode 
                     ? 'bg-slate-100 border-slate-200 text-slate-900 placeholder-slate-400' 
@@ -232,7 +384,7 @@ export const FloatingAssistantBar: React.FC<FloatingAssistantBarProps> = ({ setA
               />
               <button
                 type="submit"
-                disabled={!input.trim() || loading}
+                disabled={(!input.trim() && !selectedImage) || loading}
                 className="p-2.5 rounded-xl bg-brand-500 hover:bg-brand-600 text-white cursor-pointer transition-colors disabled:opacity-50"
               >
                 <Send className="w-4 h-4" />

@@ -29,6 +29,10 @@ const getInitialTab = (): TabId => {
   if (validTabs.includes(path as TabId)) {
     return path as TabId;
   }
+  const savedTab = localStorage.getItem('finor_active_tab') as TabId;
+  if (savedTab && validTabs.includes(savedTab)) {
+    return savedTab;
+  }
   return 'dashboard';
 };
 
@@ -36,12 +40,26 @@ function App() {
   const { user, loading, initialize, role } = useAuthStore();
   const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
 
-  // Synchronize browser address bar with activeTab
+  // Synchronize browser address bar and persist activeTab across browser sessions/tab switches
   useEffect(() => {
+    localStorage.setItem('finor_active_tab', activeTab);
     if (window.location.pathname !== `/${activeTab}`) {
       window.history.pushState(null, '', `/${activeTab}`);
     }
   }, [activeTab]);
+
+  // Sync activeTab when user navigates using browser back/forward or mobile swipe gestures
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.replace(/^\/+/, '').toLowerCase() as TabId;
+      const validTabs: TabId[] = ['dashboard', 'holdings', 'orders', 'pnl', 'insights', 'ai-chat', 'finance', 'more', 'admin', 'profile', 'buy-scanner'];
+      if (validTabs.includes(path)) {
+        setActiveTab(path);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Handle incoming Zerodha Kite OAuth request_token exchange on root boot
   useEffect(() => {

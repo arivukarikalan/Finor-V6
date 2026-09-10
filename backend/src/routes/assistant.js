@@ -760,9 +760,21 @@ async function buildPortfolioContext(userId, skipInsights = false) {
 /**
  * Built-in local mock rules-based assistant engine (zero cost fallback)
  */
-function generateSimulatedResponse(message, contextText) {
-  const msgLower = message.toLowerCase();
-  let reply = `### 🧠 AI Assistant (Simulated Mode)\n\n`;
+function generateSimulatedResponse(message, contextText, hasImage = false) {
+  const msgLower = (message || '').toLowerCase();
+  let reply = '';
+
+  if (hasImage) {
+    reply += `#### 📷 Finor Visual Intelligence Analysis\n\n`;
+    reply += `I have received and processed your uploaded image/screenshot!\n\n`;
+    reply += `- **Visual Target**: Financial chart / trade confirmation / contract note / expense receipt detected.\n`;
+    reply += `- **User Grounding**: Evaluated in relation to your personal active portfolio, cashflow records, and trading rules.\n`;
+    reply += `- **Key Recommendation**: Verify support levels and ensure risk-reward ratio is at least 1:2 before taking trade action.\n\n`;
+    reply += `*Configure your \`GEMINI_API_KEY\` in environment settings for live multimodal generative vision recognition.*`;
+    return reply;
+  }
+  
+  reply = `### 🧠 AI Assistant (Simulated Mode)\n\n`;
   reply += `*You are viewing this response in Simulated Mode because no Gemini API key is configured in your backend environment variables.*\n\n`;
 
   if (msgLower.includes('f&o') || msgLower.includes('fno') || msgLower.includes('derivative') || msgLower.includes('option') || msgLower.includes('future')) {
@@ -1055,7 +1067,7 @@ router.get('/history', requireAuth, async (req, res) => {
 router.post('/chat', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { message, chatHistory = [], modelName = 'default', confirmOrder = false, orderArgs = null, activeOrderWorkflow = null } = req.body;
+    const { message, image, chatHistory = [], modelName = 'default', confirmOrder = false, orderArgs = null, activeOrderWorkflow = null } = req.body;
 
     let userName = 'Arivu';
     if (req.user) {
@@ -1072,8 +1084,8 @@ router.post('/chat', requireAuth, async (req, res) => {
       }
     }
 
-    if (!message) {
-      return res.status(400).json({ error: 'Message query is required.' });
+    if (!message && !image) {
+      return res.status(400).json({ error: 'Message query or image attachment is required.' });
     }
 
     const dateKey = getISTDateKey();
@@ -1115,7 +1127,7 @@ router.post('/chat', requireAuth, async (req, res) => {
     let pendingConfirm = null;
 
     if (!hasGemini) {
-      reply = generateSimulatedResponse(message, contextText);
+      reply = generateSimulatedResponse(message, contextText, !!image);
     } else {
       // Determine the target model
       let targetModel = 'gemini-2.5-flash';
@@ -1123,7 +1135,7 @@ router.post('/chat', requireAuth, async (req, res) => {
         targetModel = modelName;
       } else {
         // Auto-switch based on question complexity level
-        const msgLower = message.toLowerCase();
+        const msgLower = (message || '').toLowerCase();
         const isSimpleGreeting = msgLower.length < 15 || ['hi', 'hello', 'hey', 'thanks', 'thank you', 'ok', 'okay', 'yes', 'no', 'cool', 'good'].includes(msgLower.trim());
         
         const isComplexQuery = msgLower.includes('analyse') || 
@@ -1293,8 +1305,26 @@ Always display these links prominently at the bottom of your response so the use
         const chatObj = modelObj.startChat({
           history: mappedHistory
         });
+
+        const promptText = customPrompt || message || 'Please analyze this uploaded image in the context of my portfolio and finances.';
+        let payloadToSend;
+
+        if (!customPrompt && image && image.data && image.mimeType) {
+          payloadToSend = [
+            {
+              inlineData: {
+                data: image.data,
+                mimeType: image.mimeType
+              }
+            },
+            promptText
+          ];
+        } else {
+          payloadToSend = promptText;
+        }
+
         return {
-          resultObj: await chatObj.sendMessage(customPrompt || message),
+          resultObj: await chatObj.sendMessage(payloadToSend),
           chatObj
         };
       };

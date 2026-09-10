@@ -24,8 +24,13 @@ import {
   X,
   TrendingUp,
   TrendingDown,
-  Coins
+  Coins,
+  Sun,
+  Compass,
+  Zap,
+  ChevronRight
 } from 'lucide-react';
+import { PremarketReportModal, type PremarketReport } from '../components/PremarketReportModal';
 
 interface HistoryPoint {
   month: string;
@@ -130,6 +135,27 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
     }
   });
 
+  const [premarketReport, setPremarketReport] = useState<PremarketReport | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_premarket_report') || 'null');
+    } catch {
+      return null;
+    }
+  });
+  const [showPremarketModal, setShowPremarketModal] = useState(false);
+
+  const fetchPremarketData = async () => {
+    try {
+      const res = await apiRequest('/premarket/today');
+      if (res && res.report) {
+        setPremarketReport(res.report);
+        localStorage.setItem('finor_cached_premarket_report', JSON.stringify(res.report));
+      }
+    } catch (err) {
+      console.error('Failed to load premarket report:', err);
+    }
+  };
+
   const fetchMutualFundsData = async () => {
     try {
       const res = await apiRequest('/mutual-funds');
@@ -191,11 +217,12 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
     }
   };
 
-  // Fetch holdings, events and trades once on mount
+  // Fetch holdings, events, mutual funds, and premarket report once on mount
   useEffect(() => {
     fetchHoldingsData();
     fetchEventsData();
     fetchMutualFundsData();
+    fetchPremarketData();
 
     const handleCacheUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -206,6 +233,8 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
         fetchEventsData();
       } else if (endpoint === '/mutual-funds' || endpoint === '/portfolio/summary') {
         fetchMutualFundsData();
+      } else if (endpoint === '/premarket/today' && customEvent.detail?.data?.report) {
+        setPremarketReport(customEvent.detail.data.report);
       }
     };
     window.addEventListener('finor-cache-updated', handleCacheUpdate);
@@ -264,6 +293,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
       fetchHoldingsData();
       fetchHistoryData();
       fetchEventsData();
+      fetchPremarketData();
     };
 
     window.addEventListener('portfolio-sync-complete', handleSyncComplete);
@@ -321,6 +351,91 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
         <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm font-medium flex items-start gap-2.5">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {/* ─── 🌅 8:00 AM Pre-Market Intelligence Pulse Card ─── */}
+      {premarketReport && (
+        <div className="relative overflow-hidden glass-panel border border-brand-500/25 bg-gradient-to-r from-brand-950/40 via-dark-depth-2/80 to-dark-depth-1/90 rounded-3xl p-5 sm:p-6 shadow-2xl shadow-brand-950/30">
+          <div className="absolute top-0 right-0 w-96 h-96 bg-brand-500/10 rounded-full blur-3xl pointer-events-none -mr-28 -mt-28" />
+          
+          <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+            {/* Left Content */}
+            <div className="space-y-2.5 flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-extrabold uppercase tracking-wider shadow-sm">
+                  <Sun className="w-3.5 h-3.5 animate-pulse text-amber-400" />
+                  8:00 AM Market Pulse
+                </span>
+                <span className="text-[11px] text-gray-400 font-medium">
+                  {premarketReport.date || 'Today'}
+                </span>
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                  premarketReport.market_bias?.includes('BULLISH')
+                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400'
+                    : premarketReport.market_bias?.includes('BEARISH')
+                      ? 'bg-rose-500/15 border-rose-500/30 text-rose-400'
+                      : 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400'
+                }`}>
+                  {premarketReport.market_bias?.includes('BULLISH') ? (
+                    <TrendingUp className="w-3 h-3 text-emerald-400" />
+                  ) : premarketReport.market_bias?.includes('BEARISH') ? (
+                    <TrendingDown className="w-3 h-3 text-rose-400" />
+                  ) : (
+                    <Compass className="w-3 h-3 text-indigo-400" />
+                  )}
+                  {premarketReport.market_bias}
+                </span>
+              </div>
+
+              <div>
+                <h2 className="text-base sm:text-lg font-extrabold text-white leading-snug">
+                  {premarketReport.headline}
+                </h2>
+                <p className="text-xs text-gray-400 mt-1 line-clamp-2">
+                  {premarketReport.opening_estimate}
+                </p>
+              </div>
+
+              {/* Global indices & Holdings Pills */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {premarketReport.global_cues?.slice(0, 4).map((cue) => {
+                  const isUp = cue.data.change >= 0;
+                  return (
+                    <span 
+                      key={cue.key} 
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-dark-depth-3/80 border border-dark-border/60 text-[11px] font-medium text-gray-300"
+                    >
+                      <span className="text-gray-400 font-bold">{cue.name}:</span>
+                      <span className={isUp ? 'text-emerald-400 font-semibold' : 'text-rose-400 font-semibold'}>
+                        {isUp ? '+' : ''}{cue.data.changePct.toFixed(2)}%
+                      </span>
+                    </span>
+                  );
+                })}
+                {premarketReport.holdings_radar && premarketReport.holdings_radar.length > 0 && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-brand-500/15 border border-brand-500/30 text-[11px] font-bold text-brand-300">
+                    <Zap className="w-3 h-3 text-brand-400" />
+                    {premarketReport.holdings_radar.length} Holdings in Radar
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Right Action CTA */}
+            <div className="flex-shrink-0 flex flex-row lg:flex-col items-center lg:items-end justify-between lg:justify-center gap-2.5 pt-3 lg:pt-0 border-t lg:border-t-0 border-dark-border/40">
+              <button
+                onClick={() => setShowPremarketModal(true)}
+                className="w-full sm:w-auto px-5 py-2.5 rounded-2xl bg-gradient-to-r from-brand-500 to-indigo-600 hover:from-brand-600 hover:to-indigo-700 text-white font-bold text-xs shadow-lg shadow-brand-500/25 flex items-center justify-center gap-2 transition-all duration-200 cursor-pointer group hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <span>Read Full 8:00 AM Briefing</span>
+                <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+              <span className="text-[10px] text-gray-500 font-medium hidden sm:inline-block">
+                Daily news, levels & holdings plan
+              </span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -742,6 +857,14 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
           </div>
         </div>
       )}
+
+      {/* ─── 8:00 AM Daily Pre-Market Report Modal ─── */}
+      <PremarketReportModal
+        isOpen={showPremarketModal}
+        report={premarketReport}
+        onClose={() => setShowPremarketModal(false)}
+        setActiveTab={setActiveTab}
+      />
 
     </div>
   );

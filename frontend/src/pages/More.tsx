@@ -31,7 +31,8 @@ import {
   Copy,
   Check,
   Search,
-  Download
+  Download,
+  X
 } from 'lucide-react';
 import { marked } from 'marked';
 
@@ -378,6 +379,49 @@ const MessageActions = ({
   );
 };
 
+interface UploadedImage {
+  data: string; // base64 string
+  mimeType: string;
+  previewUrl: string;
+}
+
+const DRAFT_KEY = 'finor_ai_assistant_draft';
+const DRAFT_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours ("delete one day once")
+
+function loadDraftMessage(): string {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return '';
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed.text === 'string' && parsed.timestamp) {
+      if (Date.now() - parsed.timestamp > DRAFT_MAX_AGE_MS) {
+        localStorage.removeItem(DRAFT_KEY);
+        return '';
+      }
+      return parsed.text;
+    }
+  } catch {
+    localStorage.removeItem(DRAFT_KEY);
+  }
+  return '';
+}
+
+function saveDraftMessage(text: string) {
+  try {
+    if (!text.trim()) {
+      localStorage.removeItem(DRAFT_KEY);
+    } else {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({ text, timestamp: Date.now() }));
+    }
+  } catch {}
+}
+
+function clearDraftMessage() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {}
+}
+
 interface ChatSession {
   id: string;
   title: string;
@@ -387,6 +431,7 @@ interface ChatSession {
     content: string;
     engine?: string;
     timestamp?: string;
+    imagePreview?: string;
     responseTime?: number;
     pendingConfirm?: {
       tool: string;
@@ -593,6 +638,7 @@ export const More = ({
     content: string; 
     engine?: string; 
     timestamp?: string;
+    imagePreview?: string;
     responseTime?: number;
     pendingConfirm?: {
       tool: string;
@@ -616,7 +662,44 @@ export const More = ({
     trigger_price_2?: number;
   } | null>(null);
 
-  const [chatInput, setChatInput] = useState<string>('');
+  const [chatInput, setChatInput] = useState<string>(() => loadDraftMessage());
+  const [chatImage, setChatImage] = useState<UploadedImage | null>(null);
+  const chatFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleChatInputChange = (val: string) => {
+    setChatInput(val);
+    saveDraftMessage(val);
+  };
+
+  const handleChatImageFile = (file: File) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const base64Data = result.split(',')[1];
+      setChatImage({
+        data: base64Data,
+        mimeType: file.type,
+        previewUrl: result
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleChatPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          handleChatImageFile(file);
+        }
+      }
+    }
+  };
+
   const [activeQuery, setActiveQuery] = useState<string>('');
   const [sendingChat, setSendingChat] = useState<boolean>(false);
   const [usageRemaining, setUsageRemaining] = useState<number | null>(null);
@@ -810,44 +893,64 @@ export const More = ({
   }, [activeSubTab]);
 
   const handleSendChat = async (textToSend?: string, confirmArgs?: any) => {
+    const currentImg = chatImage;
     const text = (textToSend || chatInput).trim();
-    if (!text) return;
+    if (!text && !currentImg) return;
+
+    const promptMessage = text || 'Please analyze this uploaded image in the context of my portfolio and finances.';
 
     // Check if we are in an active GTT order workflow and the user types a confirmation/cancellation keyword
     if (activeOrderWorkflow && !confirmArgs) {
-      const cleanText = text.toLowerCase().replace(/[.,!]/g, '').trim();
+      const cleanText = promptMessage.toLowerCase().replace(/[.,!]/g, '').trim();
       const isAffirmation = ['yes', 'proceed', 'confirm', 'place order', 'do it', 'yup', 'yeah', 'go ahead', 'ok', 'okay'].includes(cleanText);
       const isCancellation = ['no', 'cancel', 'stop', 'dont', "don't", 'reject'].includes(cleanText);
       
       if (isAffirmation) {
         const msgIdx = messages.findLastIndex(m => m.pendingConfirm && m.pendingConfirm.tool === 'placeGttOrder');
         if (msgIdx !== -1) {
-          if (!textToSend) setChatInput('');
+          if (!textToSend) {
+            setChatInput('');
+            clearDraftMessage();
+          }
+          setChatImage(null);
           await handleConfirmOrder(activeOrderWorkflow, msgIdx);
           return;
         }
       } else if (isCancellation) {
         const msgIdx = messages.findLastIndex(m => m.pendingConfirm && m.pendingConfirm.tool === 'placeGttOrder');
         if (msgIdx !== -1) {
-          if (!textToSend) setChatInput('');
+          if (!textToSend) {
+            setChatInput('');
+            clearDraftMessage();
+          }
+          setChatImage(null);
           handleCancelOrder(msgIdx);
           return;
         }
       }
     }
 
-    if (!textToSend) setChatInput('');
-    setActiveQuery(text);
+    if (!textToSend) {
+      setChatInput('');
+      clearDraftMessage();
+    }
+    setChatImage(null);
+    setActiveQuery(promptMessage);
 
     const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-    const userMsg = { role: 'user' as const, content: text, timestamp: timeStr };
+    const userMsg = { 
+      role: 'user' as const, 
+      content: promptMessage, 
+      timestamp: timeStr,
+      imagePreview: currentImg?.previewUrl
+    };
 
     let currentChatId = activeChatId;
     let currentChats = [...chats];
 
     // If no active chat, create a new one (Auto-naming)
     if (!currentChatId) {
-      const words = text.split(/\s+/);
+      const words = promptMessage.split(/\s+/);
       const title = words.slice(0, 5).join(' ') + (words.length > 5 ? '...' : '');
       const newId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
       
@@ -887,7 +990,8 @@ export const More = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: text,
+          message: promptMessage,
+          image: currentImg ? { data: currentImg.data, mimeType: currentImg.mimeType } : undefined,
           chatHistory: historyToSend.slice(0, -1), // exclude the user message just added
           modelName: selectedModel,
           confirmOrder: !!confirmArgs,
@@ -1026,60 +1130,105 @@ export const More = ({
 
   const renderInputForm = (isCenter = false) => {
     return (
-      <form 
-        onSubmit={(e) => {
-          e.preventDefault();
-          handleSendChat();
-        }}
-        className={`relative border rounded-3xl flex items-center px-4 py-2.5 shadow-inner gap-3 w-full transition-all ${
-          isLightMode 
-            ? 'bg-white border-slate-200 text-slate-805' 
-            : 'bg-dark-depth-2/65 border-dark-border/80 text-white focus-within:border-brand-500/50'
-        } ${isCenter ? 'max-w-2xl mx-auto shadow-2xl' : ''}`}
-      >
-        <button 
-          type="button" 
-          className={`w-7 h-7 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+      <div className={`w-full flex flex-col gap-2 ${isCenter ? 'max-w-2xl mx-auto' : ''}`}>
+        {/* Image Attachment Preview */}
+        {chatImage && (
+          <div className={`px-3 py-2 rounded-2xl border flex items-center justify-between animate-fadeIn ${
+            isLightMode ? 'bg-slate-100 border-slate-200' : 'bg-dark-depth-2/80 border-dark-border'
+          }`}>
+            <div className="flex items-center gap-2 overflow-hidden">
+              <img 
+                src={chatImage.previewUrl} 
+                alt="Selected attachment" 
+                className="w-10 h-10 rounded-lg object-cover border border-brand-500/40" 
+              />
+              <div className="text-[10px] truncate">
+                <span className="font-bold text-brand-400 block truncate">Image Attached</span>
+                <span className="text-gray-400 text-[9px]">Ready for visual AI analysis</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setChatImage(null)}
+              className="p-1 rounded-full text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer"
+              title="Remove image"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        <form 
+          onSubmit={(e) => {
+            e.preventDefault();
+            handleSendChat();
+          }}
+          className={`relative border rounded-3xl flex items-center px-4 py-2.5 shadow-inner gap-3 w-full transition-all ${
             isLightMode 
-              ? 'bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-850 hover:bg-slate-200' 
-              : 'bg-dark-depth-3 border-dark-border/60 text-gray-400 hover:text-white'
-          }`}
+              ? 'bg-white border-slate-200 text-slate-805' 
+              : 'bg-dark-depth-2/65 border-dark-border/80 text-white focus-within:border-brand-500/50'
+          } ${isCenter ? 'shadow-2xl' : ''}`}
         >
-          <Plus className="w-4 h-4" />
-        </button>
+          <input
+            type="file"
+            ref={chatFileInputRef}
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) handleChatImageFile(file);
+              e.target.value = '';
+            }}
+          />
+          <button 
+            type="button" 
+            onClick={() => chatFileInputRef.current?.click()}
+            className={`w-7 h-7 rounded-full border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+              chatImage
+                ? 'bg-brand-500/20 border-brand-500 text-brand-400'
+                : (isLightMode 
+                    ? 'bg-slate-100 border-slate-200 text-slate-500 hover:text-slate-850 hover:bg-slate-200' 
+                    : 'bg-dark-depth-3 border-dark-border/60 text-gray-400 hover:text-white')
+            }`}
+            title="Attach image or chart screenshot"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
 
-        <input
-          type="text"
-          value={chatInput}
-          onChange={(e) => setChatInput(e.target.value)}
-          disabled={sendingChat || usageRemaining === 0}
-          placeholder={usageRemaining === 0 ? "Daily query limit reached (100/100)" : "Ask anything about your portfolio..."}
-          className={`flex-1 bg-transparent border-0 text-xs focus:outline-none focus:ring-0 p-0 ${
-            isLightMode ? 'text-slate-800 placeholder-slate-450' : 'text-white placeholder-gray-500'
-          }`}
-        />
+          <input
+            type="text"
+            value={chatInput}
+            onChange={(e) => handleChatInputChange(e.target.value)}
+            onPaste={handleChatPaste}
+            disabled={sendingChat || usageRemaining === 0}
+            placeholder={usageRemaining === 0 ? "Daily query limit reached (100/100)" : "Ask anything about your portfolio or upload charts..."}
+            className={`flex-1 bg-transparent border-0 text-xs focus:outline-none focus:ring-0 p-0 ${
+              isLightMode ? 'text-slate-800 placeholder-slate-450' : 'text-white placeholder-gray-500'
+            }`}
+          />
 
-        <button 
-          type="button" 
-          className={`w-7 h-7 flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
-            isLightMode ? 'text-slate-400 hover:text-slate-750' : 'text-gray-500 hover:text-white'
-          }`}
-        >
-          <Mic className="w-4 h-4" />
-        </button>
+          <button 
+            type="button" 
+            className={`w-7 h-7 flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+              isLightMode ? 'text-slate-400 hover:text-slate-750' : 'text-gray-500 hover:text-white'
+            }`}
+          >
+            <Mic className="w-4 h-4" />
+          </button>
 
-        <button
-          type="submit"
-          disabled={sendingChat || !chatInput.trim() || usageRemaining === 0}
-          className={`w-7 h-7 rounded-full disabled:opacity-40 flex items-center justify-center transition-all cursor-pointer shrink-0 ${
-            isLightMode 
-              ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' 
-              : 'bg-brand-500 hover:bg-brand-400 text-white'
-          }`}
-        >
-          <Send className="w-3.5 h-3.5" />
-        </button>
-      </form>
+          <button
+            type="submit"
+            disabled={sendingChat || (!chatInput.trim() && !chatImage) || usageRemaining === 0}
+            className={`w-7 h-7 rounded-full disabled:opacity-40 flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+              isLightMode 
+                ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md' 
+                : 'bg-brand-500 hover:bg-brand-400 text-white'
+            }`}
+          >
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </form>
+      </div>
     );
   };
 
@@ -1949,6 +2098,15 @@ export const More = ({
                                     ? 'bg-gradient-to-r from-brand-600 to-indigo-600 text-white shadow-indigo-200' 
                                     : 'bg-neutral-800/60 border border-neutral-700/20 text-white'
                                 }`}>
+                                  {msg.imagePreview && (
+                                    <div className="mb-2">
+                                      <img 
+                                        src={msg.imagePreview} 
+                                        alt="User upload" 
+                                        className="max-h-56 max-w-full rounded-2xl object-contain border border-white/20 shadow-sm" 
+                                      />
+                                    </div>
+                                  )}
                                   <p className="select-text font-medium tracking-wide">{msg.content}</p>
                                 </div>
                               </div>

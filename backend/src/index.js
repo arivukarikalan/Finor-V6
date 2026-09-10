@@ -15,6 +15,7 @@ import exportRouter from './routes/export.js';
 import financeRouter from './routes/finance.js';
 import authRouter from './routes/auth.js';
 import mutualFundsRouter from './routes/mutualFunds.js';
+import premarketRouter from './routes/premarket.js';
 
 dotenv.config();
 
@@ -54,6 +55,7 @@ app.use('/api/snapshots', snapshotsRouter);
 app.use('/api/export', exportRouter);
 app.use('/api/finance', financeRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/premarket', premarketRouter);
 
 // API Health Check route
 app.get('/api/health', (req, res) => {

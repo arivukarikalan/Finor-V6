@@ -150,9 +150,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           if (!localStorage.getItem('finor_login_timestamp')) {
             localStorage.setItem('finor_login_timestamp', new Date().toISOString());
           }
-          set({ loading: true });
+          const hasExistingProfile = !!get().profile;
+          if (!hasExistingProfile) {
+            set({ loading: true });
+          }
           await get().fetchProfile();
-          set({ loading: false });
+          if (!hasExistingProfile) {
+            set({ loading: false });
+          }
 
           // Re-enforce policy check on login state refresh
           const loginTs = localStorage.getItem('finor_login_timestamp');
