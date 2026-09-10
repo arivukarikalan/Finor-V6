@@ -1044,6 +1044,168 @@ router.get('/usage', requireAuth, async (req, res) => {
   }
 });
 
+function getUserSessionsKey(userId) {
+  const hash = crypto.createHash('sha256').update(`CHATS_${userId}`).digest('hex');
+  return `CHAT_${hash.substring(0, 15)}`; // 20 chars
+}
+
+/**
+ * GET /api/assistant/sessions
+ * Retrieves past 2 days cloud chat sessions for the user
+ */
+router.get('/sessions', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const key = getUserSessionsKey(userId);
+    const { data, error } = await supabaseAdmin
+      .from('news_cache')
+      .select('news_content')
+      .eq('stock_symbol', key)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    let sessions = data?.news_content?.sessions || [];
+    // Auto-prune sessions older than 2 days (48 hours)
+    const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    sessions = sessions.filter(s => s.createdAt && s.createdAt > twoDaysAgo);
+
+    res.json({ sessions });
+  } catch (err) {
+    console.error('[AI Assistant] Get sessions error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/assistant/sessions
+ * Synchronizes/upserts one or multiple chat sessions to the cloud
+ */
+router.post('/sessions', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { session, sessions: incomingSessions } = req.body;
+    const key = getUserSessionsKey(userId);
+
+    // Retrieve existing cloud sessions
+    const { data: existingRow } = await supabaseAdmin
+      .from('news_cache')
+      .select('id, news_content')
+      .eq('stock_symbol', key)
+      .maybeSingle();
+
+    let existingSessions = existingRow?.news_content?.sessions || [];
+
+    // Filter to last 2 days
+    const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+    existingSessions = existingSessions.filter(s => s.createdAt && s.createdAt > twoDaysAgo);
+
+    // Merge incoming sessions
+    const toMerge = incomingSessions || (session ? [session] : []);
+    toMerge.forEach(inSess => {
+      if (!inSess || !inSess.id) return;
+      const idx = existingSessions.findIndex(s => s.id === inSess.id);
+      if (idx !== -1) {
+        existingSessions[idx] = inSess;
+      } else {
+        existingSessions.unshift(inSess);
+      }
+    });
+
+    // Limit to most recent 30 sessions within 2 days
+    existingSessions = existingSessions
+      .filter(s => s.createdAt && s.createdAt > twoDaysAgo)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, 30);
+
+    const updatedContent = {
+      userId,
+      updatedAt: new Date().toISOString(),
+      sessions: existingSessions
+    };
+
+    if (existingRow) {
+      await supabaseAdmin
+        .from('news_cache')
+        .update({
+          news_content: updatedContent,
+          sentiment: 'NEUTRAL',
+          fetched_at: new Date().toISOString()
+        })
+        .eq('id', existingRow.id);
+    } else {
+      await supabaseAdmin
+        .from('news_cache')
+        .insert({
+          stock_symbol: key,
+          news_content: updatedContent,
+          sentiment: 'NEUTRAL',
+          fetched_at: new Date().toISOString()
+        });
+    }
+
+    res.json({ status: 'SUCCESS', sessions: existingSessions });
+  } catch (err) {
+    console.error('[AI Assistant] Save sessions error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/assistant/sessions/:id
+ * Deletes a specific chat session from the cloud
+ */
+router.delete('/sessions/:id', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const key = getUserSessionsKey(userId);
+
+    const { data: existingRow } = await supabaseAdmin
+      .from('news_cache')
+      .select('id, news_content')
+      .eq('stock_symbol', key)
+      .maybeSingle();
+
+    if (existingRow && existingRow.news_content) {
+      let sessions = (existingRow.news_content.sessions || []).filter(s => s.id !== id);
+      await supabaseAdmin
+        .from('news_cache')
+        .update({
+          news_content: { ...existingRow.news_content, sessions },
+          fetched_at: new Date().toISOString()
+        })
+        .eq('id', existingRow.id);
+    }
+
+    res.json({ status: 'SUCCESS', message: 'Chat session deleted from cloud.' });
+  } catch (err) {
+    console.error('[AI Assistant] Delete session error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/assistant/sessions
+ * Clears all chat sessions for the user from the cloud
+ */
+router.delete('/sessions', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const key = getUserSessionsKey(userId);
+
+    await supabaseAdmin
+      .from('news_cache')
+      .delete()
+      .eq('stock_symbol', key);
+
+    res.json({ status: 'SUCCESS', message: 'All cloud chat sessions cleared.' });
+  } catch (err) {
+    console.error('[AI Assistant] Clear all sessions error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 /**
  * GET /api/assistant/history
  * Retrieves today's chat history list

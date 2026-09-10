@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Brain, Sparkles, X, Send, Bot, User, ArrowUpRight, RefreshCw, Paperclip } from 'lucide-react';
 import { apiRequest } from '../services/api';
+import { compressImage } from '../utils/imageCompressor';
 import type { TabId } from './Navigation';
 
 interface FloatingAssistantBarProps {
@@ -97,19 +98,14 @@ export const FloatingAssistantBar: React.FC<FloatingAssistantBarProps> = ({ setA
     saveDraftMessage(val);
   };
 
-  const handleImageFile = (file: File) => {
+  const handleImageFile = async (file: File) => {
     if (!file || !file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64Data = result.split(',')[1];
-      setSelectedImage({
-        data: base64Data,
-        mimeType: file.type,
-        previewUrl: result
-      });
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImage(file);
+      setSelectedImage(compressed);
+    } catch (err) {
+      console.error('Failed to process image:', err);
+    }
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {

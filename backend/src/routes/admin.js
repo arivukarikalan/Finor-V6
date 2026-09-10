@@ -569,7 +569,7 @@ router.post('/trigger-reconcile', requireAuth, requireSuperAdmin, async (req, re
   }
 });
 
-const BROADCAST_KEY = 'SETTINGS_GLOBAL_BROADCAST';
+const BROADCAST_KEY = 'SETTINGS_BROADCAST';
 
 /**
  * GET /api/admin/broadcast
@@ -614,15 +614,35 @@ router.post('/broadcast', requireAuth, requireSuperAdmin, async (req, res) => {
       updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabaseAdmin
+    const { data: existing } = await supabaseAdmin
       .from('news_cache')
-      .upsert({
-        stock_symbol: BROADCAST_KEY,
-        news_content: bannerContent,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'stock_symbol' });
+      .select('id')
+      .eq('stock_symbol', BROADCAST_KEY)
+      .maybeSingle();
 
-    if (error) throw error;
+    if (existing) {
+      const { error: updateErr } = await supabaseAdmin
+        .from('news_cache')
+        .update({
+          news_content: bannerContent,
+          sentiment: 'NEUTRAL',
+          fetched_at: new Date().toISOString()
+        })
+        .eq('id', existing.id);
+
+      if (updateErr) throw updateErr;
+    } else {
+      const { error: insertErr } = await supabaseAdmin
+        .from('news_cache')
+        .insert({
+          stock_symbol: BROADCAST_KEY,
+          news_content: bannerContent,
+          sentiment: 'NEUTRAL',
+          fetched_at: new Date().toISOString()
+        });
+
+      if (insertErr) throw insertErr;
+    }
 
     res.json({
       status: 'SUCCESS',

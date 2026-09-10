@@ -35,6 +35,7 @@ import {
   X
 } from 'lucide-react';
 import { marked } from 'marked';
+import { compressImage } from '../utils/imageCompressor';
 
 type SubTabId = 'news' | 'settings' | 'ai-chat' | 'logs';
 
@@ -671,19 +672,14 @@ export const More = ({
     saveDraftMessage(val);
   };
 
-  const handleChatImageFile = (file: File) => {
+  const handleChatImageFile = async (file: File) => {
     if (!file || !file.type.startsWith('image/')) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      const base64Data = result.split(',')[1];
-      setChatImage({
-        data: base64Data,
-        mimeType: file.type,
-        previewUrl: result
-      });
-    };
-    reader.readAsDataURL(file);
+    try {
+      const compressed = await compressImage(file);
+      setChatImage(compressed);
+    } catch (err) {
+      console.error('Failed to compress chat image:', err);
+    }
   };
 
   const handleChatPaste = (e: React.ClipboardEvent) => {
@@ -790,15 +786,73 @@ export const More = ({
     setUnreadCount(0);
   }, [activeChatId]);
 
+  // Helper to sync an active chat session to Supabase cloud
+  const syncSessionToCloud = (session: ChatSession) => {
+    apiRequest('/assistant/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ session })
+    }).catch(err => console.warn('[AI Assistant] Cloud session sync failed:', err));
+  };
+
   // Sync messages into the active chat session in the chats list
   const updateActiveChatMessages = (newMessages: typeof messages) => {
     if (!activeChatId) return;
     setChats(prev => {
-      const updated = prev.map(c => c.id === activeChatId ? { ...c, messages: newMessages } : c);
+      const updated = prev.map(c => {
+        if (c.id === activeChatId) {
+          const updatedSession = { ...c, messages: newMessages };
+          syncSessionToCloud(updatedSession);
+          return updatedSession;
+        }
+        return c;
+      });
       localStorage.setItem('finor_ai_chats', JSON.stringify(updated));
       return updated;
     });
   };
+
+  // Load cloud chat sessions on mount and merge with local storage (past 2 days)
+  const syncCloudSessions = async () => {
+    try {
+      const res = await apiRequest('/assistant/sessions');
+      if (res && Array.isArray(res.sessions)) {
+        const cloudSessions: ChatSession[] = res.sessions;
+        const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+
+        setChats(prevChats => {
+          const mergedMap = new Map<string, ChatSession>();
+          // 1. Add valid local chats
+          prevChats.filter(c => c.createdAt > twoDaysAgo).forEach(c => mergedMap.set(c.id, c));
+
+          // 2. Merge cloud chats: if cloud chat has more messages or is newer, add/overwrite
+          cloudSessions.filter(c => c.createdAt > twoDaysAgo).forEach(c => {
+            const existing = mergedMap.get(c.id);
+            if (!existing || (c.messages && c.messages.length >= existing.messages.length)) {
+              mergedMap.set(c.id, c);
+            }
+          });
+
+          const merged = Array.from(mergedMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          localStorage.setItem('finor_ai_chats', JSON.stringify(merged));
+
+          // Auto-select latest chat if none selected
+          if (!activeChatId && merged.length > 0) {
+            setActiveChatId(merged[0].id);
+          }
+
+          return merged;
+        });
+      }
+    } catch (err) {
+      console.warn('[AI Assistant] Could not fetch cloud chat sessions:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'ai-chat') {
+      syncCloudSessions();
+    }
+  }, [activeSubTab]);
 
 
 
@@ -965,6 +1019,7 @@ export const More = ({
       currentChats = [newChat, ...currentChats];
       setChats(currentChats);
       localStorage.setItem('finor_ai_chats', JSON.stringify(currentChats));
+      syncSessionToCloud(newChat);
       setActiveChatId(newId);
       setMessages([userMsg]);
     } else {
@@ -1029,7 +1084,14 @@ export const More = ({
 
           // Sync immediately
           setChats(prevChats => {
-            const updatedChats = prevChats.map(c => c.id === currentChatId ? { ...c, messages: updated } : c);
+            const updatedChats = prevChats.map(c => {
+              if (c.id === currentChatId) {
+                const updatedSession = { ...c, messages: updated };
+                syncSessionToCloud(updatedSession);
+                return updatedSession;
+              }
+              return c;
+            });
             localStorage.setItem('finor_ai_chats', JSON.stringify(updatedChats));
             return updatedChats;
           });
@@ -1237,6 +1299,7 @@ export const More = ({
     const updated = chats.filter(c => c.id !== chatId);
     setChats(updated);
     localStorage.setItem('finor_ai_chats', JSON.stringify(updated));
+    apiRequest(`/assistant/sessions/${chatId}`, { method: 'DELETE' }).catch(() => {});
     if (activeChatId === chatId) {
       if (updated.length > 0) {
         setActiveChatId(updated[0].id);
@@ -1254,7 +1317,14 @@ export const More = ({
   const handleSaveRename = (chatId: string) => {
     if (editTitleText.trim()) {
       setChats(prev => {
-        const updated = prev.map(c => c.id === chatId ? { ...c, title: editTitleText.trim() } : c);
+        const updated = prev.map(c => {
+          if (c.id === chatId) {
+            const renamed = { ...c, title: editTitleText.trim() };
+            syncSessionToCloud(renamed);
+            return renamed;
+          }
+          return c;
+        });
         localStorage.setItem('finor_ai_chats', JSON.stringify(updated));
         return updated;
       });
