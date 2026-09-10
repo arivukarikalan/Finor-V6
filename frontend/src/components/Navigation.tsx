@@ -14,10 +14,13 @@ import {
   Menu,
   Landmark,
   ShieldAlert,
-  Radar
+  Radar,
+  RefreshCw
 } from 'lucide-react';
 import { useAuthStore } from '../context/authStore';
 import { supabase } from '../services/supabase';
+import { apiRequest } from '../services/api';
+import { useToastStore } from '../context/toastStore';
 
 export type TabId = 'dashboard' | 'holdings' | 'orders' | 'pnl' | 'insights' | 'ai-chat' | 'finance' | 'more' | 'admin' | 'profile' | 'buy-scanner';
 
@@ -68,6 +71,42 @@ export const Navigation: React.FC<NavigationProps> = ({
       window.removeEventListener('portfolio-sync-complete', handleSyncComplete);
     };
   }, []);
+
+  const [syncingPortfolio, setSyncingPortfolio] = React.useState(false);
+
+  const handleSyncPortfolio = async () => {
+    setSyncingPortfolio(true);
+    const toastId = useToastStore.getState().addToast('Synchronizing portfolio from Zerodha Kite & Coin...', 'loading');
+    try {
+      const res = await apiRequest('/portfolio/sync-all', { method: 'POST' });
+      useToastStore.getState().removeToast(toastId);
+      if (res.status === 'SUCCESS') {
+        useToastStore.getState().addToast(
+          res.message || `Portfolio synced: ${res.newTradesCount} new trades, ${res.mfCount} mutual funds.`,
+          'success'
+        );
+        fetchLastTrade();
+        window.dispatchEvent(new CustomEvent('finor-cache-updated', { detail: { endpoint: '/portfolio/summary' } }));
+        window.dispatchEvent(new CustomEvent('finor-cache-updated', { detail: { endpoint: '/holdings' } }));
+        window.dispatchEvent(new CustomEvent('finor-cache-updated', { detail: { endpoint: '/trades' } }));
+        window.dispatchEvent(new CustomEvent('finor-cache-updated', { detail: { endpoint: '/mutual-funds' } }));
+        window.dispatchEvent(new CustomEvent('finor-cache-updated', { detail: { endpoint: '/orders/live' } }));
+        window.dispatchEvent(new CustomEvent('finor-cache-updated', { detail: { endpoint: '/analytics/dashboard' } }));
+      } else {
+        useToastStore.getState().addToast(res.message || 'Failed to sync portfolio.', 'error');
+      }
+    } catch (err: any) {
+      useToastStore.getState().removeToast(toastId);
+      const msg = err.message || 'Error syncing portfolio.';
+      if (msg.includes('session') || msg.includes('400')) {
+        useToastStore.getState().addToast('Broker session offline. Please log in on the Orders page.', 'error');
+      } else {
+        useToastStore.getState().addToast(msg, 'error');
+      }
+    } finally {
+      setSyncingPortfolio(false);
+    }
+  };
 
   const formatLastTradeDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -271,6 +310,16 @@ export const Navigation: React.FC<NavigationProps> = ({
 
         {/* Right Actions */}
         <div className="flex items-center gap-2">
+          {/* Mobile Common Sync Button */}
+          <button
+            onClick={handleSyncPortfolio}
+            disabled={syncingPortfolio}
+            className="p-1.5 rounded-lg border border-brand-500/30 bg-brand-500/10 text-brand-400 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+            title="Sync Portfolio (Zerodha Kite & Coin)"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncingPortfolio ? 'animate-spin' : ''}`} />
+          </button>
+
           {/* Mobile Theme Toggle */}
           <button
             onClick={toggleTheme}
@@ -308,6 +357,17 @@ export const Navigation: React.FC<NavigationProps> = ({
           </div>
 
           <div className="flex items-center gap-4">
+            {/* Common Unified Sync Button */}
+            <button
+              onClick={handleSyncPortfolio}
+              disabled={syncingPortfolio}
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-bold text-white shadow-md shadow-brand-600/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              title="One-Click Sync: Ingest Zerodha Orders, Equity Holdings & Coin Mutual Funds"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncingPortfolio ? 'animate-spin' : ''}`} />
+              <span>Sync Portfolio</span>
+            </button>
+
             {lastTradeDate && (
               <div className="flex items-center gap-2 bg-dark-depth-2/40 border border-dark-border/40 px-3 py-1 rounded-xl select-none">
                 <span className="text-[10px] text-gray-400 font-extrabold uppercase tracking-wide">

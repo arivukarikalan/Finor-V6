@@ -133,9 +133,9 @@ export async function apiRequest(endpoint: string, options: RequestInit & { bypa
   // Show loading toast if request takes more than 600ms (only for explicit long-running user sync actions)
   let loadingToastId: string | null = null;
   const timeoutId = setTimeout(() => {
-    const displayEndpoints = ['/gmail/sync'];
+    const displayEndpoints = ['/portfolio/sync-all'];
     if (displayEndpoints.some(e => endpoint.includes(e))) {
-      let displayName = 'Syncing Gmail trade confirmations';
+      let displayName = 'Synchronizing portfolio from Zerodha Kite & Coin';
       loadingToastId = useToastStore.getState().addToast(`${displayName}...`, 'loading');
     }
   }, 600);

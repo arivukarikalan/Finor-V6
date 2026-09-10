@@ -19,9 +19,52 @@ import { useToastStore } from './context/toastStore';
 
 import { SystemLogger } from './utils/logger';
 
+const getInitialTab = (): TabId => {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('request_token') || urlParams.get('action') === 'login') {
+    return 'orders';
+  }
+  const path = window.location.pathname.replace(/^\/+/, '').toLowerCase();
+  const validTabs: TabId[] = ['dashboard', 'holdings', 'orders', 'pnl', 'insights', 'ai-chat', 'finance', 'more', 'admin', 'profile', 'buy-scanner'];
+  if (validTabs.includes(path as TabId)) {
+    return path as TabId;
+  }
+  return 'dashboard';
+};
+
 function App() {
   const { user, loading, initialize, role } = useAuthStore();
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabId>(getInitialTab);
+
+  // Synchronize browser address bar with activeTab
+  useEffect(() => {
+    if (window.location.pathname !== `/${activeTab}`) {
+      window.history.pushState(null, '', `/${activeTab}`);
+    }
+  }, [activeTab]);
+
+  // Handle incoming Zerodha Kite OAuth request_token exchange on root boot
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const requestToken = urlParams.get('request_token');
+    if (requestToken) {
+      (async () => {
+        try {
+          const { apiRequest } = await import('./services/api');
+          await apiRequest('/orders/kite/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ request_token: requestToken })
+          });
+          useToastStore.getState().addToast('Zerodha broker session connected successfully!', 'success');
+          window.history.replaceState({}, document.title, '/orders');
+          window.dispatchEvent(new CustomEvent('finor-cache-updated', { detail: { endpoint: '/orders/live' } }));
+        } catch (err: any) {
+          useToastStore.getState().addToast(err.message || 'Failed to exchange Zerodha request token.', 'error');
+        }
+      })();
+    }
+  }, []);
 
   // Enforce client-side authorization: redirect non-admin away from admin tab
   useEffect(() => {

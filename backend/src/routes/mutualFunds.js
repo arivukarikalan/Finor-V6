@@ -11,7 +11,7 @@ const router = express.Router();
  * Helper to fetch stored MF holdings for a user.
  * Supports mutual_fund_holdings table with transparent fallback to system_settings.
  */
-async function getStoredMFHoldings(userId) {
+export async function getStoredMFHoldings(userId) {
   try {
     const { data, error } = await supabaseAdmin
       .from('mutual_fund_holdings')
@@ -19,11 +19,11 @@ async function getStoredMFHoldings(userId) {
       .eq('user_id', userId)
       .order('current_value', { ascending: false });
 
-    if (!error && data) {
+    if (!error && Array.isArray(data) && data.length > 0) {
       return data;
     }
   } catch (err) {
-    // Fall back to system_settings if table not created
+    // Fall back to system_settings if table not created or error
   }
 
   try {
@@ -48,7 +48,7 @@ async function getStoredMFHoldings(userId) {
 /**
  * Helper to save MF holdings for a user.
  */
-async function saveStoredMFHoldings(userId, holdings) {
+export async function saveStoredMFHoldings(userId, holdings) {
   let savedToTable = false;
   try {
     const { error } = await supabaseAdmin
@@ -81,7 +81,7 @@ async function saveStoredMFHoldings(userId, holdings) {
 /**
  * Computes portfolio summary statistics
  */
-function computeSummary(holdings) {
+export function computeSummary(holdings) {
   const totalInvested = holdings.reduce((acc, h) => acc + (parseFloat(h.invested_value) || 0), 0);
   const totalCurrentValue = holdings.reduce((acc, h) => acc + (parseFloat(h.current_value) || 0), 0);
   const totalPnl = holdings.reduce((acc, h) => acc + (parseFloat(h.pnl) || 0), 0);

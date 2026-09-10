@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { apiRequest } from '../services/api';
-import { useAuthStore } from '../context/authStore';
 import { LtpPriceText } from '../components/LtpPriceText';
 import { 
   AreaChart, 
@@ -22,7 +21,10 @@ import {
   Activity,
   Calendar,
   Info,
-  X
+  X,
+  TrendingUp,
+  TrendingDown,
+  Coins
 } from 'lucide-react';
 
 interface HistoryPoint {
@@ -85,7 +87,6 @@ const periodTitles = {
 };
 
 export const Dashboard = ({ setActiveTab }: DashboardProps) => {
-  const { profile } = useAuthStore();
   const [period, setPeriod] = useState<'1W' | '1M' | '3M' | '6M' | '1Y' | 'ALL'>('1Y');
   const [history, setHistory] = useState<HistoryPoint[]>(() => {
     try {
@@ -120,6 +121,26 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
   });
   const [error, setError] = useState<string | null>(null);
   const [selectedEventDetails, setSelectedEventDetails] = useState<any | null>(null);
+
+  const [mfSummary, setMfSummary] = useState<{ totalInvested: number; totalCurrentValue: number; totalPnl: number; schemesCount: number } | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_mf_summary') || 'null');
+    } catch {
+      return null;
+    }
+  });
+
+  const fetchMutualFundsData = async () => {
+    try {
+      const res = await apiRequest('/mutual-funds');
+      if (res && res.summary) {
+        setMfSummary(res.summary);
+        localStorage.setItem('finor_cached_mf_summary', JSON.stringify(res.summary));
+      }
+    } catch (err) {
+      console.error('Failed to load mutual funds summary:', err);
+    }
+  };
 
   const fetchHoldingsData = async () => {
     try {
@@ -174,6 +195,7 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
   useEffect(() => {
     fetchHoldingsData();
     fetchEventsData();
+    fetchMutualFundsData();
 
     const handleCacheUpdate = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -182,6 +204,8 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
         fetchHoldingsData();
       } else if (endpoint === '/holdings/events') {
         fetchEventsData();
+      } else if (endpoint === '/mutual-funds' || endpoint === '/portfolio/summary') {
+        fetchMutualFundsData();
       }
     };
     window.addEventListener('finor-cache-updated', handleCacheUpdate);
@@ -248,13 +272,23 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
     };
   }, [period]);
 
-  // Financial Calculations
-  const totalInvested = holdings.reduce((sum, h) => sum + (h.average_buy_price * h.quantity), 0);
-  const totalValue = holdings.reduce((sum, h) => sum + ((h.ltp || h.average_buy_price) * h.quantity), 0);
-  const totalPL = totalValue - totalInvested;
-  const totalROI = totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
+  // Financial Calculations (Equities + Mutual Funds Combined)
+  const equityInvested = holdings.reduce((sum, h) => sum + (h.average_buy_price * h.quantity), 0);
+  const equityValue = holdings.reduce((sum, h) => sum + ((h.ltp || h.average_buy_price) * h.quantity), 0);
+  const equityPL = equityValue - equityInvested;
 
-  // Day's Gain/Loss (LTP vs Previous Close)
+  const mfValue = mfSummary?.totalCurrentValue || 0;
+  const mfInvested = mfSummary?.totalInvested || 0;
+  const mfPL = mfSummary?.totalPnl || (mfValue - mfInvested);
+
+  // Total Portfolio Totals
+  const totalValue = equityValue + mfValue;
+  const totalInvested = equityInvested + mfInvested;
+  const totalPL = equityPL + mfPL;
+  const totalROI = totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
+  const totalPositionsCount = holdings.length + (mfSummary?.schemesCount || 0);
+
+  // Day's Gain/Loss (LTP vs Previous Close for Equities)
   const daysGain = holdings.reduce((sum, h) => {
     const currentPrice = h.ltp || h.average_buy_price;
     const prevClose = h.previousClose !== undefined && h.previousClose !== null ? h.previousClose : currentPrice;
@@ -282,45 +316,6 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
         </p>
       </div>
 
-      {/* Configuration Checklist / Welcome Guide Banner for New Users */}
-      {profile && !profile.zerodha_api_key && (
-        <div className="glass-panel rounded-3xl border border-brand-500/25 p-6 relative overflow-hidden shadow-xl bg-gradient-to-r from-brand-950/15 via-dark-depth-1 to-indigo-950/10 backdrop-blur-md">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-brand-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" />
-          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="flex h-2.5 w-2.5 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-405 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-500"></span>
-                </span>
-                <span className="text-[10px] font-black text-brand-400 uppercase tracking-widest bg-brand-500/10 px-2 py-0.5 rounded-md border border-brand-550/20">Setup Guide Checklist</span>
-              </div>
-              <h2 className="text-lg font-extrabold text-white tracking-tight">Complete your Broker Integration Setup</h2>
-              <p className="text-xs text-gray-305 max-w-xl leading-relaxed">
-                Unlock automated trades ingestion, real-time portfolio tracking, and AI-driven coaching insights by linking your broker API keys.
-              </p>
-              
-              {/* Checklist list */}
-              <div className="flex flex-wrap gap-x-6 gap-y-2 pt-2 text-[11px] text-gray-400 font-bold uppercase tracking-wider">
-                <div className="flex items-center gap-1.5">
-                  <div className={`w-3.5 h-3.5 rounded-full border ${profile.zerodha_api_key ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400' : 'border-gray-500 text-gray-550'} flex items-center justify-center text-[9px]`}>
-                    {profile.zerodha_api_key ? '✓' : '1'}
-                  </div>
-                  <span className={profile.zerodha_api_key ? 'text-emerald-400 line-through' : ''}>Broker API Credentials</span>
-                </div>
-              </div>
-            </div>
-            
-            <button
-              onClick={() => setActiveTab('profile')}
-              className="py-3 px-5 rounded-2xl bg-brand-600 hover:bg-brand-500 text-white font-extrabold text-xs uppercase tracking-wider active:scale-[0.98] transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-brand-600/25 self-start md:self-center shrink-0 border border-brand-500/30"
-            >
-              Configure Now <ArrowRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Error Alert */}
       {error && (
         <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-sm font-medium flex items-start gap-2.5">
@@ -332,14 +327,27 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
       {/* KPI Indicator Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
-        {/* Current Value */}
+        {/* Total Portfolio Value Card */}
         <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-xl pointer-events-none" />
-          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Portfolio Value</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Portfolio Value</span>
+            <Coins className="w-4 h-4 text-brand-400" />
+          </div>
           <h3 className="text-2xl font-extrabold text-white mt-1.5">
-            <LtpPriceText value={totalValue} />
+            ₹{totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </h3>
-          <div className="flex items-center gap-2 mt-2">
+          <div className="flex flex-wrap items-center gap-1.5 mt-2">
+            <span className="text-[10px] bg-brand-500/10 border border-brand-500/20 text-brand-400 px-2 py-0.5 rounded-md font-semibold">
+              Stocks: ₹{equityValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </span>
+            {mfValue > 0 && (
+              <span className="text-[10px] bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-md font-semibold">
+                MF: ₹{mfValue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 mt-2 pt-1 border-t border-dark-border/40">
             <span className="text-xs text-gray-500 font-medium">Invested:</span>
             <span className="text-xs text-gray-300 font-semibold">
               ₹{totalInvested.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
@@ -347,26 +355,32 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
           </div>
         </div>
 
-        {/* Absolute Returns */}
+        {/* Absolute Returns Card */}
         <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
           <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-xl pointer-events-none ${totalPL >= 0 ? 'bg-emerald-500/5' : 'bg-rose-500/5'}`} />
-          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Returns</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Returns</span>
+            {totalPL >= 0 ? <TrendingUp className="w-4 h-4 text-emerald-400" /> : <TrendingDown className="w-4 h-4 text-rose-400" />}
+          </div>
           <h3 className={`text-2xl font-extrabold mt-1.5 flex items-center gap-1.5 ${totalPL >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
             {totalPL >= 0 ? '+' : ''}
-            ₹{totalPL.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ₹{Math.abs(totalPL).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </h3>
           <div className="flex items-center gap-1.5 mt-2">
             <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
               totalPL >= 0 
-                ? 'bg-emerald-500/10 border-emerald-500/10 text-emerald-500' 
-                : 'bg-rose-500/10 border-rose-500/10 text-rose-500'
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' 
+                : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
             }`}>
-              {totalPL >= 0 ? '+' : ''}{totalROI.toFixed(2)}% ROI
+              {totalPL >= 0 ? '+' : ''}{totalROI.toFixed(2)}% Blended ROI
             </span>
+          </div>
+          <div className="text-[10px] text-gray-500 mt-2 pt-1 border-t border-dark-border/40 truncate">
+            Stocks: {equityPL >= 0 ? '+' : ''}₹{equityPL.toLocaleString('en-IN', { maximumFractionDigits: 0 })} | MFs: {mfPL >= 0 ? '+' : ''}₹{mfPL.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
           </div>
         </div>
 
-        {/* Day's Change */}
+        {/* Day's Change Card */}
         <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
           <div className={`absolute top-0 right-0 w-24 h-24 rounded-full blur-xl pointer-events-none ${daysGain >= 0 ? 'bg-emerald-500/5' : 'bg-rose-500/5'}`} />
           <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Day's Gain / Loss</span>
@@ -383,15 +397,25 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
               {daysGain >= 0 ? '+' : ''}{daysGainPercent.toFixed(2)}% Today
             </span>
           </div>
+          <div className="text-[10px] text-gray-500 mt-2 pt-1 border-t border-dark-border/40">
+            Equities intraday movement
+          </div>
         </div>
 
-        {/* Assets Count */}
+        {/* Active Assets Card */}
         <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
-          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Active Assets</span>
+          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Active Portfolio Assets</span>
           <h3 className="text-2xl font-extrabold text-white mt-1.5">
-            {holdings.length} Positions
+            {totalPositionsCount} <span className="text-sm font-semibold text-gray-400">Positions</span>
           </h3>
-          <p className="text-[10px] text-gray-500 mt-2 font-medium">Equities / ETFs active list</p>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-xs text-gray-400 font-medium">
+              {holdings.length} Equities · {mfSummary?.schemesCount || 0} Mutual Funds
+            </span>
+          </div>
+          <div className="text-[10px] text-brand-400 mt-2 pt-1 border-t border-dark-border/40 font-medium">
+            Auto-linked to Wealth Goals
+          </div>
         </div>
 
       </div>

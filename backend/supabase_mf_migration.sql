@@ -27,3 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_mf_holdings_user ON public.mutual_fund_holdings(u
 
 -- Disable RLS for backend service role operations (consistent with other Finor tables)
 ALTER TABLE public.mutual_fund_holdings DISABLE ROW LEVEL SECURITY;
+
+-- Fallback permissive policy if RLS remains enabled in Supabase project
+DROP POLICY IF EXISTS "Permissive MF Holdings Access" ON public.mutual_fund_holdings;
+CREATE POLICY "Permissive MF Holdings Access" ON public.mutual_fund_holdings FOR ALL USING (true) WITH CHECK (true);

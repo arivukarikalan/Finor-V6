@@ -159,6 +159,7 @@ export const Holdings = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [activeSubTab, setActiveSubTab] = useState<'holdings' | 'simulator' | 'mutual_funds'>('holdings');
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
 
   // Mutual Funds (Zerodha Coin) State
   const [mfHoldings, setMfHoldings] = useState<any[]>(() => {
@@ -2243,7 +2244,7 @@ export const Holdings = () => {
               <button
                 onClick={handleRefreshMfNav}
                 disabled={refreshingNav || syncingCoin}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-dark-border bg-dark-depth-2/40 text-xs font-semibold text-gray-200 hover:text-white hover:border-brand-500/40 transition-all cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-dark-border bg-dark-depth-2/40 text-xs font-semibold text-gray-200 hover:text-white hover:border-brand-500/40 transition-all cursor-pointer disabled:opacity-50"
                 title="Refresh NAV prices using latest daily AMFI closing values"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${refreshingNav ? 'animate-spin text-brand-500' : ''}`} />
@@ -2253,7 +2254,7 @@ export const Holdings = () => {
               <button
                 onClick={handleSyncCoin}
                 disabled={syncingCoin || refreshingNav}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer disabled:opacity-50"
                 title="Fetch latest mutual fund holdings and folios from Zerodha Coin"
               >
                 {syncingCoin ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Coins className="w-3.5 h-3.5" />}
@@ -2264,59 +2265,95 @@ export const Holdings = () => {
             null
           ) : (
             <>
-              <button
-                onClick={handleSyncPrices}
-                disabled={syncing || forceRebuilding || holdings.length === 0}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-dark-border bg-dark-depth-2/40 text-xs font-semibold text-gray-200 hover:text-white hover:border-brand-500/40 transition-all cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-brand-500' : ''}`} />
-                Refresh Prices
-              </button>
-
-              <button
-                onClick={handleForceRecalculate}
-                disabled={syncing || forceRebuilding || holdings.length === 0}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-rose-500/20 bg-rose-500/10 text-xs font-semibold text-rose-400 hover:text-white hover:bg-rose-500/25 hover:border-rose-500/40 transition-all cursor-pointer disabled:opacity-50"
-                title="Clear all price caches and rebuild positions from scratch"
-              >
-                <AlertTriangle className={`w-3.5 h-3.5 ${forceRebuilding ? 'animate-pulse text-rose-500' : ''}`} />
-                Force Rebuild
-              </button>
-
-              <button
-                onClick={handleOpenRestoreSnapshotModal}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs font-semibold text-amber-300 hover:text-white hover:bg-amber-500/25 transition-all cursor-pointer"
-                title="Load your live portfolio baseline from a historical snapshot date (e.g. July 30)"
-              >
-                <Camera className="w-3.5 h-3.5 text-amber-400" />
-                <span>Load Baseline Snapshot</span>
-              </button>
-              
+              {/* Primary Action Button */}
               <button
                 onClick={() => { setIsAddTradeOpen(true); setAddTradeResult(null); }}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white shadow-lg shadow-emerald-700/20 transition-all cursor-pointer"
               >
                 <PlusCircle className="w-3.5 h-3.5" />
-                Add Trade
+                <span>Add Trade</span>
               </button>
 
-              <button
-                onClick={() => setIsImportOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-xs font-semibold text-white shadow-lg shadow-brand-700/10 transition-all cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5" />
-                Import CSV
-              </button>
-
-              {holdings.length > 0 && (
+              {/* Secondary Actions Dropdown Menu */}
+              <div className="relative">
                 <button
-                  onClick={handleClearAll}
-                  className="p-2.5 rounded-xl border border-dark-border text-gray-400 hover:text-rose-500 hover:border-rose-500/20 transition-all cursor-pointer"
-                  title="Clear all trades and holdings"
+                  onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-dark-border bg-dark-depth-2/60 text-xs font-semibold text-gray-200 hover:text-white hover:border-brand-500/40 transition-all cursor-pointer"
+                  title="More Portfolio Actions"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <SlidersHorizontal className="w-3.5 h-3.5 text-gray-400" />
+                  <span>Actions</span>
+                  <ChevronDown className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${isActionsMenuOpen ? 'rotate-180' : ''}`} />
                 </button>
-              )}
+
+                {isActionsMenuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setIsActionsMenuOpen(false)} />
+                    <div className="absolute right-0 mt-2 w-64 glass-panel rounded-2xl border border-dark-border shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
+                      <button
+                        onClick={() => { setIsActionsMenuOpen(false); setIsImportOpen(true); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-gray-200 hover:text-white hover:bg-dark-depth-2/80 transition-colors text-left cursor-pointer"
+                      >
+                        <Upload className="w-4 h-4 text-brand-400 shrink-0" />
+                        <div>
+                          <div className="font-semibold">Import CSV Tradebook</div>
+                          <div className="text-[10px] text-gray-500">Upload broker trades CSV</div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => { setIsActionsMenuOpen(false); handleOpenRestoreSnapshotModal(); }}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-gray-200 hover:text-white hover:bg-dark-depth-2/80 transition-colors text-left cursor-pointer"
+                      >
+                        <Camera className="w-4 h-4 text-amber-400 shrink-0" />
+                        <div>
+                          <div className="font-semibold">Load Baseline Snapshot</div>
+                          <div className="text-[10px] text-gray-500">Restore portfolio from date</div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => { setIsActionsMenuOpen(false); handleSyncPrices(); }}
+                        disabled={syncing || forceRebuilding || holdings.length === 0}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-gray-200 hover:text-white hover:bg-dark-depth-2/80 transition-colors text-left disabled:opacity-50 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-4 h-4 text-emerald-400 shrink-0 ${syncing ? 'animate-spin' : ''}`} />
+                        <div>
+                          <div className="font-semibold">Refresh Stock LTPs</div>
+                          <div className="text-[10px] text-gray-500">Update latest market prices</div>
+                        </div>
+                      </button>
+
+                      <button
+                        onClick={() => { setIsActionsMenuOpen(false); handleForceRecalculate(); }}
+                        disabled={syncing || forceRebuilding || holdings.length === 0}
+                        className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-gray-300 hover:text-white hover:bg-dark-depth-2/80 transition-colors text-left disabled:opacity-50 cursor-pointer"
+                      >
+                        <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                        <div>
+                          <div className="font-semibold">Force Recalculate & Rebuild</div>
+                          <div className="text-[10px] text-gray-500">Rebuild all positions from trades</div>
+                        </div>
+                      </button>
+
+                      {holdings.length > 0 && (
+                        <div className="border-t border-dark-border/40 pt-1 mt-1">
+                          <button
+                            onClick={() => { setIsActionsMenuOpen(false); handleClearAll(); }}
+                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4 text-rose-500 shrink-0" />
+                            <div>
+                              <div className="font-semibold">Clear All Data</div>
+                              <div className="text-[10px] text-rose-400/60">Reset all trades & holdings</div>
+                            </div>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             </>
           )}
         </div>
