@@ -147,9 +147,10 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
   const fetchPremarketData = async () => {
     try {
       const res = await apiRequest('/premarket/today');
-      if (res && res.report) {
-        setPremarketReport(res.report);
-        localStorage.setItem('finor_cached_premarket_report', JSON.stringify(res.report));
+      const r = res?.report || (res?.report_title ? res : null);
+      if (r) {
+        setPremarketReport(r);
+        localStorage.setItem('finor_cached_premarket_report', JSON.stringify(r));
       }
     } catch (err) {
       console.error('Failed to load premarket report:', err);
@@ -233,8 +234,9 @@ export const Dashboard = ({ setActiveTab }: DashboardProps) => {
         fetchEventsData();
       } else if (endpoint === '/mutual-funds' || endpoint === '/portfolio/summary') {
         fetchMutualFundsData();
-      } else if (endpoint === '/premarket/today' && customEvent.detail?.data?.report) {
-        setPremarketReport(customEvent.detail.data.report);
+      } else if (endpoint === '/premarket/today') {
+        const r = customEvent.detail?.data?.report || (customEvent.detail?.data?.report_title ? customEvent.detail.data : null);
+        if (r) setPremarketReport(r);
       }
     };
     window.addEventListener('finor-cache-updated', handleCacheUpdate);

@@ -13,8 +13,10 @@ import {
   Coins,
   Calendar,
   Users,
-  FileText
+  FileText,
+  Sun
 } from 'lucide-react';
+import { PremarketReportModal, type PremarketReport } from '../components/PremarketReportModal';
 
 interface Article {
   title: string;
@@ -51,6 +53,16 @@ export const News = () => {
   const [selectedSymbol, setSelectedSymbol] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
 
+  // Premarket Report State
+  const [premarketReport, setPremarketReport] = useState<PremarketReport | null>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('finor_cached_premarket_report') || 'null');
+    } catch {
+      return null;
+    }
+  });
+  const [showPremarketModal, setShowPremarketModal] = useState(false);
+
   const fetchNewsAndActions = async () => {
     setLoading(true);
     setError(null);
@@ -62,6 +74,15 @@ export const News = () => {
       // Fetch parsed corporate actions calendar
       const actionsRes = await apiRequest('/news/corporate-actions');
       setCorporateActions(actionsRes || { upcoming: [], past: [] });
+
+      // Fetch premarket data for the quick button
+      apiRequest('/premarket/today').then(res => {
+        const r = res?.report || (res?.report_title ? res : null);
+        if (r) {
+          setPremarketReport(r);
+          localStorage.setItem('finor_cached_premarket_report', JSON.stringify(r));
+        }
+      }).catch(() => {});
     } catch (err: any) {
       console.error('Failed to load news feed or corporate actions:', err);
       setError(err.message || 'Failed to retrieve stock updates. Ensure your internet connection is active.');
@@ -330,26 +351,36 @@ export const News = () => {
       </div>
 
       {/* Sub tabs selection */}
-      <div className="flex gap-2 border-b border-dark-border/40 pb-2.5 flex-wrap select-none">
+      <div className="flex items-center justify-between gap-2 border-b border-dark-border/40 pb-2.5 flex-wrap select-none">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveSubTab('actions')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-extrabold uppercase tracking-wider border transition-all cursor-pointer ${
+              activeSubTab === 'actions'
+                ? 'bg-brand-500/10 border-brand-500/30 text-brand-400 font-extrabold shadow-lg shadow-brand-500/5'
+                : 'bg-dark-depth-2/40 border-dark-border/50 text-gray-400 hover:text-white hover:border-dark-border'
+            }`}
+          >
+            Corporate Actions
+          </button>
+          <button
+            onClick={() => setActiveSubTab('news')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-extrabold uppercase tracking-wider border transition-all cursor-pointer ${
+              activeSubTab === 'news'
+                ? 'bg-brand-500/10 border-brand-500/30 text-brand-400 font-extrabold shadow-lg shadow-brand-500/5'
+                : 'bg-dark-depth-2/40 border-dark-border/50 text-gray-400 hover:text-white hover:border-dark-border'
+            }`}
+          >
+            News Feed
+          </button>
+        </div>
+
         <button
-          onClick={() => setActiveSubTab('actions')}
-          className={`px-4 py-2 rounded-xl text-[10px] font-extrabold uppercase tracking-wider border transition-all cursor-pointer ${
-            activeSubTab === 'actions'
-              ? 'bg-brand-500/10 border-brand-500/30 text-brand-400 font-extrabold shadow-lg shadow-brand-500/5'
-              : 'bg-dark-depth-2/40 border-dark-border/50 text-gray-400 hover:text-white hover:border-dark-border'
-          }`}
+          onClick={() => setShowPremarketModal(true)}
+          className="px-3.5 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wider bg-gradient-to-r from-amber-500/20 via-brand-500/15 to-indigo-500/20 border border-amber-500/30 text-amber-300 hover:text-white hover:border-amber-400/60 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
         >
-          Corporate Actions
-        </button>
-        <button
-          onClick={() => setActiveSubTab('news')}
-          className={`px-4 py-2 rounded-xl text-[10px] font-extrabold uppercase tracking-wider border transition-all cursor-pointer ${
-            activeSubTab === 'news'
-              ? 'bg-brand-500/10 border-brand-500/30 text-brand-400 font-extrabold shadow-lg shadow-brand-500/5'
-              : 'bg-dark-depth-2/40 border-dark-border/50 text-gray-400 hover:text-white hover:border-dark-border'
-          }`}
-        >
-          News Feed
+          <Sun className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+          <span>🌅 8:00 AM Morning Pulse</span>
         </button>
       </div>
 
@@ -462,6 +493,13 @@ export const News = () => {
           </div>
         )
       )}
+
+      {/* 8:00 AM Premarket Briefing Modal */}
+      <PremarketReportModal
+        isOpen={showPremarketModal}
+        report={premarketReport}
+        onClose={() => setShowPremarketModal(false)}
+      />
 
     </div>
   );

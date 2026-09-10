@@ -12,7 +12,7 @@ router.get('/today', requireAuth, async (req, res) => {
   try {
     const userId = req.user.id;
     const report = await generatePremarketReport(userId);
-    res.json(report);
+    res.json({ report, ...report });
   } catch (err) {
     console.error('[PremarketRoute] Error generating premarket report:', err.message);
     res.status(500).json({ error: err.message || 'Failed to generate premarket report' });
