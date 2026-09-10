@@ -474,11 +474,9 @@ export const Finance: React.FC = () => {
 
 
 
-  // Exclude Investments and Lent/Friends from standard consumption expenses
+  // Include Investments in consumption/outflow calculations; exclude only Lent/Friends (temporary personal loans)
   const isConsumptionExpense = (t: Transaction) => {
-    return t.type === 'EXPENSE' && 
-           t.category !== 'Investments' && 
-           t.category !== 'Lent/Friends';
+    return t.type === 'EXPENSE' && t.category !== 'Lent/Friends';
   };
 
   // Robust current month check helper (for global header cards)

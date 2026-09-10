@@ -14,8 +14,31 @@ import {
   Clock,
   Trash2,
   Activity,
-  Edit
+  Edit,
+  Coins
 } from 'lucide-react';
+
+interface CoinMFOrder {
+  order_id: string;
+  exchange_order_id?: string | null;
+  tradingsymbol: string;
+  status: string;
+  status_message?: string | null;
+  folio?: string | null;
+  fund: string;
+  order_timestamp: string;
+  exchange_timestamp?: string | null;
+  settlement_id?: string | null;
+  transaction_type: 'BUY' | 'SELL';
+  amount: number;
+  variety: string;
+  purchase_type?: string | null;
+  quantity: number;
+  price?: number;
+  average_price?: number;
+  last_price?: number;
+  last_price_date?: string | null;
+}
 
 interface OrderConfig {
   status: 'CONNECTED' | 'DISCONNECTED' | 'MOCK_MODE';
@@ -100,8 +123,13 @@ export const Orders = () => {
     sessionStorage.setItem('finor_trade_limit_filter', tradeLimitFilter);
   }, [tradeSearch, tradeActionFilter, tradeMergeMode, tradeLimitFilter]);
 
+  // Coin Mutual Fund Orders State
+  const [mfOrders, setMfOrders] = useState<CoinMFOrder[]>([]);
+  const [mfOrderSearch, setMfOrderSearch] = useState('');
+  const [mfOrderStatusFilter, setMfOrderStatusFilter] = useState<'ALL' | 'COMPLETE' | 'OPEN' | 'CANCELLED'>('ALL');
+
   // UI state
-  const [listTab, setListTab] = useState<'active' | 'completed' | 'gtt' | 'trades'>('active');
+  const [listTab, setListTab] = useState<'active' | 'completed' | 'mf' | 'gtt' | 'trades'>('active');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -157,6 +185,14 @@ export const Orders = () => {
       // Fetch trades history
       const tradesData = await apiRequest('/trades');
       setTrades(tradesData || []);
+
+      // Fetch Coin mutual fund orders
+      try {
+        const mfOrdResult = await apiRequest('/orders/mf/live');
+        setMfOrders(mfOrdResult.orders || []);
+      } catch (mfErr) {
+        console.error('Failed to load MF orders:', mfErr);
+      }
     } catch (err: any) {
       console.error('Failed to load orders/gtts/trades lists:', err);
     } finally {
@@ -198,7 +234,10 @@ export const Orders = () => {
         endpoint === '/trades' ||
         endpoint === '/holdings' ||
         endpoint === '/orders/live' ||
-        endpoint === '/orders/gtt/live'
+        endpoint === '/orders/gtt/live' ||
+        endpoint === '/orders/mf/live' ||
+        endpoint === '/mutual-funds' ||
+        endpoint === '/portfolio/summary'
       ) {
         fetchLists();
       }
@@ -595,6 +634,18 @@ export const Orders = () => {
   // Group list categories
   const activeOrders = orders.filter(o => o.status === 'OPEN');
   const completedOrders = orders.filter(o => o.status !== 'OPEN');
+
+  const filteredMfOrders = mfOrders.filter(mfo => {
+    const q = mfOrderSearch.toLowerCase().trim();
+    const matchSearch = !q || 
+      (mfo.fund && mfo.fund.toLowerCase().includes(q)) ||
+      (mfo.tradingsymbol && mfo.tradingsymbol.toLowerCase().includes(q)) ||
+      (mfo.folio && mfo.folio.toLowerCase().includes(q));
+
+    if (!matchSearch) return false;
+    if (mfOrderStatusFilter === 'ALL') return true;
+    return mfo.status === mfOrderStatusFilter;
+  });
 
   return (
     <div className="space-y-6">
@@ -1162,6 +1213,16 @@ export const Orders = () => {
                   {listTab === 'completed' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-full" />}
                 </button>
                 <button
+                  onClick={() => setListTab('mf')}
+                  className={`py-3 text-xs font-bold relative transition-colors cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                    listTab === 'mf' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <Coins className="w-3.5 h-3.5" />
+                  <span>MF Orders (Coin) ({mfOrders.length})</span>
+                  {listTab === 'mf' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-brand-500 rounded-full" />}
+                </button>
+                <button
                   onClick={() => setListTab('gtt')}
                   className={`py-3 text-xs font-bold relative transition-colors cursor-pointer shrink-0 ${
                     listTab === 'gtt' ? 'text-brand-400' : 'text-gray-400 hover:text-white'
@@ -1301,6 +1362,14 @@ export const Orders = () => {
                     <p className="mt-1 leading-relaxed">Transactions that filled or were canceled during the current calendar session will accumulate here.</p>
                   </div>
                 </div>
+              ) : listTab === 'mf' && mfOrders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20 text-center select-none text-xs text-gray-500 max-w-xs mx-auto gap-3.5">
+                  <Coins className="w-10 h-10 text-gray-700" />
+                  <div>
+                    <h5 className="font-bold text-white">No Coin Mutual Fund Orders</h5>
+                    <p className="mt-1 leading-relaxed">SIP and lumpsum mutual fund orders placed via Zerodha Coin will appear here once synchronized.</p>
+                  </div>
+                </div>
               ) : listTab === 'gtt' && gtts.filter(g => g.status === 'ACTIVE').length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-20 text-center select-none text-xs text-gray-500 max-w-xs mx-auto gap-3.5">
                   <HelpCircle className="w-10 h-10 text-gray-700" />
@@ -1381,6 +1450,126 @@ export const Orders = () => {
                       </span>
                     </div>
                   ))}
+
+                  {/* Coin Mutual Fund Orders List */}
+                  {listTab === 'mf' && (
+                    <div className="space-y-3">
+                      {/* Filter Bar */}
+                      <div className="p-3 rounded-2xl bg-dark-depth-2/40 border border-dark-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                        <div className="relative flex-1 min-w-[180px]">
+                          <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            placeholder="Search scheme, ISIN, or folio..."
+                            value={mfOrderSearch}
+                            onChange={(e) => setMfOrderSearch(e.target.value)}
+                            className="w-full bg-dark-depth-2/80 border border-dark-border rounded-xl pl-9 pr-4 py-1.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:border-brand-500/80 transition-all font-semibold"
+                          />
+                        </div>
+                        <div className="flex items-center bg-dark-depth-2 border border-dark-border rounded-xl p-0.5 shrink-0 self-start sm:self-auto">
+                          {(['ALL', 'COMPLETE', 'OPEN', 'CANCELLED'] as const).map(st => (
+                            <button
+                              key={st}
+                              type="button"
+                              onClick={() => setMfOrderStatusFilter(st)}
+                              className={`px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase transition-all cursor-pointer ${
+                                mfOrderStatusFilter === st
+                                  ? 'bg-brand-500 text-white shadow-md'
+                                  : 'text-gray-400 hover:text-white'
+                              }`}
+                            >
+                              {st}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {filteredMfOrders.length === 0 ? (
+                        <div className="text-center py-12 text-xs text-gray-500">
+                          No Coin mutual fund orders match the selected filters.
+                        </div>
+                      ) : (
+                        filteredMfOrders.map(mfo => (
+                          <div key={mfo.order_id} className="glass-panel rounded-2xl p-4 border border-dark-border/60 hover:border-dark-border transition-all space-y-2.5">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-extrabold text-xs text-white tracking-tight leading-snug">
+                                    {mfo.fund}
+                                  </span>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
+                                    mfo.transaction_type === 'BUY'
+                                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                      : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                  }`}>
+                                    {mfo.transaction_type}
+                                  </span>
+                                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-brand-500/10 border border-brand-500/20 text-brand-400 uppercase">
+                                    {mfo.variety || 'REGULAR'}
+                                  </span>
+                                  {mfo.purchase_type && (
+                                    <span className="text-[8px] font-semibold text-gray-400 bg-dark-depth-2 px-1.5 py-0.5 rounded border border-dark-border/40 uppercase">
+                                      {mfo.purchase_type}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-3 text-[10px] text-gray-400 font-medium flex-wrap">
+                                  <span>ISIN: <code className="text-gray-300 font-mono">{mfo.tradingsymbol}</code></span>
+                                  {mfo.folio && <span>Folio: <span className="text-gray-300">{mfo.folio}</span></span>}
+                                  {mfo.order_timestamp && (
+                                    <span>
+                                      {new Date(mfo.order_timestamp).toLocaleString('en-IN', {
+                                        day: '2-digit',
+                                        month: 'short',
+                                        year: 'numeric',
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      })}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-1 shrink-0">
+                                <span className="text-sm font-black text-white">
+                                  ₹{(mfo.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </span>
+                                <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border uppercase tracking-wider ${
+                                  mfo.status === 'COMPLETE'
+                                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                    : mfo.status === 'OPEN'
+                                    ? 'bg-amber-500/10 border-amber-500/20 text-amber-400 animate-pulse'
+                                    : mfo.status === 'CANCELLED'
+                                    ? 'bg-gray-500/10 border-gray-500/20 text-gray-400'
+                                    : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                }`}>
+                                  {mfo.status}
+                                </span>
+                              </div>
+                            </div>
+
+                            {(mfo.quantity > 0 || ((mfo.average_price || 0) > 0) || (mfo.status_message && mfo.status_message.trim())) && (
+                              <div className="pt-2 border-t border-dark-border/30 flex flex-wrap items-center justify-between gap-2 text-[10px]">
+                                <div className="flex items-center gap-3 text-gray-400 font-medium">
+                                  {mfo.quantity > 0 && (
+                                    <span>Allotted: <strong className="text-gray-200">{mfo.quantity.toFixed(3)} units</strong></span>
+                                  )}
+                                  {(mfo.average_price || 0) > 0 && (
+                                    <span>NAV: <strong className="text-gray-200">₹{(mfo.average_price || 0).toFixed(2)}</strong></span>
+                                  )}
+                                </div>
+                                {mfo.status_message && mfo.status_message.trim() && (
+                                  <span className="text-gray-400 italic text-[9px]">
+                                    {mfo.status_message}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
 
                   {/* GTT Triggers List */}
                   {listTab === 'gtt' && gtts.filter(g => g.status === 'ACTIVE').map((gtt) => (

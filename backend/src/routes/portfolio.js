@@ -235,13 +235,14 @@ router.post('/sync-all', requireAuth, async (req, res) => {
       console.warn('[Portfolio] LTP price refresh warning:', ltpErr.message);
     }
 
-    // 4. Sync Mutual Fund Holdings from Zerodha Coin
+    // 4. Sync Mutual Fund Holdings & Orders from Zerodha Coin
+    let mfOrdersCount = 0;
     try {
       const kiteMf = await kc.getMFHoldings();
       const mfArray = Array.isArray(kiteMf) ? kiteMf : [];
       mfCount = mfArray.length;
 
-      const mappedMf = mfArray.map((h, idx) => {
+      const mappedMf = mfArray.map((h) => {
         const qty = parseFloat(h.quantity || 0);
         const avgPrice = parseFloat(h.average_price || 0);
         const lastPrice = parseFloat(h.last_price || avgPrice);
@@ -251,7 +252,7 @@ router.post('/sync-all', requireAuth, async (req, res) => {
         const pnlPct = invested > 0 ? parseFloat(((pnl / invested) * 100).toFixed(2)) : 0;
 
         return {
-          id: h.id || `mf_${userId}_${idx}`,
+          id: (h.id && h.id.length === 36) ? h.id : crypto.randomUUID(),
           user_id: userId,
           folio: h.folio || 'DEFAULT',
           scheme_name: h.fund || h.tradingsymbol || 'Mutual Fund Scheme',
@@ -269,6 +270,22 @@ router.post('/sync-all', requireAuth, async (req, res) => {
       });
 
       await saveStoredMFHoldings(userId, mappedMf);
+
+      // Also sync MF Orders
+      try {
+        const rawMfOrders = await kc.getMFOrders();
+        const mfOrders = Array.isArray(rawMfOrders) ? rawMfOrders : [];
+        mfOrdersCount = mfOrders.length;
+        await supabaseAdmin
+          .from('system_settings')
+          .upsert({
+            key: `mf_orders_${userId}`,
+            value: JSON.stringify(mfOrders),
+            updated_at: nowIso
+          }, { onConflict: 'key' });
+      } catch (mfOrdErr) {
+        console.warn('[Portfolio] Coin MF orders sync warning:', mfOrdErr.message);
+      }
     } catch (mfErr) {
       console.warn('[Portfolio] Coin MF sync warning:', mfErr.message);
     }
@@ -288,6 +305,7 @@ router.post('/sync-all', requireAuth, async (req, res) => {
       message: `Portfolio synchronized: ${newTradesCount} new order(s), ${mfCount} mutual fund scheme(s).`,
       newTradesCount,
       mfCount,
+      mfOrdersCount,
       summary: {
         equity: {
           value: equity.value,

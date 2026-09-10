@@ -1,4 +1,5 @@
 import express from 'express';
+import crypto from 'crypto';
 import { supabaseAdmin } from '../config/supabase.js';
 import { requireAuth } from '../middleware/auth.js';
 import pkg from 'kiteconnect';
@@ -165,7 +166,7 @@ router.post('/sync-coin', requireAuth, async (req, res) => {
       const pnlPct = invested > 0 ? parseFloat(((pnl / invested) * 100).toFixed(2)) : 0;
 
       return {
-        id: h.id || `mf_${userId}_${idx}`,
+        id: (h.id && h.id.length === 36) ? h.id : crypto.randomUUID(),
         user_id: userId,
         folio: h.folio || 'DEFAULT',
         scheme_name: h.fund || h.tradingsymbol || 'Mutual Fund Scheme',
@@ -231,7 +232,7 @@ router.post('/refresh-nav', requireAuth, async (req, res) => {
             const pnlPct = invested > 0 ? parseFloat(((pnl / invested) * 100).toFixed(2)) : 0;
 
             return {
-              id: h.id || `mf_${userId}_${idx}`,
+              id: (h.id && h.id.length === 36) ? h.id : crypto.randomUUID(),
               user_id: userId,
               folio: h.folio || 'DEFAULT',
               scheme_name: h.fund || h.tradingsymbol || 'Mutual Fund Scheme',

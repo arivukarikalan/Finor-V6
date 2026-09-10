@@ -315,6 +315,77 @@ router.get('/gtt/live', requireAuth, async (req, res) => {
 });
 
 /**
+ * GET /api/orders/mf/live
+ * Fetch Mutual Fund orders from Zerodha Coin
+ */
+router.get('/mf/live', requireAuth, async (req, res) => {
+  try {
+    const session = await getActiveSession(req.user.id);
+    
+    if (session) {
+      const credentials = await getUserZerodhaCredentials(req.user.id);
+      const kc = new KiteConnect({
+        api_key: credentials.apiKey || process.env.ZERODHA_API_KEY,
+        access_token: session.access_token
+      });
+
+      const rawOrders = await kc.getMFOrders();
+      const orders = Array.isArray(rawOrders) ? rawOrders : [];
+
+      // Cache the MF orders in system_settings for offline resilience
+      try {
+        await supabaseAdmin
+          .from('system_settings')
+          .upsert({
+            key: `mf_orders_${req.user.id}`,
+            value: JSON.stringify(orders),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'key' });
+      } catch (cacheErr) {
+        console.warn('[OrdersRoute] Failed to cache MF orders:', cacheErr.message);
+      }
+
+      return res.json({ mode: 'REAL', orders });
+    } else {
+      // Disconnected or Mock Mode: return cached orders if available
+      try {
+        const { data: cached } = await supabaseAdmin
+          .from('system_settings')
+          .select('value')
+          .eq('key', `mf_orders_${req.user.id}`)
+          .maybeSingle();
+
+        const orders = cached?.value 
+          ? (typeof cached.value === 'string' ? JSON.parse(cached.value) : cached.value)
+          : [];
+
+        return res.json({ mode: 'CACHED', orders, message: 'Broker session disconnected. Showing cached Coin orders.' });
+      } catch (fallbackErr) {
+        return res.json({ mode: 'MOCK', orders: [] });
+      }
+    }
+  } catch (err) {
+    console.error('[OrdersRoute] Error fetching MF orders:', err.message);
+    // Return cached fallback on error
+    try {
+      const { data: cached } = await supabaseAdmin
+        .from('system_settings')
+        .select('value')
+        .eq('key', `mf_orders_${req.user.id}`)
+        .maybeSingle();
+
+      const orders = cached?.value 
+        ? (typeof cached.value === 'string' ? JSON.parse(cached.value) : cached.value)
+        : [];
+
+      return res.json({ mode: 'CACHED', orders, error: err.message });
+    } catch {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+});
+
+/**
  * POST /api/orders/place
  * Place a BUY or SELL order (Market/Limit).
  */
