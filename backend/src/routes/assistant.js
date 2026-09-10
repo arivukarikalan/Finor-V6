@@ -399,9 +399,73 @@ async function buildPortfolioContext(userId, skipInsights = false) {
 
   const sortedMonths = Object.keys(monthWisePerformance).sort().reverse(); // newest first
 
-  let ctx = `=== USER PORTFOLIO CONTEXT ===\n\n`;
+  // Fetch additional database tables in parallel for complete Finor AI coverage
+  const [
+    debtsRes,
+    goalsRes,
+    settingsRes,
+    snapshotsRes,
+    considerationsRes
+  ] = await Promise.allSettled([
+    supabaseAdmin.from('finance_debts').select('*').eq('user_id', userId),
+    supabaseAdmin.from('finance_goals').select('*').eq('user_id', userId),
+    supabaseAdmin.from('system_settings').select('key, value').in('key', [`mutual_fund_holdings_${userId}`, `coin_mf_orders_${userId}`]),
+    supabaseAdmin.from('portfolio_snapshots').select('*').eq('user_id', userId).order('snapshot_date', { ascending: false }).limit(10),
+    supabaseAdmin.from('buy_considerations').select('*').eq('user_id', userId)
+  ]);
 
-  ctx += `## Active Open Positions:\n`;
+  const debts = debtsRes.status === 'fulfilled' ? debtsRes.value.data || [] : [];
+  const goals = goalsRes.status === 'fulfilled' ? goalsRes.value.data || [] : [];
+  const settingsRows = settingsRes.status === 'fulfilled' ? settingsRes.value.data || [] : [];
+  const snapshots = snapshotsRes.status === 'fulfilled' ? snapshotsRes.value.data || [] : [];
+  const considerations = considerationsRes.status === 'fulfilled' ? considerationsRes.value.data || [] : [];
+
+  // Parse Mutual Funds and Coin Orders from system_settings
+  let mfHoldings = [];
+  let coinOrders = [];
+  settingsRows.forEach(row => {
+    try {
+      const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+      if (row.key === `mutual_fund_holdings_${userId}` && Array.isArray(parsed)) {
+        mfHoldings = parsed;
+      } else if (row.key === `coin_mf_orders_${userId}` && Array.isArray(parsed)) {
+        coinOrders = parsed;
+      }
+    } catch (e) {
+      console.error('[AI Assistant] Failed to parse system_setting:', row.key, e.message);
+    }
+  });
+
+  const overallSummary = pnlReport.summary || {};
+  const eqSummary = pnlReport.equity_summary || {};
+  const fnoSummary = pnlReport.fno_summary || {};
+  const eqClosed = pnlReport.equity_closed_trades || [];
+  const fnoClosed = pnlReport.fno_closed_trades || [];
+
+  let ctx = `=== COMPLETE USER PORTFOLIO & DATABASE CONTEXT ===\n\n`;
+
+  // 1. Realized P&L, Statutory Charges & Net P&L Summary
+  ctx += `## 📊 Realized P&L, Statutory Charges & Net Realized P&L (FIFO Ledger):\n`;
+  ctx += `- **Total Overall Realized P&L**: Gross ₹${(overallSummary.total_realized_pnl || 0).toLocaleString('en-IN')}, Approx Charges & Taxes: -₹${(overallSummary.total_charges || 0).toLocaleString('en-IN')}, **Net Realized P&L: ₹${(overallSummary.net_realized_pnl || 0).toLocaleString('en-IN')}** (Total Trades Closed: ${overallSummary.trades_count || 0})\n`;
+  ctx += `- **📈 Equity Delivery & Intraday**: Gross ₹${(eqSummary.total_realized_pnl || 0).toLocaleString('en-IN')}, Approx Charges: -₹${(eqSummary.total_charges || 0).toLocaleString('en-IN')}, **Net P&L: ₹${(eqSummary.net_realized_pnl || 0).toLocaleString('en-IN')}** (STCG: ₹${(eqSummary.stcg || 0).toLocaleString('en-IN')}, LTCG: ₹${(eqSummary.ltcg || 0).toLocaleString('en-IN')}, Trades: ${eqSummary.trades_count || 0})\n`;
+  ctx += `- **⚡ F&O Derivatives (Futures & Options)**: Gross ₹${(fnoSummary.total_realized_pnl || 0).toLocaleString('en-IN')}, Approx Charges: -₹${(fnoSummary.total_charges || 0).toLocaleString('en-IN')}, **Net P&L: ₹${(fnoSummary.net_realized_pnl || 0).toLocaleString('en-IN')}** (Contracts Closed: ${fnoSummary.trades_count || 0})\n`;
+
+  if (overallSummary.charges_breakdown) {
+    const cb = overallSummary.charges_breakdown;
+    ctx += `- **Approx Charges Breakdown**: Brokerage: ₹${cb.brokerage || 0}, STT: ₹${cb.stt || 0}, Exchange Txn Charges: ₹${cb.exchange_charges || 0}, GST (18%): ₹${cb.gst || 0}, Stamp Duty: ₹${cb.stamp_duty || 0}, DP Charges: ₹${cb.dp_charges || 0}, SEBI: ₹${cb.sebi_charges || 0}\n`;
+  }
+
+  // 2. F&O Closed Derivative Contracts Details
+  if (fnoClosed.length > 0) {
+    ctx += `\n## ⚡ F&O Closed Derivative Contracts (${fnoClosed.length} Total):\n`;
+    fnoClosed.slice(0, 20).forEach(t => {
+      const typeBadge = t.contract_type === 'OPTION_CE' ? 'CALL CE' : t.contract_type === 'OPTION_PE' ? 'PUT PE' : 'FUTURES';
+      ctx += `- [${typeBadge}] **${t.stock_symbol}**: Qty: ${t.quantity}, Buy: ₹${t.buy_price.toFixed(2)} (${t.buy_date.substring(0, 10)}), Sell: ₹${t.sell_price.toFixed(2)} (${t.sell_date.substring(0, 10)}), Gross P&L: ₹${t.realized_pnl.toFixed(2)}, Approx Charges: ₹${t.charges.total_charges.toFixed(2)}, Net P&L: ₹${t.net_realized_pnl.toFixed(2)}\n`;
+    });
+  }
+
+  // 3. Active Open Positions
+  ctx += `\n## Active Open Positions (Equity Holdings):\n`;
   if (holdings && holdings.length > 0) {
     holdings.forEach(h => {
       const value = h.quantity * (h.ltp || h.average_buy_price);
@@ -414,17 +478,103 @@ async function buildPortfolioContext(userId, skipInsights = false) {
     ctx += `No active holdings found.\n`;
   }
 
-  ctx += `\n## All-Time Realized P&L by Stock:\n`;
+  // 4. Mutual Fund Portfolio
+  ctx += `\n## 🏦 Mutual Fund Holdings (Coin / Zerodha Sync):\n`;
+  if (mfHoldings && mfHoldings.length > 0) {
+    let totalMfInvested = 0;
+    let totalMfValue = 0;
+    mfHoldings.forEach(mf => {
+      totalMfInvested += (parseFloat(mf.invested) || 0);
+      totalMfValue += (parseFloat(mf.current_value) || (parseFloat(mf.units || 0) * parseFloat(mf.nav || 0)) || 0);
+    });
+    const totalMfPnl = totalMfValue - totalMfInvested;
+    const mfReturnPct = totalMfInvested > 0 ? (totalMfPnl / totalMfInvested) * 100 : 0;
+    ctx += `- Total Mutual Funds Invested: ₹${totalMfInvested.toLocaleString('en-IN', { maximumFractionDigits: 2 })}, Current Value: ₹${totalMfValue.toLocaleString('en-IN', { maximumFractionDigits: 2 })}, P&L: ₹${totalMfPnl.toLocaleString('en-IN', { maximumFractionDigits: 2 })} (${mfReturnPct.toFixed(2)}%)\n`;
+    mfHoldings.forEach(mf => {
+      const inv = parseFloat(mf.invested) || 0;
+      const val = parseFloat(mf.current_value) || ((parseFloat(mf.units) || 0) * (parseFloat(mf.nav) || 0)) || 0;
+      const pnl = val - inv;
+      ctx += `  - **${mf.fund_name || mf.tradingsymbol || 'Mutual Fund'}**: Units: ${mf.units || 0}, Invested: ₹${inv.toFixed(2)}, Value: ₹${val.toFixed(2)}, P&L: ₹${pnl.toFixed(2)}\n`;
+    });
+  } else {
+    ctx += `No mutual fund holdings found in settings.\n`;
+  }
+
+  if (coinOrders && coinOrders.length > 0) {
+    ctx += `\n## Recent Coin Mutual Fund Orders:\n`;
+    coinOrders.slice(0, 5).forEach(ord => {
+      ctx += `- **${ord.fund || ord.tradingsymbol || 'MF Order'}**: Amount: ₹${ord.amount || 0}, Type: ${ord.transaction_type || ord.order_type || 'Order'}, Status: ${ord.status || 'COMPLETE'}\n`;
+    });
+  }
+
+  // 5. Financial Goals & Wealth Targets
+  ctx += `\n## 🎯 Financial Goals & Wealth Targets (finance_goals):\n`;
+  if (goals && goals.length > 0) {
+    goals.forEach(g => {
+      const target = parseFloat(g.target_amount) || 0;
+      const current = parseFloat(g.current_amount) || 0;
+      const pct = target > 0 ? ((current / target) * 100).toFixed(1) : '0';
+      ctx += `- **${g.title || 'Goal'}**: Saved ₹${current.toLocaleString('en-IN')} / ₹${target.toLocaleString('en-IN')} (${pct}%), Target Date: ${g.target_date || 'N/A'}, Category: ${g.category || 'General'}, Priority: ${g.priority || 'Normal'}\n`;
+    });
+  } else {
+    ctx += `No financial goals configured.\n`;
+  }
+
+  // 6. Debts, Liabilities & Money Lent
+  ctx += `\n## 💳 Debts, Receivables & Payables (finance_debts):\n`;
+  if (debts && debts.length > 0) {
+    let totalLent = 0;
+    let totalBorrowed = 0;
+    debts.forEach(d => {
+      const remaining = parseFloat(d.outstanding_amount ?? d.amount) || 0;
+      if (d.type === 'LENT' || d.type === 'RECEIVABLE') {
+        totalLent += remaining;
+      } else {
+        totalBorrowed += remaining;
+      }
+    });
+    ctx += `- Total Money Lent (Receivables): ₹${totalLent.toLocaleString('en-IN')} | Total Money Borrowed (Payables): ₹${totalBorrowed.toLocaleString('en-IN')}\n`;
+    debts.forEach(d => {
+      const isLent = d.type === 'LENT' || d.type === 'RECEIVABLE';
+      const label = isLent ? 'Lent to' : 'Borrowed from';
+      ctx += `  - [${d.type}] ${label} **${d.person_name || 'Individual'}**: Amount ₹${parseFloat(d.amount || 0).toLocaleString('en-IN')}, Remaining ₹${parseFloat(d.outstanding_amount ?? d.amount).toLocaleString('en-IN')}, Due: ${d.due_date || 'N/A'}, Status: ${d.status || 'ACTIVE'}\n`;
+    });
+  } else {
+    ctx += `No active debts or loans logged.\n`;
+  }
+
+  // 7. Portfolio Snapshots & Timeline
+  ctx += `\n## ⏳ Portfolio Timeline Snapshots (portfolio_snapshots):\n`;
+  if (snapshots && snapshots.length > 0) {
+    snapshots.forEach(s => {
+      ctx += `- **${s.snapshot_date ? s.snapshot_date.substring(0, 10) : 'Date'}**: Portfolio Value: ₹${(s.portfolio_value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}, Invested Capital: ₹${(s.invested_capital || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}, Returns: ₹${(s.returns || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}\n`;
+    });
+  } else {
+    ctx += `No historical snapshots recorded.\n`;
+  }
+
+  // 8. Buy Radar & Considerations
+  if (considerations && considerations.length > 0) {
+    ctx += `\n## 🎯 Stock Buy Radar & Watchlist (buy_considerations):\n`;
+    considerations.forEach(c => {
+      ctx += `- **${c.stock_symbol}**: Target Entry: ₹${parseFloat(c.target_price || 0).toFixed(2)}, Rationale: ${c.rationale || c.notes || 'Under radar'}\n`;
+    });
+  }
+
+  // 9. All-Time Realized P&L by Stock
+  ctx += `\n## All-Time Realized P&L by Stock / Contract:\n`;
   if (pnlReport.stock_wise && pnlReport.stock_wise.length > 0) {
     pnlReport.stock_wise.forEach(s => {
       const stats = closedStatsMap[s.stock_symbol];
       const avgClosedHold = stats && stats.count > 0 ? (stats.total_days / stats.count).toFixed(1) : 'N/A';
-      ctx += `- **${s.stock_symbol}**: All-Time Realized P&L: ₹${s.realized_pnl.toFixed(2)} (STCG: ₹${s.stcg.toFixed(2)}, LTCG: ₹${s.ltcg.toFixed(2)}, Total Traded Qty: ${s.quantity}, Avg Hold Duration: ${avgClosedHold} days)\n`;
+      const typeLabel = s.is_fno ? ` [F&O ${s.contract_type}]` : '';
+      ctx += `- **${s.stock_symbol}**${typeLabel}: Gross Realized: ₹${s.realized_pnl.toFixed(2)}, Charges: ₹${(s.total_charges || 0).toFixed(2)}, **Net: ₹${(s.net_realized_pnl || 0).toFixed(2)}** (Traded Qty: ${s.quantity}, Avg Hold: ${avgClosedHold} days)\n`;
     });
   } else {
     ctx += `No realized P&L matches found.\n`;
   }
 
+  // 10. Month-Wise Realized P&L Performance History
   ctx += `\n## Month-Wise Realized P&L Performance History:\n`;
   if (sortedMonths.length > 0) {
     sortedMonths.forEach(mKey => {
@@ -475,7 +625,7 @@ async function buildPortfolioContext(userId, skipInsights = false) {
     ctx += `No trade history found.\n`;
   }
 
-  // 4. Fetch cached corporate actions for all holdings
+  // Fetch cached corporate actions for all holdings
   let corporateActionsText = '';
   if (holdings && holdings.length > 0) {
     const symbols = holdings.map(h => `${h.stock_symbol.toUpperCase()}_ACTIONS`);
@@ -516,7 +666,7 @@ async function buildPortfolioContext(userId, skipInsights = false) {
     ctx += corporateActionsText;
   }
 
-  // 5. Fetch profile data (non-sensitive fields)
+  // Fetch profile data (non-sensitive fields)
   try {
     const { data: profile } = await supabaseAdmin
       .from('profiles')
@@ -534,7 +684,7 @@ async function buildPortfolioContext(userId, skipInsights = false) {
     console.error('[AI Assistant] Fetching profile metadata failed:', errProfile.message);
   }
 
-  // 6. Fetch recent finance transactions & calculate summary aggregates
+  // Fetch recent finance transactions & calculate summary aggregates
   try {
     const { data: recentTransactions } = await supabaseAdmin
       .from('finance_transactions')
@@ -615,7 +765,143 @@ function generateSimulatedResponse(message, contextText) {
   let reply = `### 🧠 AI Assistant (Simulated Mode)\n\n`;
   reply += `*You are viewing this response in Simulated Mode because no Gemini API key is configured in your backend environment variables.*\n\n`;
 
-  if (msgLower.includes('holding') || msgLower.includes('portfolio') || msgLower.includes('invested')) {
+  if (msgLower.includes('f&o') || msgLower.includes('fno') || msgLower.includes('derivative') || msgLower.includes('option') || msgLower.includes('future')) {
+    reply += `#### ⚡ F&O Derivatives Performance & Contracts Audit\n\n`;
+    const lines = contextText.split('\n');
+    const fnoSummaryLine = lines.find(l => l.includes('F&O Derivatives (Futures & Options)'));
+    const fnoContractLines = lines.filter(l => l.startsWith('- [CALL') || l.startsWith('- [PUT') || l.startsWith('- [FUTURES'));
+
+    if (fnoSummaryLine) {
+      reply += `${fnoSummaryLine}\n\n`;
+    }
+
+    if (fnoContractLines.length > 0) {
+      reply += `##### 📋 Closed Derivatives Contracts:\n\n`;
+      reply += `| Contract | Type | Qty | Buy Price | Sell Price | Gross P&L | Charges | Net P&L |\n`;
+      reply += `| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n`;
+
+      fnoContractLines.forEach(l => {
+        const typeMatch = l.match(/\[(.*?)\]/);
+        const symMatch = l.match(/\*\*([A-Z0-9]+)\*\*/);
+        const qtyMatch = l.match(/Qty:\s*(\d+)/);
+        const buyMatch = l.match(/Buy:\s*₹([\d.]+)/);
+        const sellMatch = l.match(/Sell:\s*₹([\d.]+)/);
+        const grossMatch = l.match(/Gross P&L:\s*₹([-\d.]+)/);
+        const chargesMatch = l.match(/Charges:\s*₹([-\d.]+)/);
+        const netMatch = l.match(/Net P&L:\s*₹([-\d.]+)/);
+
+        if (symMatch && qtyMatch && buyMatch && sellMatch && grossMatch && netMatch) {
+          const type = typeMatch ? typeMatch[1] : 'F&O';
+          const sym = symMatch[1];
+          const qty = qtyMatch[1];
+          const buy = buyMatch[1];
+          const sell = sellMatch[1];
+          const grossVal = parseFloat(grossMatch[1]);
+          const chargesVal = chargesMatch ? chargesMatch[1] : '0.00';
+          const netVal = parseFloat(netMatch[1]);
+
+          const netBadge = netVal >= 0 ? `🟢 +₹${netVal.toLocaleString('en-IN')}` : `🔴 -₹${Math.abs(netVal).toLocaleString('en-IN')}`;
+          reply += `| **${sym}** | \`${type}\` | ${qty} | ₹${buy} | ₹${sell} | ₹${grossVal.toFixed(2)} | -₹${chargesVal} | ${netBadge} |\n`;
+        }
+      });
+      reply += `\n*Charges account for standard flat ₹20/order brokerage, 0.1% STT on sell premium, exchange turnover, GST (18%), and SEBI charges.*`;
+    } else {
+      reply += `No closed F&O derivative contracts found in your database ledger.`;
+    }
+  } else if (msgLower.includes('charge') || msgLower.includes('tax') || msgLower.includes('net p&l') || msgLower.includes('gross') || msgLower.includes('brokerage') || msgLower.includes('stt') || msgLower.includes('realized p&l')) {
+    reply += `#### 🧾 Realized P&L, Statutory Charges & Net P&L Statement\n\n`;
+    const lines = contextText.split('\n');
+    const pnlLines = lines.filter(l => l.includes('Realized P&L') || l.includes('Approx Charges Breakdown'));
+
+    if (pnlLines.length > 0) {
+      reply += `Here is your complete realized P&L and statutory tax/charges breakdown:\n\n`;
+      pnlLines.forEach(l => {
+        reply += `${l}\n`;
+      });
+      reply += `\n> **Note:** Net Realized P&L reflects your true bottom-line earnings after deducting ₹0/₹20 brokerage, STT, NSE Exchange turnover fees, SEBI charges, Stamp duty, 18% GST, and ₹15.34 DP charges per delivery sale.`;
+    } else {
+      reply += `No realized P&L records found in your database.`;
+    }
+  } else if (msgLower.includes('mutual fund') || msgLower.includes('coin') || msgLower.includes('mf') || msgLower.includes('sip')) {
+    reply += `#### 🏦 Mutual Fund Holdings (Coin / Zerodha Sync)\n\n`;
+    const lines = contextText.split('\n');
+    const mfSummary = lines.find(l => l.includes('Total Mutual Funds Invested:'));
+    const mfLines = lines.filter(l => l.trim().startsWith('- **') && l.includes('Units:'));
+    const coinOrderLines = lines.filter(l => l.trim().startsWith('- **') && l.includes('Status:'));
+
+    if (mfSummary) {
+      reply += `${mfSummary}\n\n`;
+    }
+
+    if (mfLines.length > 0) {
+      reply += `| Fund Scheme | Units | Invested | Current Value | P&L |\n`;
+      reply += `| :--- | :---: | :---: | :---: | :---: |\n`;
+      mfLines.forEach(l => {
+        const nameMatch = l.match(/\*\*([^*]+)\*\*/);
+        const unitsMatch = l.match(/Units:\s*([\d.]+)/);
+        const invMatch = l.match(/Invested:\s*₹([\d.]+)/);
+        const valMatch = l.match(/Value:\s*₹([\d.]+)/);
+        const pnlMatch = l.match(/P&L:\s*₹([-\d.]+)/);
+
+        if (nameMatch) {
+          const name = nameMatch[1];
+          const units = unitsMatch ? unitsMatch[1] : 'N/A';
+          const inv = invMatch ? `₹${parseFloat(invMatch[1]).toLocaleString('en-IN')}` : 'N/A';
+          const val = valMatch ? `₹${parseFloat(valMatch[1]).toLocaleString('en-IN')}` : 'N/A';
+          const pnlVal = pnlMatch ? parseFloat(pnlMatch[1]) : 0;
+          const pnlStr = (pnlVal >= 0 ? '🟢 +' : '🔴 -') + `₹${Math.abs(pnlVal).toLocaleString('en-IN')}`;
+          reply += `| **${name}** | ${units} | ${inv} | ${val} | ${pnlStr} |\n`;
+        }
+      });
+    } else {
+      reply += `No mutual fund holdings synced in your database settings.`;
+    }
+
+    if (coinOrderLines.length > 0) {
+      reply += `\n##### 📦 Recent Coin Orders:\n`;
+      coinOrderLines.forEach(l => reply += `${l}\n`);
+    }
+  } else if (msgLower.includes('goal') || msgLower.includes('target') || msgLower.includes('wealth goal')) {
+    reply += `#### 🎯 Financial Goals & Wealth Targets\n\n`;
+    const lines = contextText.split('\n');
+    const goalLines = lines.filter(l => l.trim().startsWith('- **') && l.includes('Saved ₹'));
+
+    if (goalLines.length > 0) {
+      reply += `Here is the current status of your financial goals:\n\n`;
+      goalLines.forEach(l => reply += `${l}\n`);
+    } else {
+      reply += `No financial goals configured. Head over to the Finance Goals module to establish target savings!`;
+    }
+  } else if (msgLower.includes('debt') || msgLower.includes('lent') || msgLower.includes('borrow') || msgLower.includes('loan') || msgLower.includes('payable') || msgLower.includes('receivable')) {
+    reply += `#### 💳 Debts, Receivables & Payables Ledger\n\n`;
+    const lines = contextText.split('\n');
+    const debtSummary = lines.find(l => l.includes('Total Money Lent (Receivables):'));
+    const debtLines = lines.filter(l => l.trim().startsWith('- [LENT]') || l.trim().startsWith('- [BORROWED]') || l.trim().startsWith('- [RECEIVABLE]') || l.trim().startsWith('- [PAYABLE]'));
+
+    if (debtSummary) {
+      reply += `${debtSummary}\n\n`;
+    }
+
+    if (debtLines.length > 0) {
+      reply += `##### 📋 Individual Balances:\n`;
+      debtLines.forEach(l => reply += `${l}\n`);
+    } else {
+      reply += `No active debts or money lending records found in your database.`;
+    }
+  } else if (msgLower.includes('database') || msgLower.includes('access') || msgLower.includes('supabase') || msgLower.includes('every data') || msgLower.includes('all data')) {
+    reply += `#### 🛡️ Finor AI Supabase Database Access Verification\n\n`;
+    reply += `**Yes, I have full, direct real-time access to every dataset and table in your Supabase database!**\n\n`;
+    reply += `Here is a verification of the connected data sources currently in my active context:\n`;
+    reply += `- **📈 Equity Holdings & Trades**: Full portfolio holdings and complete historical trade ledger for FIFO P&L calculations.\n`;
+    reply += `- **⚡ F&O Derivatives**: Live contract details, CE/PE Options, Futures, Gross P&L, approx statutory charges, and Net Realized P&L.\n`;
+    reply += `- **🏦 Mutual Funds (Coin Sync)**: Synced mutual fund schemes, units, invested amount, NAV valuations, and Coin orders.\n`;
+    reply += `- **🎯 Wealth Goals (\`finance_goals\`)**: All configured goals, saved balances, target amounts, and deadline dates.\n`;
+    reply += `- **💳 Debts Ledger (\`finance_debts\`)**: Money lent (receivables) and money borrowed (payables) with repayment tracking.\n`;
+    reply += `- **💡 Cashflow & Transactions (\`finance_transactions\`)**: Real-time personal finance expenses, income, avoidable discretionary spend, and reimbursable claims.\n`;
+    reply += `- **⏳ Time Machine Snapshots (\`portfolio_snapshots\`)**: Historical portfolio value trajectory and invested capital timeline.\n`;
+    reply += `- **🎯 Buy Watchlist Radar (\`buy_considerations\`)**: Stocks under entry radar with target trigger prices.\n\n`;
+    reply += `Feel free to ask me questions about any of these areas!`;
+  } else if (msgLower.includes('holding') || msgLower.includes('portfolio') || msgLower.includes('invested')) {
     reply += `#### 📋 Current Portfolio Overview\n\n`;
     const lines = contextText.split('\n');
     const holdingLines = lines.filter(l => l.startsWith('- **') && l.includes('Cost Price:'));
@@ -708,11 +994,13 @@ function generateSimulatedResponse(message, contextText) {
     }
   } else {
     reply += `#### 👋 Welcome to Finor AI Chat Coach!\n\n`;
-    reply += `I am your virtual trading & expense assistant. I have full context on your holdings, recent trades, finance transactions, and discipline score parameters. Ask me questions like:\n`;
-    reply += `1. *"Summarize my holdings"* (to see active open positions)\n`;
-    reply += `2. *"What are my avoidable expenses?"* (to audit snacks, shopping & impulse spend)\n`;
-    reply += `3. *"Show my pending claimable expenses"* (to review company reimbursements)\n`;
-    reply += `4. *"Evaluate my trading discipline"* (to check scores and violations)\n\n`;
+    reply += `I am your virtual trading, derivatives & personal wealth coach with full real-time access to your database. Ask me questions like:\n`;
+    reply += `1. *"Summarize my F&O trades and charges"* (to audit derivatives, options, and net P&L)\n`;
+    reply += `2. *"What are my mutual fund holdings?"* (to see Coin synced investments)\n`;
+    reply += `3. *"Show my debts and money lent"* (to view receivables and payables)\n`;
+    reply += `4. *"Check my financial goals progress"* (to see wealth target tracking)\n`;
+    reply += `5. *"What are my avoidable expenses?"* (to audit discretionary spending)\n`;
+    reply += `6. *"Do you have all access to my database?"* (to verify connected tables)\n\n`;
     reply += `*Configure your \`GEMINI_API_KEY\` in your env settings to activate live generative AI chat responses.*`;
   }
 
@@ -924,10 +1212,20 @@ ${activeOrderWorkflow.trigger_price_2 ? `- Stoploss Trigger Price: **₹${active
 These parameters are locked in the active order workflow. Keep them in mind. If the user asks general questions, answer them, but remind them that this order is pending confirmation. If they confirm (e.g. "yes", "proceed", "confirm"), proceed with tool/function execution.`;
       }
 
-      const systemInstruction = `You are Finor AI (V6.0), a professional trading coach and portfolio risk advisor. You are chatting with the user, ${userName}.
+      const systemInstruction = `You are Finor AI (V6.0), a professional trading coach, derivatives analyst, and comprehensive wealth advisor. You are chatting with the user, ${userName}.
 Always address the user as ${userName} or Arivu to maintain a personalized and friendly relationship.
 
-You are directly integrated with the user's trading terminal database (Supabase). The context below is computed dynamically by the backend from the user's profile and complete historical trade ledger (including all buy/sell transactions and finance ledger inputs):
+You have comprehensive, direct real-time access to the user's entire Supabase database and ledger systems:
+- 📈 **Equity Holdings & Historical Trade Ledger**: Active portfolio positions, cost bases, LTP, and chronological buy/sell trade matchings.
+- ⚡ **F&O Derivatives Tracking**: Futures & Options contracts (Call CE, Put PE, Futures), trade logs, gross realized P&L, approximate statutory charges (Brokerage, STT, Exchange turnover, GST, Stamp duty, DP charges), and Net Realized P&L.
+- 🏦 **Mutual Fund Portfolio (Coin Sync)**: Synced mutual fund schemes, units, invested capital, current NAV valuations, and recent Coin MF orders.
+- 🎯 **Financial Goals & Wealth Targets (finance_goals)**: Goal titles, target amounts, saved balances, completion percentages, and target deadlines.
+- 💳 **Debts, Receivables & Payables (finance_debts)**: Money lent to people (receivables) and money borrowed from people (payables), outstanding amounts, interest rates, and due dates.
+- 💡 **Personal Finance Cashflow (finance_transactions)**: Daily expense logs, income streams, avoidable/discretionary spend audit, and company reimbursable claims.
+- ⏳ **Portfolio Timeline Snapshots (portfolio_snapshots)**: Historical net worth snapshots and valuation trajectories.
+- 🎯 **Buy Watchlist Radar (buy_considerations)**: Target entry price levels and monitor notes.
+
+The context below is computed dynamically by the backend from the user's live database records:
 ${contextText}
 ${workflowContext}
 
@@ -936,7 +1234,7 @@ Analyze this context and answer the user's query directly and professionally. Ma
 ### 🛡️ CRITICAL SECURITY POLICY:
 You have access to calculated analytical metrics, profile attributes, and transaction logs. However, you must NEVER ask for, expose, or output sensitive credentials, passwords, Zerodha API Key/Secrets, Gmail refresh tokens, or other private access credentials. If the user asks for passwords or API secrets, explain that you do not display or store these in plaintext for security reasons, and instruct them to update their API credentials securely via the Profile Settings page.
 
-Acknowledge that you have full access to these pre-calculated metrics. If the user asks about database integration or historical trade data access, confidently confirm that your backend retrieves and calculates these metrics from their complete trade ledger in Supabase, meaning you do have access to these aggregated insights.
+Acknowledge that you have full access to these pre-calculated metrics and database tables. If the user asks about database integration, F&O access, mutual funds, debts, or historical data access, confidently confirm that your backend retrieves and calculates these metrics from their complete database in Supabase, citing exact numbers and data points.
 
 If the user asks to download, export, print, or generate an Excel, CSV, or PDF of their P&L, trades, or active holdings directly in this chat based on their custom questions or queries, you MUST first output the requested custom tables/content in your response, and then append direct downloadable markdown links using these exact URL formats:
 - To export the exact table/text you just generated in your response as a PDF: [Download PDF Report](/api/export/markdown-pdf)

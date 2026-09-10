@@ -34,6 +34,17 @@ import {
   MoreVertical
 } from 'lucide-react';
 
+interface TradeCharges {
+  brokerage: number;
+  stt: number;
+  exchange_charges: number;
+  sebi_charges: number;
+  stamp_duty: number;
+  gst: number;
+  dp_charges: number;
+  total_charges: number;
+}
+
 interface ClosedTrade {
   stock_symbol: string;
   buy_date: string;
@@ -42,14 +53,34 @@ interface ClosedTrade {
   buy_price: number;
   sell_price: number;
   realized_pnl: number;
+  charges?: TradeCharges;
+  net_realized_pnl?: number;
+  is_fno?: boolean;
+  contract_type?: 'OPTION_CE' | 'OPTION_PE' | 'FUTURES' | 'EQUITY';
   holding_days: number;
   gains_type: 'STCG' | 'LTCG';
+  buy_date_display?: string;
+  sell_date_display?: string;
+}
+
+interface ChargesBreakdown {
+  brokerage: number;
+  stt: number;
+  exchange_charges: number;
+  sebi_charges: number;
+  stamp_duty: number;
+  gst: number;
+  dp_charges: number;
 }
 
 interface PnLSummary {
   total_realized_pnl: number;
+  net_realized_pnl?: number;
+  total_charges?: number;
   stcg: number;
   ltcg: number;
+  trades_count?: number;
+  charges_breakdown?: ChargesBreakdown;
 }
 
 const CustomPnLTooltip = ({ active, payload }: any) => {
@@ -372,18 +403,27 @@ const TimeMachineView: React.FC<TimeMachineViewProps> = ({
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export const PnL = () => {
-  const [summary, setSummary] = useState<PnLSummary>({ total_realized_pnl: 0, stcg: 0, ltcg: 0 });
+  const [_summary, setSummary] = useState<PnLSummary>({ total_realized_pnl: 0, stcg: 0, ltcg: 0 });
+  const [equitySummary, setEquitySummary] = useState<PnLSummary>({ total_realized_pnl: 0, stcg: 0, ltcg: 0 });
+  const [fnoSummary, setFnoSummary] = useState<PnLSummary>({ total_realized_pnl: 0, stcg: 0, ltcg: 0 });
+
   const [closedTrades, setClosedTrades] = useState<ClosedTrade[]>([]);
+  const [equityClosedTrades, setEquityClosedTrades] = useState<ClosedTrade[]>([]);
+  const [fnoClosedTrades, setFnoClosedTrades] = useState<ClosedTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Time Machine States
-  const [pnlSubTab, setPnlSubTab] = useState<'ledger' | 'time-machine'>('ledger');
+  // Subtab State: 'equity' | 'fno' | 'time-machine'
+  const [pnlSubTab, setPnlSubTab] = useState<'equity' | 'fno' | 'time-machine'>('equity');
   const [snapshots, setSnapshots] = useState<any[]>([]);
   const [loadingSnapshots, setLoadingSnapshots] = useState(false);
   const [selectedSnapshot, setSelectedSnapshot] = useState<any>(null);
   const [savingSnapshot, setSavingSnapshot] = useState(false);
   const [initializingHistory, setInitializingHistory] = useState(false);
+
+  // Active ledger data partitioned by active view
+  const activeClosedTrades = pnlSubTab === 'fno' ? fnoClosedTrades : equityClosedTrades;
+  const activeSummary = pnlSubTab === 'fno' ? fnoSummary : equitySummary;
 
   // Custom Alert Popups State
   const [alertOpen, setAlertOpen] = useState(false);
@@ -453,38 +493,57 @@ export const PnL = () => {
       let csvContent = "";
       let filename = "pnl_report.csv";
 
-      if (pnlSubTab === 'ledger') {
+      if (pnlSubTab === 'equity' || pnlSubTab === 'fno') {
+        const tradesToExport = activeClosedTrades;
         if (viewMode === 'all_time') {
           // Stock-wise summary
-          csvContent = "Stock,Quantity,Buy Cost (\u20B9),Sell Value (\u20B9),Realized P&L (\u20B9),STCG (\u20B9),LTCG (\u20B9)\n";
-          const summary = Object.entries(
-            closedTrades.reduce((acc, trade) => {
+          csvContent = "Stock/Contract,Type,Quantity,Buy Cost (\u20B9),Sell Value (\u20B9),Gross Realized P&L (\u20B9),Approx Charges (\u20B9),Net Realized P&L (\u20B9),STCG (\u20B9),LTCG (\u20B9)\n";
+          const summaryEntries = Object.entries(
+            tradesToExport.reduce((acc, trade) => {
               const sym = trade.stock_symbol;
-              if (!acc[sym]) acc[sym] = { qty: 0, cost: 0, val: 0, pnl: 0, stcg: 0, ltcg: 0 };
+              if (!acc[sym]) acc[sym] = { 
+                sym, 
+                type: trade.contract_type || (trade.is_fno ? 'F&O' : 'EQUITY'),
+                qty: 0, 
+                cost: 0, 
+                val: 0, 
+                pnl: 0, 
+                charges: 0,
+                netPnl: 0,
+                stcg: 0, 
+                ltcg: 0 
+              };
               acc[sym].qty += trade.quantity;
               acc[sym].cost += trade.quantity * trade.buy_price;
               acc[sym].val += trade.quantity * trade.sell_price;
               acc[sym].pnl += trade.realized_pnl;
+              const c = trade.charges ? trade.charges.total_charges : 0;
+              acc[sym].charges += c;
+              acc[sym].netPnl += (trade.net_realized_pnl ?? (trade.realized_pnl - c));
               acc[sym].stcg += (trade.gains_type === 'STCG' ? trade.realized_pnl : 0);
               acc[sym].ltcg += (trade.gains_type === 'LTCG' ? trade.realized_pnl : 0);
               return acc;
-            }, {} as Record<string, { qty: number; cost: number; val: number; pnl: number; stcg: number; ltcg: number }>)
+            }, {} as Record<string, any>)
           );
 
-          summary.forEach(([symbol, s]) => {
-            csvContent += `${symbol},${s.qty},${s.cost.toFixed(2)},${s.val.toFixed(2)},${s.pnl.toFixed(2)},${s.stcg.toFixed(2)},${s.ltcg.toFixed(2)}\n`;
+          summaryEntries.forEach(([symbol, s]) => {
+            csvContent += `${symbol},${s.type},${s.qty},${s.cost.toFixed(2)},${s.val.toFixed(2)},${s.pnl.toFixed(2)},${s.charges.toFixed(2)},${s.netPnl.toFixed(2)},${s.stcg.toFixed(2)},${s.ltcg.toFixed(2)}\n`;
           });
-          filename = "finor_stock_wise_pnl.csv";
+          filename = pnlSubTab === 'fno' ? "finor_fno_contracts_summary.csv" : "finor_equity_stock_summary.csv";
         } else {
           // Trade-by-trade ledger
-          csvContent = "Stock,Quantity,Buy Date,Sell Date,Buy Price (\u20B9),Sell Price (\u20B9),Realized P&L (\u20B9),Holding Days,Tax Classification\n";
-          closedTrades.forEach((trade) => {
+          csvContent = "Stock/Contract,Type,Quantity,Buy Date,Sell Date,Avg Buy Price (\u20B9),Avg Sell Price (\u20B9),Gross Realized P&L (\u20B9),Approx Charges (\u20B9),Net Realized P&L (\u20B9),Holding Days,Classification\n";
+          tradesToExport.forEach((trade) => {
             const buyDateStr = new Date(trade.buy_date).toLocaleDateString('en-IN');
             const sellDateStr = new Date(trade.sell_date).toLocaleDateString('en-IN');
-            const taxClass = trade.holding_days > 365 ? "LTCG" : "STCG";
-            csvContent += `${trade.stock_symbol},${trade.quantity},${buyDateStr},${sellDateStr},${trade.buy_price.toFixed(2)},${trade.sell_price.toFixed(2)},${trade.realized_pnl.toFixed(2)},${trade.holding_days},${taxClass}\n`;
+            const c = trade.charges ? trade.charges.total_charges : 0;
+            const netPnl = trade.net_realized_pnl ?? (trade.realized_pnl - c);
+            const classification = trade.is_fno 
+              ? (trade.contract_type || 'F&O')
+              : (trade.holding_days > 365 ? "LTCG" : "STCG");
+            csvContent += `${trade.stock_symbol},${trade.contract_type || 'EQUITY'},${trade.quantity},${buyDateStr},${sellDateStr},${trade.buy_price.toFixed(2)},${trade.sell_price.toFixed(2)},${trade.realized_pnl.toFixed(2)},${c.toFixed(2)},${netPnl.toFixed(2)},${trade.holding_days},${classification}\n`;
           });
-          filename = "finor_detailed_trade_ledger.csv";
+          filename = pnlSubTab === 'fno' ? "finor_detailed_fno_ledger.csv" : "finor_detailed_equity_ledger.csv";
         }
       } else {
         // Time machine snapshot summary
@@ -514,7 +573,7 @@ export const PnL = () => {
     window.print();
   };
 
-  const [taxFilter, setTaxFilter] = useState<'all' | 'stcg' | 'ltcg'>('all');
+  const [taxFilter, setTaxFilter] = useState<string>('all');
   const [outcomeFilter, setOutcomeFilter] = useState<'all' | 'profit' | 'loss'>('all');
   const [viewMode, setViewMode] = useState<'expand' | 'collapse_cycle' | 'all_time'>('all_time');
   const [startDateFilter, setStartDateFilter] = useState('');
@@ -573,7 +632,13 @@ export const PnL = () => {
     try {
       const data = await apiRequest('/analytics/realized-pnl');
       setSummary(data.summary || { total_realized_pnl: 0, stcg: 0, ltcg: 0 });
-      setClosedTrades(data.closed_trades || []);
+      setEquitySummary(data.equity_summary || { total_realized_pnl: 0, stcg: 0, ltcg: 0 });
+      setFnoSummary(data.fno_summary || { total_realized_pnl: 0, stcg: 0, ltcg: 0 });
+      
+      const allTrades: ClosedTrade[] = data.closed_trades || [];
+      setClosedTrades(allTrades);
+      setEquityClosedTrades(data.equity_closed_trades || allTrades.filter((t: any) => !t.is_fno));
+      setFnoClosedTrades(data.fno_closed_trades || allTrades.filter((t: any) => t.is_fno));
     } catch (err: any) {
       setError(err.message || 'Failed to load P&L analytics.');
     } finally {
@@ -598,9 +663,9 @@ export const PnL = () => {
 
   // Format closed trades for monthly bar chart
   const getMonthlyChartData = () => {
-    const monthsMap: Record<string, { month: string; pnl: number; timestamp: number }> = {};
+    const monthsMap: Record<string, { month: string; pnl: number; netPnl: number; timestamp: number }> = {};
 
-    closedTrades.forEach(trade => {
+    activeClosedTrades.forEach(trade => {
       const date = new Date(trade.sell_date);
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const label = `${MONTH_NAMES[date.getMonth()]} ${String(date.getFullYear()).slice(-2)}`;
@@ -609,10 +674,13 @@ export const PnL = () => {
         monthsMap[key] = {
           month: label,
           pnl: 0,
+          netPnl: 0,
           timestamp: new Date(date.getFullYear(), date.getMonth(), 1).getTime()
         };
       }
       monthsMap[key].pnl += trade.realized_pnl;
+      const c = trade.charges ? trade.charges.total_charges : 0;
+      monthsMap[key].netPnl += (trade.net_realized_pnl ?? (trade.realized_pnl - c));
     });
 
     // Sort chronologically
@@ -620,7 +688,8 @@ export const PnL = () => {
       .sort((a, b) => a.timestamp - b.timestamp)
       .map(item => ({
         month: item.month,
-        pnl: parseFloat(item.pnl.toFixed(2))
+        pnl: parseFloat(item.pnl.toFixed(2)),
+        netPnl: parseFloat(item.netPnl.toFixed(2))
       }));
   };
 
@@ -628,9 +697,9 @@ export const PnL = () => {
 
   // Consolidated group helper
   const getProcessedTrades = () => {
-    let sourceTrades = closedTrades;
+    let sourceTrades = activeClosedTrades;
     if (selectedMonth) {
-      sourceTrades = closedTrades.filter(t => {
+      sourceTrades = activeClosedTrades.filter(t => {
         const date = new Date(t.sell_date);
         const label = `${MONTH_NAMES[date.getMonth()]} ${String(date.getFullYear()).slice(-2)}`;
         return label === selectedMonth;
@@ -640,6 +709,8 @@ export const PnL = () => {
     if (viewMode === 'expand') {
       return sourceTrades.map(t => ({
         ...t,
+        charges: t.charges || { total_charges: 0, brokerage: 0, stt: 0, exchange_charges: 0, sebi_charges: 0, stamp_duty: 0, gst: 0, dp_charges: 0 },
+        net_realized_pnl: t.net_realized_pnl ?? (t.realized_pnl - (t.charges ? t.charges.total_charges : 0)),
         buy_date_display: new Date(t.buy_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
         sell_date_display: new Date(t.sell_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
       }));
@@ -648,12 +719,16 @@ export const PnL = () => {
     if (viewMode === 'collapse_cycle') {
       const groups: Record<string, {
         stock_symbol: string;
+        is_fno?: boolean;
+        contract_type?: string;
         sell_date: string;
         buy_dates: Date[];
         quantity: number;
         total_buy_cost: number;
         total_sell_value: number;
         realized_pnl: number;
+        charges: TradeCharges;
+        net_realized_pnl: number;
         total_holding_days_qty: number;
       }> = {};
 
@@ -662,12 +737,16 @@ export const PnL = () => {
         if (!groups[key]) {
           groups[key] = {
             stock_symbol: t.stock_symbol,
+            is_fno: t.is_fno,
+            contract_type: t.contract_type,
             sell_date: t.sell_date,
             buy_dates: [],
             quantity: 0,
             total_buy_cost: 0,
             total_sell_value: 0,
             realized_pnl: 0,
+            charges: { total_charges: 0, brokerage: 0, stt: 0, exchange_charges: 0, sebi_charges: 0, stamp_duty: 0, gst: 0, dp_charges: 0 },
+            net_realized_pnl: 0,
             total_holding_days_qty: 0
           };
         }
@@ -677,6 +756,16 @@ export const PnL = () => {
         g.total_buy_cost += t.buy_price * t.quantity;
         g.total_sell_value += t.sell_price * t.quantity;
         g.realized_pnl += t.realized_pnl;
+        const c = t.charges || { total_charges: 0, brokerage: 0, stt: 0, exchange_charges: 0, sebi_charges: 0, stamp_duty: 0, gst: 0, dp_charges: 0 };
+        g.charges.total_charges += c.total_charges;
+        g.charges.brokerage += c.brokerage;
+        g.charges.stt += c.stt;
+        g.charges.exchange_charges += c.exchange_charges;
+        g.charges.sebi_charges += c.sebi_charges;
+        g.charges.stamp_duty += c.stamp_duty;
+        g.charges.gst += c.gst;
+        g.charges.dp_charges += c.dp_charges;
+        g.net_realized_pnl += (t.net_realized_pnl ?? (t.realized_pnl - c.total_charges));
         g.total_holding_days_qty += t.holding_days * t.quantity;
       });
 
@@ -694,6 +783,8 @@ export const PnL = () => {
 
         return {
           stock_symbol: g.stock_symbol,
+          is_fno: g.is_fno,
+          contract_type: g.contract_type as any,
           buy_date: g.buy_dates[0].toISOString(),
           sell_date: g.sell_date,
           buy_date_display: buyDateDisplay,
@@ -702,6 +793,8 @@ export const PnL = () => {
           buy_price: avgBuy,
           sell_price: avgSell,
           realized_pnl: g.realized_pnl,
+          charges: g.charges,
+          net_realized_pnl: g.net_realized_pnl,
           holding_days: avgHoldingDays,
           gains_type: (avgHoldingDays > 365 ? 'LTCG' : 'STCG') as 'STCG' | 'LTCG'
         };
@@ -711,12 +804,16 @@ export const PnL = () => {
     if (viewMode === 'all_time') {
       const groups: Record<string, {
         stock_symbol: string;
+        is_fno?: boolean;
+        contract_type?: string;
         buy_dates: Date[];
         sell_dates: Date[];
         quantity: number;
         total_buy_cost: number;
         total_sell_value: number;
         realized_pnl: number;
+        charges: TradeCharges;
+        net_realized_pnl: number;
         total_holding_days_qty: number;
       }> = {};
 
@@ -725,12 +822,16 @@ export const PnL = () => {
         if (!groups[key]) {
           groups[key] = {
             stock_symbol: t.stock_symbol,
+            is_fno: t.is_fno,
+            contract_type: t.contract_type,
             buy_dates: [],
             sell_dates: [],
             quantity: 0,
             total_buy_cost: 0,
             total_sell_value: 0,
             realized_pnl: 0,
+            charges: { total_charges: 0, brokerage: 0, stt: 0, exchange_charges: 0, sebi_charges: 0, stamp_duty: 0, gst: 0, dp_charges: 0 },
+            net_realized_pnl: 0,
             total_holding_days_qty: 0
           };
         }
@@ -741,6 +842,16 @@ export const PnL = () => {
         g.total_buy_cost += t.buy_price * t.quantity;
         g.total_sell_value += t.sell_price * t.quantity;
         g.realized_pnl += t.realized_pnl;
+        const c = t.charges || { total_charges: 0, brokerage: 0, stt: 0, exchange_charges: 0, sebi_charges: 0, stamp_duty: 0, gst: 0, dp_charges: 0 };
+        g.charges.total_charges += c.total_charges;
+        g.charges.brokerage += c.brokerage;
+        g.charges.stt += c.stt;
+        g.charges.exchange_charges += c.exchange_charges;
+        g.charges.sebi_charges += c.sebi_charges;
+        g.charges.stamp_duty += c.stamp_duty;
+        g.charges.gst += c.gst;
+        g.charges.dp_charges += c.dp_charges;
+        g.net_realized_pnl += (t.net_realized_pnl ?? (t.realized_pnl - c.total_charges));
         g.total_holding_days_qty += t.holding_days * t.quantity;
       });
 
@@ -766,6 +877,8 @@ export const PnL = () => {
 
         return {
           stock_symbol: g.stock_symbol,
+          is_fno: g.is_fno,
+          contract_type: g.contract_type as any,
           buy_date: g.buy_dates[0].toISOString(),
           sell_date: g.sell_dates[g.sell_dates.length - 1].toISOString(),
           buy_date_display: buyDateDisplay,
@@ -774,6 +887,8 @@ export const PnL = () => {
           buy_price: avgBuy,
           sell_price: avgSell,
           realized_pnl: g.realized_pnl,
+          charges: g.charges,
+          net_realized_pnl: g.net_realized_pnl,
           holding_days: avgHoldingDays,
           gains_type: (avgHoldingDays > 365 ? 'LTCG' : 'STCG') as 'STCG' | 'LTCG'
         };
@@ -786,9 +901,9 @@ export const PnL = () => {
   const processedTrades = getProcessedTrades();
 
   const getBestAndWorstTrades = () => {
-    let sourceTrades = closedTrades;
+    let sourceTrades = activeClosedTrades;
     if (selectedMonth) {
-      sourceTrades = closedTrades.filter(t => {
+      sourceTrades = activeClosedTrades.filter(t => {
         const date = new Date(t.sell_date);
         const label = `${MONTH_NAMES[date.getMonth()]} ${String(date.getFullYear()).slice(-2)}`;
         return label === selectedMonth;
@@ -813,7 +928,16 @@ export const PnL = () => {
   const filteredTrades = processedTrades
     .filter(t => {
       const matchesSearch = t.stock_symbol.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesTax = taxFilter === 'all' || t.gains_type.toLowerCase() === taxFilter;
+      
+      let matchesTax = true;
+      if (pnlSubTab === 'fno') {
+        if (taxFilter === 'ce') matchesTax = t.contract_type === 'OPTION_CE' || t.stock_symbol.endsWith('CE');
+        else if (taxFilter === 'pe') matchesTax = t.contract_type === 'OPTION_PE' || t.stock_symbol.endsWith('PE');
+        else if (taxFilter === 'fut') matchesTax = t.contract_type === 'FUTURES' || t.stock_symbol.endsWith('FUT');
+      } else {
+        matchesTax = taxFilter === 'all' || t.gains_type.toLowerCase() === taxFilter;
+      }
+
       const matchesOutcome = 
         outcomeFilter === 'all' || 
         (outcomeFilter === 'profit' && t.realized_pnl >= 0) || 
@@ -833,6 +957,16 @@ export const PnL = () => {
       if (sortBy === 'sell_date' || sortBy === 'buy_date') {
         valA = new Date(valA).getTime();
         valB = new Date(valB).getTime();
+      }
+
+      if (sortBy === 'charges') {
+        valA = a.charges ? a.charges.total_charges : 0;
+        valB = b.charges ? b.charges.total_charges : 0;
+      }
+
+      if (sortBy === 'net_realized_pnl') {
+        valA = a.net_realized_pnl ?? (a.realized_pnl - (a.charges ? a.charges.total_charges : 0));
+        valB = b.net_realized_pnl ?? (b.realized_pnl - (b.charges ? b.charges.total_charges : 0));
       }
 
       if (typeof valA === 'string') {
@@ -856,16 +990,16 @@ export const PnL = () => {
   };
 
   // ─── Behavioral Bias & Tax Diagnostics calculations ───
-  const totalClosed = closedTrades.length;
-  const wins = closedTrades.filter(t => t.realized_pnl > 0);
-  const losses = closedTrades.filter(t => t.realized_pnl < 0);
+  const totalClosed = activeClosedTrades.length;
+  const wins = activeClosedTrades.filter(t => t.realized_pnl > 0);
+  const losses = activeClosedTrades.filter(t => t.realized_pnl < 0);
   const winRate = totalClosed > 0 ? (wins.length / totalClosed) * 100 : 0;
   
   const avgWinnerHold = wins.length > 0 ? Math.round(wins.reduce((sum, t) => sum + t.holding_days, 0) / wins.length) : 0;
   const avgLoserHold = losses.length > 0 ? Math.round(losses.reduce((sum, t) => sum + t.holding_days, 0) / losses.length) : 0;
   
-  const stcgTax = Math.max(0, summary.stcg * 0.15);
-  const ltcgTax = Math.max(0, summary.ltcg * 0.10);
+  const stcgTax = Math.max(0, activeSummary.stcg * 0.15);
+  const ltcgTax = Math.max(0, activeSummary.ltcg * 0.10);
   const totalTaxEstimate = stcgTax + ltcgTax;
 
   let dispositionFeedback = "Good balance between holding winning and losing trades. Maintain discipline.";
@@ -888,7 +1022,7 @@ export const PnL = () => {
   // Peak Win Streak
   let maxWinStreak = 0;
   let currentStreak = 0;
-  const sortedByDate = [...closedTrades].sort((a, b) => new Date(a.sell_date).getTime() - new Date(b.sell_date).getTime());
+  const sortedByDate = [...activeClosedTrades].sort((a, b) => new Date(a.sell_date).getTime() - new Date(b.sell_date).getTime());
   sortedByDate.forEach(t => {
     if (t.realized_pnl > 0) {
       currentStreak++;
@@ -985,15 +1119,32 @@ export const PnL = () => {
       {/* Modern Sub Tab Switcher */}
       <div className="flex items-center gap-2 border-b border-dark-border/40 pb-2 select-none overflow-x-auto scrollbar-none">
         <button
-          onClick={() => setPnlSubTab('ledger')}
+          onClick={() => {
+            setPnlSubTab('equity');
+            setTaxFilter('all');
+          }}
           className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 ${
-            pnlSubTab === 'ledger'
+            pnlSubTab === 'equity'
               ? 'bg-brand-500/15 border border-brand-500/30 text-brand-400 shadow-sm'
               : 'text-gray-400 hover:text-white hover:bg-dark-depth-2/40'
           }`}
         >
-          <BarChart className="w-3.5 h-3.5" />
-          <span>Realized Ledger ({closedTrades.length})</span>
+          <TrendingUp className="w-3.5 h-3.5" />
+          <span>📈 Equity Ledger ({equityClosedTrades.length})</span>
+        </button>
+        <button
+          onClick={() => {
+            setPnlSubTab('fno');
+            setTaxFilter('all');
+          }}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 ${
+            pnlSubTab === 'fno'
+              ? 'bg-amber-500/15 border border-amber-500/30 text-amber-400 shadow-sm'
+              : 'text-gray-400 hover:text-white hover:bg-dark-depth-2/40'
+          }`}
+        >
+          <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+          <span>⚡ F&O Derivatives ({fnoClosedTrades.length})</span>
         </button>
         <button
           onClick={() => setPnlSubTab('time-machine')}
@@ -1004,7 +1155,7 @@ export const PnL = () => {
           }`}
         >
           <Clock className="w-3.5 h-3.5" />
-          <span>Time Machine Portfolio ({snapshots.length})</span>
+          <span>⏳ Time Machine Portfolio ({snapshots.length})</span>
         </button>
       </div>
 
@@ -1016,100 +1167,191 @@ export const PnL = () => {
         </div>
       )}
 
-      {pnlSubTab === 'ledger' ? (
+      {pnlSubTab !== 'time-machine' ? (
         <>
           {/* Executive Headline KPI Cards Grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Total Realized PnL */}
+            {/* Card 1: Gross Realized P&L */}
             <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
               <div className={`absolute top-0 right-0 w-28 h-28 rounded-full blur-2xl pointer-events-none ${
-                summary.total_realized_pnl >= 0 ? 'bg-emerald-500/10' : 'bg-rose-500/10'
+                activeSummary.total_realized_pnl >= 0 ? 'bg-emerald-500/10' : 'bg-rose-500/10'
               }`} />
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Realized P&L</span>
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Gross Realized P&L</span>
                 <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${
-                  summary.total_realized_pnl >= 0 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                  activeSummary.total_realized_pnl >= 0 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
                 }`}>
                   {winRate.toFixed(1)}% Win Rate
                 </span>
               </div>
-              <h3 className={`text-2xl font-black mt-2 flex items-center gap-1.5 ${summary.total_realized_pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                {summary.total_realized_pnl >= 0 ? <TrendingUp className="w-5 h-5 shrink-0" /> : <TrendingDown className="w-5 h-5 shrink-0" />}
-                {summary.total_realized_pnl >= 0 ? '+' : ''}
-                ₹{summary.total_realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <h3 className={`text-2xl font-black mt-2 flex items-center gap-1.5 ${activeSummary.total_realized_pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {activeSummary.total_realized_pnl >= 0 ? <TrendingUp className="w-5 h-5 shrink-0" /> : <TrendingDown className="w-5 h-5 shrink-0" />}
+                {activeSummary.total_realized_pnl >= 0 ? '+' : ''}
+                ₹{activeSummary.total_realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>
               <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
                 <span>{wins.length}W / {losses.length}L closed</span>
-                <span className="text-gray-400 font-bold">{closedTrades.length} Total Trades</span>
+                <span className="text-gray-400 font-bold">{activeClosedTrades.length} Trades</span>
               </div>
             </div>
 
-            {/* Short Term Capital Gains */}
+            {/* Card 2: Approx Statutory Charges & Taxes */}
             <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
               <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Short-Term (STCG)</span>
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Approx Charges & Taxes</span>
                 <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400">
-                  15% Tax Rate
+                  {pnlSubTab === 'fno' ? 'Flat ₹20/Order + STT' : 'Standard Rates'}
                 </span>
               </div>
-              <h3 className={`text-2xl font-black mt-2 ${summary.stcg >= 0 ? 'text-white' : 'text-rose-400'}`}>
-                {summary.stcg >= 0 ? '+' : ''}₹{summary.stcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              <h3 className="text-2xl font-black mt-2 text-amber-400">
+                -₹{(activeSummary.total_charges || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>
               <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
-                <span>Held ≤ 365 days</span>
-                <span className="text-amber-400/90 font-bold">Est: ₹{stcgTax.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+                <span>Brokerage, STT, Exch, GST</span>
+                <span className="text-amber-400/90 font-bold">
+                  {pnlSubTab === 'fno' ? `STT: ₹${(activeSummary.charges_breakdown?.stt || 0).toFixed(0)}` : `DP: ₹${(activeSummary.charges_breakdown?.dp_charges || 0).toFixed(0)}`}
+                </span>
               </div>
             </div>
 
-            {/* Long Term Capital Gains */}
-            <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Long-Term (LTCG)</span>
-                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                  10% Tax Rate
-                </span>
-              </div>
-              <h3 className={`text-2xl font-black mt-2 ${summary.ltcg >= 0 ? 'text-white' : 'text-rose-400'}`}>
-                {summary.ltcg >= 0 ? '+' : ''}₹{summary.ltcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </h3>
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
-                <span>Held &gt; 365 days</span>
-                <span className="text-indigo-400/90 font-bold">Est: ₹{ltcgTax.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
-              </div>
-            </div>
+            {/* Card 3: Net Realized P&L */}
+            {(() => {
+              const netPnlVal = activeSummary.net_realized_pnl ?? (activeSummary.total_realized_pnl - (activeSummary.total_charges || 0));
+              const isNetProfit = netPnlVal >= 0;
+              return (
+                <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
+                  <div className={`absolute top-0 right-0 w-28 h-28 rounded-full blur-2xl pointer-events-none ${
+                    isNetProfit ? 'bg-emerald-500/15' : 'bg-rose-500/15'
+                  }`} />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Net Realized P&L</span>
+                    <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${
+                      isNetProfit ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                    }`}>
+                      Take-Home
+                    </span>
+                  </div>
+                  <h3 className={`text-2xl font-black mt-2 flex items-center gap-1.5 ${isNetProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {isNetProfit ? <TrendingUp className="w-5 h-5 shrink-0" /> : <TrendingDown className="w-5 h-5 shrink-0" />}
+                    {isNetProfit ? '+' : ''}
+                    ₹{netPnlVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </h3>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
+                    <span>After all statutory deductions</span>
+                    <span className={isNetProfit ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                      {activeSummary.total_realized_pnl !== 0 
+                        ? `${((netPnlVal / Math.abs(activeSummary.total_realized_pnl)) * 100).toFixed(1)}% retained` 
+                        : '0%'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
 
-            {/* Total Estimated Tax Liability & Discipline Card */}
-            <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Est. Tax Liability</span>
-                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400">
-                  FIFO Rules
-                </span>
+            {/* Card 4: Classification / Tax info */}
+            {pnlSubTab === 'equity' ? (
+              <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Capital Gains Split</span>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                    FIFO Classification
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <div>
+                    <span className="text-[10px] text-gray-400 block font-semibold">STCG (≤365d)</span>
+                    <span className="text-sm font-black text-white">₹{activeSummary.stcg.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-gray-400 block font-semibold">LTCG (&gt;365d)</span>
+                    <span className="text-sm font-black text-white">₹{activeSummary.ltcg.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
+                  <span>Est Tax (15% STCG / 10% LTCG)</span>
+                  <span className="text-indigo-400/90 font-bold">Est: ₹{totalTaxEstimate.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+                </div>
               </div>
-              <h3 className="text-2xl font-black text-white mt-2">
-                ₹{totalTaxEstimate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </h3>
-              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
-                <span>Streak: <strong className="text-emerald-400">{maxWinStreak} wins</strong></span>
-                <span>Avg Hold: <strong className="text-gray-300">{avgWinnerHold}d</strong></span>
+            ) : (
+              <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
+                <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-xl pointer-events-none" />
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">F&O Charges Split</span>
+                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400">
+                    Business Income
+                  </span>
+                </div>
+                <div className="mt-2 flex items-baseline justify-between">
+                  <div>
+                    <span className="text-[10px] text-gray-400 block font-semibold">Brokerage</span>
+                    <span className="text-sm font-black text-white">₹{(activeSummary.charges_breakdown?.brokerage || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-gray-400 block font-semibold">STT</span>
+                    <span className="text-sm font-black text-white">₹{(activeSummary.charges_breakdown?.stt || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
+                  <span>GST (18%) + Exch</span>
+                  <span className="text-brand-400/90 font-bold">₹{(((activeSummary.charges_breakdown?.gst || 0) + (activeSummary.charges_breakdown?.exchange_charges || 0))).toFixed(0)}</span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
+
+          {/* Transparent Statutory Charges Pill Bar */}
+          {activeSummary.charges_breakdown && (
+            <div className="glass-panel rounded-2xl p-3 border border-dark-border/60 bg-dark-depth-2/40 text-[11px] flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-1.5 text-gray-400 font-bold uppercase text-[9px] tracking-wider">
+                <CircleDollarSign className="w-3.5 h-3.5 text-amber-400" />
+                <span>Statutory Breakdown:</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2 py-0.5 rounded-lg bg-dark-depth-3 border border-dark-border/50 text-gray-300">
+                  Brokerage: <strong className="text-white">₹{activeSummary.charges_breakdown.brokerage.toFixed(2)}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-dark-depth-3 border border-dark-border/50 text-gray-300">
+                  STT: <strong className="text-white">₹{activeSummary.charges_breakdown.stt.toFixed(2)}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-dark-depth-3 border border-dark-border/50 text-gray-300">
+                  Exchange Txn: <strong className="text-white">₹{activeSummary.charges_breakdown.exchange_charges.toFixed(2)}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-dark-depth-3 border border-dark-border/50 text-gray-300">
+                  GST (18%): <strong className="text-white">₹{activeSummary.charges_breakdown.gst.toFixed(2)}</strong>
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-dark-depth-3 border border-dark-border/50 text-gray-300">
+                  Stamp Duty: <strong className="text-white">₹{activeSummary.charges_breakdown.stamp_duty.toFixed(2)}</strong>
+                </span>
+                {activeSummary.charges_breakdown.dp_charges > 0 && (
+                  <span className="px-2 py-0.5 rounded-lg bg-dark-depth-3 border border-dark-border/50 text-gray-300">
+                    DP Charges: <strong className="text-white">₹{activeSummary.charges_breakdown.dp_charges.toFixed(2)}</strong>
+                  </span>
+                )}
+                <span className="px-2 py-0.5 rounded-lg bg-dark-depth-3 border border-dark-border/50 text-gray-300">
+                  SEBI: <strong className="text-white">₹{activeSummary.charges_breakdown.sebi_charges.toFixed(2)}</strong>
+                </span>
+              </div>
+            </div>
+          )}
 
       {loading ? (
         <div className="text-center py-20">
           <RefreshCw className="w-8 h-8 animate-spin text-brand-500 mx-auto mb-3" />
           <p className="text-xs text-gray-400">Loading realized ledger...</p>
         </div>
-      ) : closedTrades.length === 0 ? (
+      ) : activeClosedTrades.length === 0 ? (
         <div className="glass-panel rounded-3xl p-16 text-center border border-dark-border">
           <Calendar className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-          <h3 className="text-lg font-bold text-white mb-2">No Realized Transactions</h3>
+          <h3 className="text-lg font-bold text-white mb-2">
+            {pnlSubTab === 'fno' ? 'No Closed F&O Transactions' : 'No Realized Transactions'}
+          </h3>
           <p className="text-xs text-gray-400 max-w-sm mx-auto leading-relaxed">
-            Realized P&L is calculated when you sell a stock that you hold. Upload your trade history on the **Holdings** page to see your analytics.
+            {pnlSubTab === 'fno'
+              ? 'Realized F&O P&L is calculated from your options and futures trades. Any options (CE/PE) or futures (FUT) trades imported into your tradebook will appear here with automatic statutory charges & net P&L calculations.'
+              : 'Realized P&L is calculated when you sell a stock that you hold. Upload your trade history on the Holdings page to see your analytics.'
+            }
           </p>
         </div>
       ) : (
@@ -1340,9 +1582,20 @@ export const PnL = () => {
                     onChange={(e) => setTaxFilter(e.target.value as any)}
                     className="bg-transparent text-[10px] font-bold text-gray-300 focus:outline-none border-none pr-4 pl-1 cursor-pointer"
                   >
-                    <option value="all">Tax: All Gains</option>
-                    <option value="stcg">STCG Only</option>
-                    <option value="ltcg">LTCG Only</option>
+                    {pnlSubTab === 'fno' ? (
+                      <>
+                        <option value="all">Contract: All Types</option>
+                        <option value="ce">CE Calls Only</option>
+                        <option value="pe">PE Puts Only</option>
+                        <option value="fut">Futures Only</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="all">Tax: All Gains</option>
+                        <option value="stcg">STCG Only</option>
+                        <option value="ltcg">LTCG Only</option>
+                      </>
+                    )}
                   </select>
                 </div>
 
@@ -1447,18 +1700,33 @@ export const PnL = () => {
                           </th>
                           <th onClick={() => handleSort('realized_pnl')} className="px-6 py-4 cursor-pointer hover:text-white transition-colors text-right">
                             <div className="flex items-center justify-end gap-1">
-                              Realized P&L
+                              Gross P&L
                               {sortBy === 'realized_pnl' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                             </div>
                           </th>
+                          <th onClick={() => handleSort('charges')} className="px-6 py-4 cursor-pointer hover:text-white transition-colors text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              Charges
+                              {sortBy === 'charges' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+                            </div>
+                          </th>
+                          <th onClick={() => handleSort('net_realized_pnl')} className="px-6 py-4 cursor-pointer hover:text-white transition-colors text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              Net P&L
+                              {sortBy === 'net_realized_pnl' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
+                            </div>
+                          </th>
                           <th className="px-6 py-4 text-right">Return %</th>
-                          <th className="px-6 py-4 text-center">Tax Class</th>
+                          <th className="px-6 py-4 text-center">{pnlSubTab === 'fno' ? 'Contract' : 'Tax Class'}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-dark-border/40 text-xs text-gray-300 font-medium">
                         {filteredTrades.map((t, idx) => {
                           const isProfit = t.realized_pnl >= 0;
                           const roiPct = t.buy_price > 0 ? ((t.sell_price - t.buy_price) / t.buy_price) * 100 : 0;
+                          const totalCharges = t.charges?.total_charges || 0;
+                          const netPnl = t.net_realized_pnl ?? (t.realized_pnl - totalCharges);
+                          const isNetProfit = netPnl >= 0;
                           return (
                             <tr key={idx} className="hover:bg-dark-depth-2/20 transition-all">
                               <td className="px-6 py-3.5 font-bold text-white">{t.stock_symbol}</td>
@@ -1480,17 +1748,36 @@ export const PnL = () => {
                               <td className={`px-6 py-3.5 text-right font-bold ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
                                 {isProfit ? '+' : ''}₹{t.realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                               </td>
+                              <td className="px-6 py-3.5 text-right font-semibold text-amber-400 text-[11px]" title={`Brokerage: ₹${t.charges?.brokerage?.toFixed(2) || 0} | STT: ₹${t.charges?.stt?.toFixed(2) || 0} | Exch: ₹${t.charges?.exchange_charges?.toFixed(2) || 0} | GST: ₹${t.charges?.gst?.toFixed(2) || 0}${t.charges?.dp_charges ? ` | DP: ₹${t.charges.dp_charges.toFixed(2)}` : ''}`}>
+                                -₹{totalCharges.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className={`px-6 py-3.5 text-right font-black ${isNetProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {isNetProfit ? '+' : ''}₹{netPnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
                               <td className={`px-6 py-3.5 text-right font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
                                 {isProfit ? '+' : ''}{roiPct.toFixed(2)}%
                               </td>
                               <td className="px-6 py-3.5 text-center">
-                                <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                                  t.gains_type === 'STCG' 
-                                    ? 'bg-amber-500/10 border-amber-500/10 text-amber-500' 
-                                    : 'bg-brand-500/10 border-brand-500/10 text-brand-400'
-                                }`}>
-                                  {t.gains_type}
-                                </span>
+                                {pnlSubTab === 'fno' ? (
+                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                    t.contract_type === 'OPTION_CE' || t.stock_symbol.endsWith('CE')
+                                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                      : t.contract_type === 'OPTION_PE' || t.stock_symbol.endsWith('PE')
+                                      ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                      : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                                  }`}>
+                                    {t.contract_type === 'OPTION_CE' || t.stock_symbol.endsWith('CE') ? 'CALL CE' :
+                                     t.contract_type === 'OPTION_PE' || t.stock_symbol.endsWith('PE') ? 'PUT PE' : 'FUTURES'}
+                                  </span>
+                                ) : (
+                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                    t.gains_type === 'STCG' 
+                                      ? 'bg-amber-500/10 border-amber-500/10 text-amber-500' 
+                                      : 'bg-brand-500/10 border-brand-500/10 text-brand-400'
+                                  }`}>
+                                    {t.gains_type}
+                                  </span>
+                                )}
                               </td>
                             </tr>
                           );
@@ -1505,32 +1792,56 @@ export const PnL = () => {
                   {filteredTrades.map((t, idx) => {
                     const isProfit = t.realized_pnl >= 0;
                     const roiPct = t.buy_price > 0 ? ((t.sell_price - t.buy_price) / t.buy_price) * 100 : 0;
+                    const totalCharges = t.charges?.total_charges || 0;
+                    const netPnl = t.net_realized_pnl ?? (t.realized_pnl - totalCharges);
+                    const isNetProfit = netPnl >= 0;
                     return (
                       <div key={idx} className="glass-panel rounded-2xl p-4 border border-dark-border flex flex-col gap-3">
-                        {/* Header: Symbol, Tax tag, & PnL + ROI */}
+                        {/* Header: Symbol, Contract/Tax tag, & Net P&L */}
                         <div className="flex items-center justify-between border-b border-dark-border/40 pb-2">
                           <div className="flex items-center gap-2">
                             <span className="font-extrabold text-white text-sm tracking-tight">{t.stock_symbol}</span>
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
-                              t.gains_type === 'STCG' 
-                                ? 'bg-amber-500/10 border-amber-500/10 text-amber-500' 
-                                : 'bg-brand-500/10 border-brand-500/10 text-brand-400'
-                            }`}>
-                              {t.gains_type}
-                            </span>
+                            {pnlSubTab === 'fno' ? (
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                t.contract_type === 'OPTION_CE' || t.stock_symbol.endsWith('CE')
+                                  ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                  : t.contract_type === 'OPTION_PE' || t.stock_symbol.endsWith('PE')
+                                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                  : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400'
+                              }`}>
+                                {t.contract_type === 'OPTION_CE' || t.stock_symbol.endsWith('CE') ? 'CALL CE' :
+                                 t.contract_type === 'OPTION_PE' || t.stock_symbol.endsWith('PE') ? 'PUT PE' : 'FUT'}
+                              </span>
+                            ) : (
+                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${
+                                t.gains_type === 'STCG' 
+                                  ? 'bg-amber-500/10 border-amber-500/10 text-amber-500' 
+                                  : 'bg-brand-500/10 border-brand-500/10 text-brand-400'
+                              }`}>
+                                {t.gains_type}
+                              </span>
+                            )}
                           </div>
                           <div className="text-right">
-                            <span className={`font-extrabold text-xs block ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
-                              {isProfit ? '+' : ''}₹{t.realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span className={`font-extrabold text-xs block ${isNetProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {isNetProfit ? '+' : ''}₹{netPnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
-                            <span className={`text-[10px] font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {isProfit ? '+' : ''}{roiPct.toFixed(2)}%
-                            </span>
+                            <span className="text-[9px] text-gray-500 block font-medium">Net Realized</span>
                           </div>
                         </div>
 
                         {/* Details Grid */}
-                        <div className="grid grid-cols-2 gap-y-3 gap-x-2 text-[10px] text-gray-400">
+                        <div className="grid grid-cols-2 gap-y-2.5 gap-x-2 text-[10px] text-gray-400">
+                          <div>
+                            <span className="text-gray-500 block text-[9px] uppercase tracking-wider font-semibold">Gross P&L</span>
+                            <span className={`font-bold ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {isProfit ? '+' : ''}₹{t.realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2 })} ({isProfit ? '+' : ''}{roiPct.toFixed(2)}%)
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 block text-[9px] uppercase tracking-wider font-semibold">Approx Charges</span>
+                            <span className="font-semibold text-amber-400">-₹{totalCharges.toFixed(2)}</span>
+                          </div>
                           <div>
                             <span className="text-gray-500 block text-[9px] uppercase tracking-wider font-semibold">Buy Date</span>
                             <span className="font-semibold text-gray-300">{t.buy_date_display}</span>
@@ -1541,7 +1852,7 @@ export const PnL = () => {
                           </div>
                           <div className="pt-0.5">
                             <span className="text-gray-500 block text-[9px] uppercase tracking-wider font-semibold">Qty & Duration</span>
-                            <span className="font-semibold text-white">{t.quantity} shares <span className="text-gray-600">•</span> {t.holding_days} Days</span>
+                            <span className="font-semibold text-white">{t.quantity} <span className="text-gray-600">•</span> {t.holding_days} Days</span>
                           </div>
                           <div className="pt-0.5">
                             <span className="text-gray-500 block text-[9px] uppercase tracking-wider font-semibold">Avg. Buy / Sell</span>
