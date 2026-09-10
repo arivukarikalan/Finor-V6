@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { apiRequest } from '../services/api';
 import { marked } from 'marked';
 import { CustomAlertModal } from '../components/CustomAlertModal';
@@ -30,7 +30,8 @@ import {
   CircleDollarSign,
   Activity,
   Download,
-  Printer
+  Printer,
+  MoreVertical
 } from 'lucide-react';
 
 interface ClosedTrade {
@@ -422,6 +423,20 @@ export const PnL = () => {
   const [showInsights, setShowInsights] = useState(false);
   const [isInsightsMounted, setIsInsightsMounted] = useState(false);
   const [isComparisonOpen, setIsComparisonOpen] = useState(false);
+
+  // Actions Dropdown State
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setShowActionsMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleOpenInsights = () => {
     setIsInsightsMounted(true);
@@ -870,76 +885,126 @@ export const PnL = () => {
     }
   }
 
+  // Peak Win Streak
+  let maxWinStreak = 0;
+  let currentStreak = 0;
+  const sortedByDate = [...closedTrades].sort((a, b) => new Date(a.sell_date).getTime() - new Date(b.sell_date).getTime());
+  sortedByDate.forEach(t => {
+    if (t.realized_pnl > 0) {
+      currentStreak++;
+      if (currentStreak > maxWinStreak) maxWinStreak = currentStreak;
+    } else if (t.realized_pnl < 0) {
+      currentStreak = 0;
+    }
+  });
+
   return (
     <div className="space-y-6">
       
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 select-none">
         <div>
-          <h1 className="text-3xl font-extrabold font-display text-white">Profit & Loss Analysis</h1>
+          <h1 className="text-3xl font-extrabold font-display text-white tracking-tight">Realized P&L Terminal</h1>
           <p className="text-xs text-gray-400 mt-1">
-            Complete realized P&L calculations and short-term vs long-term capital gains ledger (FIFO method).
+            Audit closed positions, capital gains tax liabilities (FIFO method), and trading execution metrics.
           </p>
         </div>
         
         {closedTrades.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 hover:border-emerald-500/30 transition-all cursor-pointer self-start sm:self-auto select-none"
-              title="Export report as CSV / Excel"
-            >
-              <Download className="w-3.5 h-3.5" />
-              Export CSV
-            </button>
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 hover:border-amber-500/30 transition-all cursor-pointer self-start sm:self-auto select-none"
-              title="Print report / Save as PDF"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              Print PDF
-            </button>
+          <div className="flex items-center gap-2 relative">
+            {/* Primary Action Button */}
             <button
               onClick={handleOpenInsights}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-brand-400 bg-brand-500/10 border border-brand-500/20 hover:bg-brand-500/20 hover:border-brand-500/30 transition-all cursor-pointer self-start sm:self-auto select-none"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-brand-300 bg-brand-500/10 border border-brand-500/30 hover:bg-brand-500/20 hover:border-brand-500/40 transition-all cursor-pointer shadow-lg shadow-brand-500/10 select-none"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              AI Insights Engine
+              <Sparkles className="w-4 h-4 text-brand-400 animate-pulse" />
+              <span>AI Insights Engine</span>
             </button>
-            <button
-              onClick={() => setIsComparisonOpen(true)}
-              className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 hover:bg-indigo-500/20 hover:border-indigo-500/30 transition-all cursor-pointer self-start sm:self-auto select-none"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              AI Profit Comparison
-            </button>
+
+            {/* Actions Dropdown Button */}
+            <div className="relative" ref={actionsMenuRef}>
+              <button
+                onClick={() => setShowActionsMenu(!showActionsMenu)}
+                className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold text-gray-300 bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border hover:border-dark-border/80 transition-all cursor-pointer select-none"
+                title="More P&L Actions"
+              >
+                <MoreVertical className="w-4 h-4 text-gray-400" />
+                <span className="hidden sm:inline">Actions</span>
+              </button>
+
+              {showActionsMenu && (
+                <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-dark-depth-2 border border-dark-border/80 shadow-2xl z-50 p-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150 backdrop-blur-xl">
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      setIsComparisonOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-200 hover:text-white hover:bg-dark-depth-3 rounded-xl transition-all text-left cursor-pointer"
+                  >
+                    <SlidersHorizontal className="w-4 h-4 text-indigo-400" />
+                    <span>AI Profit Comparison</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      handleExportCSV();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-200 hover:text-white hover:bg-dark-depth-3 rounded-xl transition-all text-left cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 text-emerald-400" />
+                    <span>Export Ledger CSV</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      handlePrint();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-200 hover:text-white hover:bg-dark-depth-3 rounded-xl transition-all text-left cursor-pointer"
+                  >
+                    <Printer className="w-4 h-4 text-amber-400" />
+                    <span>Print PDF Statement</span>
+                  </button>
+                  <div className="border-t border-dark-border/40 my-1" />
+                  <button
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      fetchPnLData();
+                    }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-400 hover:text-white hover:bg-dark-depth-3 rounded-xl transition-all text-left cursor-pointer"
+                  >
+                    <RefreshCw className="w-4 h-4 text-gray-400" />
+                    <span>Refresh Ledger</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Sub Tab Switcher */}
-      <div className="flex items-center gap-1.5 bg-dark-depth-2/45 p-1 rounded-xl border border-dark-border/60 w-fit select-none">
+      {/* Modern Sub Tab Switcher */}
+      <div className="flex items-center gap-2 border-b border-dark-border/40 pb-2 select-none overflow-x-auto scrollbar-none">
         <button
           onClick={() => setPnlSubTab('ledger')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all duration-200 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 ${
             pnlSubTab === 'ledger'
-              ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
-              : 'text-gray-400 hover:text-white hover:bg-dark-depth-3/50'
+              ? 'bg-brand-500/15 border border-brand-500/30 text-brand-400 shadow-sm'
+              : 'text-gray-400 hover:text-white hover:bg-dark-depth-2/40'
           }`}
         >
-          Realized Ledger
+          <BarChart className="w-3.5 h-3.5" />
+          <span>Realized Ledger ({closedTrades.length})</span>
         </button>
         <button
           onClick={() => setPnlSubTab('time-machine')}
-          className={`px-4 py-2 rounded-lg text-xs font-bold uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 ${
             pnlSubTab === 'time-machine'
-              ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
-              : 'text-gray-400 hover:text-white hover:bg-dark-depth-3/50'
+              ? 'bg-brand-500/15 border border-brand-500/30 text-brand-400 shadow-sm'
+              : 'text-gray-400 hover:text-white hover:bg-dark-depth-2/40'
           }`}
         >
           <Clock className="w-3.5 h-3.5" />
-          Time Machine
+          <span>Time Machine Portfolio ({snapshots.length})</span>
         </button>
       </div>
 
@@ -953,44 +1018,86 @@ export const PnL = () => {
 
       {pnlSubTab === 'ledger' ? (
         <>
-          {/* Headline KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        
-        {/* Total Realized PnL */}
-        <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-xl pointer-events-none" />
-          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Realized P&L</span>
-          <h3 className={`text-2xl font-extrabold mt-1.5 flex items-center gap-1.5 ${summary.total_realized_pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-            {summary.total_realized_pnl >= 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
-            {summary.total_realized_pnl >= 0 ? '+' : ''}
-            ₹{summary.total_realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </h3>
-          <p className="text-[10px] text-gray-500 mt-2 font-medium">Closed transactions ledger only</p>
-        </div>
+          {/* Executive Headline KPI Cards Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Realized PnL */}
+            <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
+              <div className={`absolute top-0 right-0 w-28 h-28 rounded-full blur-2xl pointer-events-none ${
+                summary.total_realized_pnl >= 0 ? 'bg-emerald-500/10' : 'bg-rose-500/10'
+              }`} />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Total Realized P&L</span>
+                <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border ${
+                  summary.total_realized_pnl >= 0 ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                }`}>
+                  {winRate.toFixed(1)}% Win Rate
+                </span>
+              </div>
+              <h3 className={`text-2xl font-black mt-2 flex items-center gap-1.5 ${summary.total_realized_pnl >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {summary.total_realized_pnl >= 0 ? <TrendingUp className="w-5 h-5 shrink-0" /> : <TrendingDown className="w-5 h-5 shrink-0" />}
+                {summary.total_realized_pnl >= 0 ? '+' : ''}
+                ₹{summary.total_realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </h3>
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
+                <span>{wins.length}W / {losses.length}L closed</span>
+                <span className="text-gray-400 font-bold">{closedTrades.length} Total Trades</span>
+              </div>
+            </div>
 
-        {/* Short Term Capital Gains */}
-        <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
-          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Short-Term Gains (STCG)</span>
-          <h3 className={`text-2xl font-extrabold mt-1.5 ${summary.stcg >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-            ₹{summary.stcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </h3>
-          <div className="flex items-center gap-1.5 mt-2">
-            <span className="text-[10px] text-gray-400 font-medium">Held for ≤ 365 Days (15% tax)</span>
+            {/* Short Term Capital Gains */}
+            <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Short-Term (STCG)</span>
+                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                  15% Tax Rate
+                </span>
+              </div>
+              <h3 className={`text-2xl font-black mt-2 ${summary.stcg >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                {summary.stcg >= 0 ? '+' : ''}₹{summary.stcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </h3>
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
+                <span>Held ≤ 365 days</span>
+                <span className="text-amber-400/90 font-bold">Est: ₹{stcgTax.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+              </div>
+            </div>
+
+            {/* Long Term Capital Gains */}
+            <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Long-Term (LTCG)</span>
+                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                  10% Tax Rate
+                </span>
+              </div>
+              <h3 className={`text-2xl font-black mt-2 ${summary.ltcg >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                {summary.ltcg >= 0 ? '+' : ''}₹{summary.ltcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </h3>
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
+                <span>Held &gt; 365 days</span>
+                <span className="text-indigo-400/90 font-bold">Est: ₹{ltcgTax.toLocaleString('en-IN', { minimumFractionDigits: 0 })}</span>
+              </div>
+            </div>
+
+            {/* Total Estimated Tax Liability & Discipline Card */}
+            <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden flex flex-col justify-between group hover:border-dark-border/80 transition-all">
+              <div className="absolute top-0 right-0 w-24 h-24 bg-brand-500/5 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Est. Tax Liability</span>
+                <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-brand-500/10 border border-brand-500/20 text-brand-400">
+                  FIFO Rules
+                </span>
+              </div>
+              <h3 className="text-2xl font-black text-white mt-2">
+                ₹{totalTaxEstimate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </h3>
+              <div className="flex items-center justify-between mt-2 pt-2 border-t border-dark-border/30 text-[10px] text-gray-500 font-medium">
+                <span>Streak: <strong className="text-emerald-400">{maxWinStreak} wins</strong></span>
+                <span>Avg Hold: <strong className="text-gray-300">{avgWinnerHold}d</strong></span>
+              </div>
+            </div>
           </div>
-        </div>
-
-        {/* Long Term Capital Gains */}
-        <div className="glass-panel rounded-2xl p-5 border border-dark-border relative overflow-hidden">
-          <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Long-Term Gains (LTCG)</span>
-          <h3 className={`text-2xl font-extrabold mt-1.5 ${summary.ltcg >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-            ₹{summary.ltcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </h3>
-          <div className="flex items-center gap-1.5 mt-2">
-            <span className="text-[10px] text-gray-400 font-medium">Held for &gt; 365 Days (10% tax)</span>
-          </div>
-        </div>
-
-      </div>
 
       {loading ? (
         <div className="text-center py-20">
@@ -1065,76 +1172,42 @@ export const PnL = () => {
             </div>
           </div>
 
-          {/* Behavioral Bias & Tax Diagnostics Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 select-none animate-in fade-in slide-in-from-top-4 duration-300">
-            {/* Disposition Effect Bias Audit */}
-            <div className="glass-panel rounded-3xl p-6 border border-dark-border space-y-4">
-              <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
-                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
-                  <Activity className="w-4 h-4 text-indigo-400" />
-                  Disposition Bias Audit
-                </h3>
-                <span className={`text-[9px] font-extrabold uppercase px-2.5 py-0.5 rounded-full border ${
-                  dispositionType === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500 dark:text-emerald-400' :
-                  dispositionType === 'warn' ? 'bg-amber-500/10 border-amber-500/20 text-amber-500' :
-                  'bg-rose-500/10 border-rose-500/20 text-rose-500 dark:text-rose-400'
-                }`}>
-                  {dispositionType === 'success' ? 'Disciplined' : dispositionType === 'warn' ? 'Biased' : 'High Risk'}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
-                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Avg Hold Days (Winners)</span>
-                  <span className="text-lg font-black text-emerald-500 dark:text-emerald-400">{avgWinnerHold} days</span>
+          {/* Behavioral Bias Diagnostic Card */}
+          <div className="glass-panel rounded-3xl p-6 border border-dark-border select-none animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-dark-border/40 pb-4 mb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                  <Activity className="w-4 h-4" />
                 </div>
-                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
-                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Avg Hold Days (Losers)</span>
-                  <span className="text-lg font-black text-rose-500 dark:text-rose-400">{avgLoserHold} days</span>
+                <div>
+                  <h3 className="text-xs font-extrabold text-white uppercase tracking-wider">Disposition Bias Audit</h3>
+                  <p className="text-[10px] text-gray-400 font-medium">Behavioral trade discipline & winner vs loser holding duration</p>
                 </div>
               </div>
-
-              <div className={`p-3 rounded-2xl border text-[10px] font-bold leading-relaxed ${
-                dispositionType === 'success' ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-500 dark:text-emerald-400' :
-                dispositionType === 'warn' ? 'bg-amber-500/5 border-amber-500/10 text-amber-500' :
-                'bg-rose-500/5 border-rose-500/10 text-rose-500 dark:text-rose-400'
+              <span className={`self-start sm:self-auto text-[10px] font-extrabold uppercase px-3 py-1 rounded-full border ${
+                dispositionType === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
+                dispositionType === 'warn' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' :
+                'bg-rose-500/10 border-rose-500/20 text-rose-400'
               }`}>
-                {dispositionFeedback}
-              </div>
+                {dispositionType === 'success' ? 'Disciplined' : dispositionType === 'warn' ? 'Biased' : 'High Risk'}
+              </span>
             </div>
 
-            {/* Trading Performance & Tax Preview */}
-            <div className="glass-panel rounded-3xl p-6 border border-dark-border space-y-4">
-              <div className="flex items-center justify-between border-b border-dark-border/40 pb-3">
-                <h3 className="text-xs font-extrabold text-white uppercase tracking-wider flex items-center gap-1.5">
-                  <TrendingUp className="w-4 h-4 text-emerald-400" />
-                  Performance & Tax Preview
-                </h3>
-                <span className="text-[9px] font-extrabold text-indigo-500 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
-                  Win Rate: {winRate.toFixed(1)}%
-                </span>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-dark-depth-2/70 border border-dark-border/40 p-4 rounded-2xl flex items-center justify-between md:flex-col md:items-start">
+                <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider">Avg Hold (Winners)</span>
+                <span className="text-xl font-black text-emerald-400 mt-1">{avgWinnerHold} <span className="text-xs font-bold text-gray-400">days</span></span>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
-                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Est. Gains Tax Liability</span>
-                  <span className="text-lg font-black text-white">₹{totalTaxEstimate.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div className="bg-dark-depth-2 border border-dark-border/40 p-3.5 rounded-2xl">
-                  <span className="text-[8px] text-gray-500 font-extrabold uppercase tracking-wider block mb-1">Trades Count (W/L)</span>
-                  <span className="text-lg font-black text-gray-300">{wins.length}W / {losses.length}L</span>
-                </div>
+              <div className="bg-dark-depth-2/70 border border-dark-border/40 p-4 rounded-2xl flex items-center justify-between md:flex-col md:items-start">
+                <span className="text-[9px] text-gray-500 font-extrabold uppercase tracking-wider">Avg Hold (Losers)</span>
+                <span className="text-xl font-black text-rose-400 mt-1">{avgLoserHold} <span className="text-xs font-bold text-gray-400">days</span></span>
               </div>
-
-              <div className="p-3 bg-dark-depth-2/40 border border-dark-border/40 rounded-2xl text-[9px] text-gray-400 font-bold leading-relaxed space-y-1">
-                <div className="flex justify-between">
-                  <span>STCG Tax Est. (15% of ₹{summary.stcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}):</span>
-                  <span className="text-white">₹{stcgTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>LTCG Tax Est. (10% of ₹{summary.ltcg.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}):</span>
-                  <span className="text-white">₹{ltcgTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                </div>
+              <div className={`p-4 rounded-2xl border text-xs font-medium leading-relaxed flex items-center ${
+                dispositionType === 'success' ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-300' :
+                dispositionType === 'warn' ? 'bg-amber-500/5 border-amber-500/10 text-amber-300' :
+                'bg-rose-500/5 border-rose-500/10 text-rose-300'
+              }`}>
+                {dispositionFeedback}
               </div>
             </div>
           </div>
@@ -1207,97 +1280,95 @@ export const PnL = () => {
               </div>
             )}
             
-            {/* View Mode Segmented Controls */}
-            <div className="flex items-center gap-1.5 bg-dark-depth-2/45 p-1 rounded-2xl border border-dark-border/60 self-start inline-flex">
-              <button
-                onClick={() => setViewMode('expand')}
-                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all duration-200 cursor-pointer ${
-                  viewMode === 'expand'
-                    ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                Expand (As Stored)
-              </button>
-              <button
-                onClick={() => setViewMode('collapse_cycle')}
-                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all duration-200 cursor-pointer ${
-                  viewMode === 'collapse_cycle'
-                    ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                Collapse (Cycle Merge)
-              </button>
-              <button
-                onClick={() => setViewMode('all_time')}
-                className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all duration-200 cursor-pointer ${
-                  viewMode === 'all_time'
-                    ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20'
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                Stock-Wise Summary
-              </button>
-            </div>
-            
-            {/* Filter Panel */}
-            <div className="glass-panel rounded-2xl p-4 border border-dark-border flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              
-              {/* Search */}
-              <div className="relative flex-1 max-w-xs">
-                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-gray-500">
-                  <Search className="w-4 h-4" />
-                </span>
-                <input
-                  type="text"
-                  placeholder="Search stock symbol..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 transition-all placeholder:text-gray-500"
-                />
+            {/* Unified Controls & Filter Toolbar */}
+            <div className="glass-panel rounded-2xl p-3 border border-dark-border flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
+              {/* Left: View Mode Segmented Controls */}
+              <div className="flex items-center gap-1 bg-dark-depth-2/70 p-1 rounded-xl border border-dark-border/50 shrink-0">
+                <button
+                  onClick={() => setViewMode('expand')}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all duration-150 cursor-pointer ${
+                    viewMode === 'expand'
+                      ? 'bg-brand-500 text-white shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Expand
+                </button>
+                <button
+                  onClick={() => setViewMode('collapse_cycle')}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all duration-150 cursor-pointer ${
+                    viewMode === 'collapse_cycle'
+                      ? 'bg-brand-500 text-white shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Cycle Merge
+                </button>
+                <button
+                  onClick={() => setViewMode('all_time')}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all duration-150 cursor-pointer ${
+                    viewMode === 'all_time'
+                      ? 'bg-brand-500 text-white shadow-sm'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Stock Summary
+                </button>
               </div>
 
-              {/* Filters selector */}
-              <div className="flex flex-wrap items-center gap-3">
-                
+              {/* Right: Search + Filter Group */}
+              <div className="flex flex-wrap items-center gap-2 flex-1 justify-start xl:justify-end">
+                {/* Search */}
+                <div className="relative min-w-[160px] flex-1 sm:flex-initial">
+                  <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-500">
+                    <Search className="w-3.5 h-3.5" />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Search symbol..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-dark-depth-2 border border-dark-border text-white text-xs focus:outline-none focus:border-brand-500 transition-all placeholder:text-gray-500"
+                  />
+                </div>
+
                 {/* Tax Split */}
-                <div className="flex items-center gap-1.5 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-1.5">
-                  <SlidersHorizontal className="w-3.5 h-3.5 text-gray-500" />
+                <div className="flex items-center gap-1 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-1.5">
+                  <SlidersHorizontal className="w-3 h-3 text-gray-500" />
                   <select
                     value={taxFilter}
                     onChange={(e) => setTaxFilter(e.target.value as any)}
-                    className="bg-transparent text-[10px] font-bold text-gray-300 focus:outline-none border-none pr-6 pl-1 py-0.5 cursor-pointer"
+                    className="bg-transparent text-[10px] font-bold text-gray-300 focus:outline-none border-none pr-4 pl-1 cursor-pointer"
                   >
                     <option value="all">Tax: All Gains</option>
-                    <option value="stcg">Tax: STCG Only</option>
-                    <option value="ltcg">Tax: LTCG Only</option>
+                    <option value="stcg">STCG Only</option>
+                    <option value="ltcg">LTCG Only</option>
                   </select>
                 </div>
 
                 {/* Outcome */}
-                <div className="flex items-center gap-1.5 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-1.5">
+                <div className="flex items-center bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-1.5">
                   <select
                     value={outcomeFilter}
                     onChange={(e) => setOutcomeFilter(e.target.value as any)}
-                    className="bg-transparent text-[10px] font-bold text-gray-300 focus:outline-none border-none pr-6 pl-1 py-0.5 cursor-pointer"
+                    className="bg-transparent text-[10px] font-bold text-gray-300 focus:outline-none border-none pr-4 pl-1 cursor-pointer"
                   >
-                    <option value="all">Gains: All Trades</option>
-                    <option value="profit">Gains: Profit Only</option>
-                    <option value="loss">Gains: Loss Only</option>
+                    <option value="all">All Outcomes</option>
+                    <option value="profit">Profits Only</option>
+                    <option value="loss">Losses Only</option>
                   </select>
                 </div>
 
                 {/* Date Range Filters */}
-                <div className="flex items-center gap-2 bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-1.5">
-                  <span className="text-[10px] text-gray-500 font-bold uppercase">From:</span>
+                <div className="flex items-center gap-1.5 bg-dark-depth-2 border border-dark-border rounded-xl px-2.5 py-1.5">
+                  <span className="text-[9px] text-gray-500 font-bold uppercase">From:</span>
                   <input
                     type="date"
                     value={startDateFilter}
                     onChange={(e) => setStartDateFilter(e.target.value)}
                     className="bg-transparent text-[10px] font-bold text-gray-300 focus:outline-none border-none cursor-pointer"
                   />
-                  <span className="text-[10px] text-gray-500 font-bold uppercase">To:</span>
+                  <span className="text-[9px] text-gray-500 font-bold uppercase">To:</span>
                   <input
                     type="date"
                     value={endDateFilter}
@@ -1310,15 +1381,13 @@ export const PnL = () => {
                 {(searchQuery || taxFilter !== 'all' || outcomeFilter !== 'all' || startDateFilter || endDateFilter || selectedMonth) && (
                   <button
                     onClick={resetFilters}
-                    className="flex items-center gap-1 text-[10px] font-bold text-rose-500 hover:text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl px-3 py-1.5 transition-all cursor-pointer"
+                    className="flex items-center gap-1 text-[10px] font-bold text-rose-400 hover:text-rose-350 bg-rose-500/10 border border-rose-500/20 rounded-xl px-2.5 py-1.5 transition-all cursor-pointer"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-3 h-3" />
                     Reset
                   </button>
                 )}
-
               </div>
-
             </div>
 
             {/* Closed Trades List */}
@@ -1382,12 +1451,14 @@ export const PnL = () => {
                               {sortBy === 'realized_pnl' && (sortDirection === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                             </div>
                           </th>
+                          <th className="px-6 py-4 text-right">Return %</th>
                           <th className="px-6 py-4 text-center">Tax Class</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-dark-border/40 text-xs text-gray-300 font-medium">
                         {filteredTrades.map((t, idx) => {
                           const isProfit = t.realized_pnl >= 0;
+                          const roiPct = t.buy_price > 0 ? ((t.sell_price - t.buy_price) / t.buy_price) * 100 : 0;
                           return (
                             <tr key={idx} className="hover:bg-dark-depth-2/20 transition-all">
                               <td className="px-6 py-3.5 font-bold text-white">{t.stock_symbol}</td>
@@ -1397,15 +1468,20 @@ export const PnL = () => {
                               <td className="px-6 py-3.5 text-gray-400">
                                 {t.sell_date_display}
                               </td>
-                              <td className="px-6 py-3.5 text-gray-400 flex items-center gap-1">
-                                <Clock className="w-3.5 h-3.5 text-gray-500" />
-                                {t.holding_days} Days
+                              <td className="px-6 py-3.5 text-gray-400">
+                                <span className="flex items-center gap-1">
+                                  <Clock className="w-3.5 h-3.5 text-gray-500" />
+                                  {t.holding_days} Days
+                                </span>
                               </td>
                               <td className="px-6 py-3.5 text-right font-semibold text-white">{t.quantity}</td>
                               <td className="px-6 py-3.5 text-right text-gray-300">₹{t.buy_price.toFixed(2)}</td>
                               <td className="px-6 py-3.5 text-right text-gray-300">₹{t.sell_price.toFixed(2)}</td>
                               <td className={`px-6 py-3.5 text-right font-bold ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
                                 {isProfit ? '+' : ''}₹{t.realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className={`px-6 py-3.5 text-right font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                {isProfit ? '+' : ''}{roiPct.toFixed(2)}%
                               </td>
                               <td className="px-6 py-3.5 text-center">
                                 <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
@@ -1428,9 +1504,10 @@ export const PnL = () => {
                 <div className="md:hidden space-y-3">
                   {filteredTrades.map((t, idx) => {
                     const isProfit = t.realized_pnl >= 0;
+                    const roiPct = t.buy_price > 0 ? ((t.sell_price - t.buy_price) / t.buy_price) * 100 : 0;
                     return (
                       <div key={idx} className="glass-panel rounded-2xl p-4 border border-dark-border flex flex-col gap-3">
-                        {/* Header: Symbol, Tax tag, & PnL */}
+                        {/* Header: Symbol, Tax tag, & PnL + ROI */}
                         <div className="flex items-center justify-between border-b border-dark-border/40 pb-2">
                           <div className="flex items-center gap-2">
                             <span className="font-extrabold text-white text-sm tracking-tight">{t.stock_symbol}</span>
@@ -1442,9 +1519,14 @@ export const PnL = () => {
                               {t.gains_type}
                             </span>
                           </div>
-                          <span className={`font-extrabold text-xs ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
-                            {isProfit ? '+' : ''}₹{t.realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
+                          <div className="text-right">
+                            <span className={`font-extrabold text-xs block ${isProfit ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {isProfit ? '+' : ''}₹{t.realized_pnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            <span className={`text-[10px] font-bold ${isProfit ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              {isProfit ? '+' : ''}{roiPct.toFixed(2)}%
+                            </span>
+                          </div>
                         </div>
 
                         {/* Details Grid */}

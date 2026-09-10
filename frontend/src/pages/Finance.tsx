@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Landmark, ArrowDownRight, CheckCircle2, AlertCircle, Plus, Trash2, 
   Edit2, UserMinus, UserPlus, Users, X, Link2,
   Receipt, TrendingUp, BarChart3, Search, AlertTriangle, Sparkles, Loader2,
-  ChevronLeft, ChevronRight, Calendar
+  ChevronLeft, ChevronRight, Calendar, MoreVertical, SlidersHorizontal, RefreshCw
 } from 'lucide-react';
 import { apiRequest } from '../services/api';
 import { 
@@ -147,6 +147,23 @@ const isAvoidableExpense = (category: string, description: string) => {
 export const Finance: React.FC = () => {
   const [subTab, setSubTab] = useState<'wealth' | 'expenses' | 'debts' | 'report'>('wealth');
   
+  // Header Actions Dropdown State
+  const [showFinanceActions, setShowFinanceActions] = useState(false);
+  const financeActionsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (financeActionsRef.current && !financeActionsRef.current.contains(e.target as Node)) {
+        setShowFinanceActions(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter Drawer State
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+
   // Monthly Report states
   const [reportMonth, setReportMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [reportData, setReportData] = useState<any>(null);
@@ -888,9 +905,9 @@ export const Finance: React.FC = () => {
     <div className="space-y-6">
       
       {/* Top Banner Summary */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 select-none">
         <div>
-          <h1 className="text-3xl font-extrabold font-display text-white">Finance Hub</h1>
+          <h1 className="text-3xl font-extrabold font-display text-white tracking-tight">Finance Hub</h1>
           <p className="text-xs text-gray-400 mt-1">Complete control over your expenses, wealth goals, and debt ledgers.</p>
         </div>
         
@@ -905,6 +922,95 @@ export const Finance: React.FC = () => {
             {toast.message}
           </div>
         )}
+
+        {/* Header Action Buttons */}
+        <div className="flex items-center gap-2 relative">
+          <button
+            onClick={() => {
+              setTxForm({
+                date: new Date().toISOString().slice(0, 16),
+                amount: '',
+                type: 'EXPENSE',
+                category: 'Food',
+                method: 'UPI',
+                description: '',
+                is_claimable: false,
+                claim_status: 'UNCLAIMED'
+              });
+              setShowTxModal(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-brand-500 hover:bg-brand-600 transition-all cursor-pointer shadow-lg shadow-brand-500/20 select-none"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Transaction</span>
+          </button>
+
+          {/* Actions Dropdown Button */}
+          <div className="relative" ref={financeActionsRef}>
+            <button
+              onClick={() => setShowFinanceActions(!showFinanceActions)}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-xs font-bold text-gray-300 bg-dark-depth-2 hover:bg-dark-depth-3 border border-dark-border hover:border-dark-border/80 transition-all cursor-pointer select-none"
+              title="More Finance Actions"
+            >
+              <MoreVertical className="w-4 h-4 text-gray-400" />
+              <span className="hidden sm:inline">Actions</span>
+            </button>
+
+            {showFinanceActions && (
+              <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-dark-depth-2 border border-dark-border/80 shadow-2xl z-50 p-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-150 backdrop-blur-xl">
+                <button
+                  onClick={() => {
+                    setShowFinanceActions(false);
+                    setDebtForm({
+                      id: '',
+                      person_name: '',
+                      type: 'LENT',
+                      amount: '',
+                      notes: '',
+                      date: new Date().toISOString().split('T')[0]
+                    });
+                    setShowDebtModal(true);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-200 hover:text-white hover:bg-dark-depth-3 rounded-xl transition-all text-left cursor-pointer"
+                >
+                  <Users className="w-4 h-4 text-emerald-400" />
+                  <span>Record New Debt</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowFinanceActions(false);
+                    setSubTab('wealth');
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-200 hover:text-white hover:bg-dark-depth-3 rounded-xl transition-all text-left cursor-pointer"
+                >
+                  <Landmark className="w-4 h-4 text-indigo-400" />
+                  <span>Manage Wealth Goals</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowFinanceActions(false);
+                    setSubTab('report');
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-200 hover:text-white hover:bg-dark-depth-3 rounded-xl transition-all text-left cursor-pointer"
+                >
+                  <Receipt className="w-4 h-4 text-amber-400" />
+                  <span>Monthly Report</span>
+                </button>
+                <div className="border-t border-dark-border/40 my-1" />
+                <button
+                  onClick={() => {
+                    setShowFinanceActions(false);
+                    fetchDashboardData();
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-400 hover:text-white hover:bg-dark-depth-3 rounded-xl transition-all text-left cursor-pointer"
+                >
+                  <RefreshCw className="w-4 h-4 text-gray-400" />
+                  <span>Refresh Financial Data</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* KPI Cards Grid */}
@@ -938,47 +1044,56 @@ export const Finance: React.FC = () => {
         </div>
       </div>
 
-      {/* Subtab Bar */}
-      <div className="flex border-b border-dark-border/60 overflow-x-auto whitespace-nowrap scrollbar-none max-w-full">
+      {/* Modern Subtab Navigation Bar */}
+      <div className="flex items-center gap-2 border-b border-dark-border/40 pb-2 select-none overflow-x-auto scrollbar-none">
         <button
           onClick={() => setSubTab('wealth')}
-          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 flex items-center gap-1.5 ${
-            subTab === 'wealth' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 ${
+            subTab === 'wealth'
+              ? 'bg-brand-500/15 border border-brand-500/30 text-brand-400 shadow-sm'
+              : 'text-gray-400 hover:text-white hover:bg-dark-depth-2/40'
           }`}
         >
           <Landmark className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">Wealth & Goals</span>
-          <span className="md:hidden">Wealth</span>
+          <span>Wealth & Goals</span>
         </button>
         <button
           onClick={() => setSubTab('expenses')}
-          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 flex items-center gap-1.5 ${
-            subTab === 'expenses' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 ${
+            subTab === 'expenses'
+              ? 'bg-brand-500/15 border border-brand-500/30 text-brand-400 shadow-sm'
+              : 'text-gray-400 hover:text-white hover:bg-dark-depth-2/40'
           }`}
         >
           <BarChart3 className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">Expense Analysis & Sync</span>
-          <span className="md:hidden">Expense Analytics</span>
+          <span>Expenses & Outflows</span>
         </button>
         <button
           onClick={() => setSubTab('debts')}
-          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 flex items-center gap-1.5 ${
-            subTab === 'debts' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 ${
+            subTab === 'debts'
+              ? 'bg-brand-500/15 border border-brand-500/30 text-brand-400 shadow-sm'
+              : 'text-gray-400 hover:text-white hover:bg-dark-depth-2/40'
           }`}
         >
           <Users className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">Debt Ledger</span>
-          <span className="md:hidden">Debts</span>
+          <span>Debt Ledger</span>
+          {debts.filter(d => d.status === 'ACTIVE').length > 0 && (
+            <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-400 font-extrabold border border-amber-500/30">
+              {debts.filter(d => d.status === 'ACTIVE').length}
+            </span>
+          )}
         </button>
         <button
           onClick={() => setSubTab('report')}
-          className={`px-4 md:px-5 py-3 text-xs font-extrabold uppercase tracking-wider border-b-2 cursor-pointer transition-all shrink-0 flex items-center gap-1.5 ${
-            subTab === 'report' ? 'border-brand-500 text-white' : 'border-transparent text-gray-400 hover:text-white'
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer flex items-center gap-2 shrink-0 ${
+            subTab === 'report'
+              ? 'bg-brand-500/15 border border-brand-500/30 text-brand-400 shadow-sm'
+              : 'text-gray-400 hover:text-white hover:bg-dark-depth-2/40'
           }`}
         >
           <Receipt className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">Monthly Report</span>
-          <span className="md:hidden">Report</span>
+          <span>Monthly Report</span>
         </button>
       </div>
 
@@ -1107,118 +1222,119 @@ export const Finance: React.FC = () => {
       {subTab === 'expenses' && (
         <div className="space-y-6">
           
-          {/* Month Selector & Cashflow Overview Bar */}
-          <div className="glass-panel rounded-3xl p-5 border border-dark-border flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            
-            {/* Left: Month Navigation Controls */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-1 bg-dark-depth-2/80 p-1.5 rounded-2xl border border-dark-border/60">
-                <button
-                  onClick={handlePrevExpenseMonth}
-                  className="p-1.5 rounded-xl hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
-                  title="Previous Month"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <div className="flex items-center gap-1.5 px-2">
-                  <Calendar className="w-3.5 h-3.5 text-brand-400" />
-                  <input
-                    type="month"
-                    value={selectedExpenseMonth}
-                    onChange={(e) => setSelectedExpenseMonth(e.target.value)}
-                    className="bg-transparent border-0 text-xs font-black text-white focus:outline-none cursor-pointer"
-                    style={{ colorScheme: 'dark' }}
-                  />
+          {/* Integrated Month Cashflow & Behavioral Meter Card */}
+          <div className="glass-panel rounded-3xl p-5 border border-dark-border space-y-4 select-none">
+            {/* Top Row: Month Navigation + Cashflow Pills */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Left: Month Navigation Controls */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1 bg-dark-depth-2/80 p-1.5 rounded-2xl border border-dark-border/60">
+                  <button
+                    onClick={handlePrevExpenseMonth}
+                    className="p-1.5 rounded-xl hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    title="Previous Month"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <div className="flex items-center gap-1.5 px-2">
+                    <Calendar className="w-3.5 h-3.5 text-brand-400" />
+                    <input
+                      type="month"
+                      value={selectedExpenseMonth}
+                      onChange={(e) => setSelectedExpenseMonth(e.target.value)}
+                      className="bg-transparent border-0 text-xs font-black text-white focus:outline-none cursor-pointer"
+                      style={{ colorScheme: 'dark' }}
+                    />
+                  </div>
+                  <button
+                    onClick={handleNextExpenseMonth}
+                    className="p-1.5 rounded-xl hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    title="Next Month"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
-                <button
-                  onClick={handleNextExpenseMonth}
-                  className="p-1.5 rounded-xl hover:bg-dark-depth-3 text-gray-400 hover:text-white transition-colors cursor-pointer"
-                  title="Next Month"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+
+                <span className="text-xs font-bold text-gray-300">
+                  {formatExpenseMonthLabel(selectedExpenseMonth)}
+                </span>
+
+                {selectedExpenseMonth !== currentMonthStr && (
+                  <button
+                    onClick={() => setSelectedExpenseMonth(currentMonthStr)}
+                    className="px-2.5 py-1 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-[10px] font-bold text-brand-300 transition-colors cursor-pointer"
+                  >
+                    Current Month
+                  </button>
+                )}
               </div>
 
-              <span className="text-xs font-bold text-gray-300">
-                {formatExpenseMonthLabel(selectedExpenseMonth)}
-              </span>
+              {/* Right: Selected Month Inflow vs Outflow Cashflow Summary */}
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="bg-dark-depth-2/60 px-3.5 py-1.5 rounded-xl border border-emerald-500/25 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                  <div>
+                    <span className="text-[8px] font-bold text-gray-400 block uppercase tracking-wider">Inflow</span>
+                    <span className="text-xs font-black text-emerald-400">+{fmt(selectedMonthIncome)}</span>
+                  </div>
+                </div>
 
-              {selectedExpenseMonth !== currentMonthStr && (
-                <button
-                  onClick={() => setSelectedExpenseMonth(currentMonthStr)}
-                  className="px-2.5 py-1 rounded-xl bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/30 text-[10px] font-bold text-brand-300 transition-colors cursor-pointer"
-                >
-                  Current Month
-                </button>
-              )}
+                <div className="bg-dark-depth-2/60 px-3.5 py-1.5 rounded-xl border border-rose-500/25 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0" />
+                  <div>
+                    <span className="text-[8px] font-bold text-gray-400 block uppercase tracking-wider">Outflow</span>
+                    <span className="text-xs font-black text-rose-400">-{fmt(selectedMonthExpenses)}</span>
+                  </div>
+                </div>
+
+                <div className="bg-dark-depth-2/60 px-3.5 py-1.5 rounded-xl border border-dark-border/60 flex items-center gap-2">
+                  <div>
+                    <span className="text-[8px] font-bold text-gray-400 block uppercase tracking-wider">
+                      {selectedMonthNet >= 0 ? 'Net Surplus' : 'Net Deficit'}
+                    </span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className={`text-xs font-black ${selectedMonthNet >= 0 ? 'text-brand-400' : 'text-amber-400'}`}>
+                        {selectedMonthNet >= 0 ? '+' : ''}{fmt(selectedMonthNet)}
+                      </span>
+                      {selectedMonthIncome > 0 && selectedMonthNet > 0 && (
+                        <span className="text-[9px] text-emerald-400 font-bold">
+                          ({selectedMonthSavingsRate}%)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Right: Selected Month Inflow vs Outflow Cashflow Summary */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="bg-dark-depth-2/60 px-4 py-2 rounded-2xl border border-emerald-500/25">
-                <span className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider">🟢 Total Inflow</span>
-                <span className="text-xs sm:text-sm font-black text-emerald-400">+{fmt(selectedMonthIncome)}</span>
-              </div>
-
-              <div className="bg-dark-depth-2/60 px-4 py-2 rounded-2xl border border-rose-500/25">
-                <span className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider">🔴 Total Outflow</span>
-                <span className="text-xs sm:text-sm font-black text-rose-400">-{fmt(selectedMonthExpenses)}</span>
-              </div>
-
-              <div className="bg-dark-depth-2/60 px-4 py-2 rounded-2xl border border-dark-border/60">
-                <span className="text-[9px] font-bold text-gray-400 block uppercase tracking-wider">
-                  {selectedMonthNet >= 0 ? '💼 Net Surplus' : '⚠️ Net Deficit'}
-                </span>
-                <div className="flex items-baseline gap-1.5">
-                  <span className={`text-xs sm:text-sm font-black ${selectedMonthNet >= 0 ? 'text-brand-400' : 'text-amber-400'}`}>
-                    {selectedMonthNet >= 0 ? '+' : ''}{fmt(selectedMonthNet)}
+            {/* Bottom Integrated Meter: Essential vs Avoidable Ratio Bar & AI Insight */}
+            <div className="pt-3 border-t border-dark-border/40 space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[10px] font-bold">
+                <div className="flex items-center gap-2">
+                  <span className="text-emerald-400 font-extrabold flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    Essential: {fmt(selectedMonthEssential)} ({selectedMonthExpenses > 0 ? Math.round((selectedMonthEssential / selectedMonthExpenses) * 100) : 100}%)
                   </span>
-                  {selectedMonthIncome > 0 && selectedMonthNet > 0 && (
-                    <span className="text-[9px] text-emerald-400 font-bold">
-                      ({selectedMonthSavingsRate}% saved)
-                    </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-rose-400 font-extrabold flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                    Avoidable: {fmt(selectedMonthAvoidable)} ({selectedMonthExpenses > 0 ? Math.round((selectedMonthAvoidable / selectedMonthExpenses) * 100) : 0}%)
+                  </span>
+                  {selectedMonthAvoidable > 0 && (
+                    <button
+                      onClick={() => setFilterClaimable(filterClaimable === 'AVOIDABLE' ? 'ALL' : 'AVOIDABLE')}
+                      className="px-2.5 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 text-[9px] font-extrabold transition-all cursor-pointer"
+                    >
+                      {filterClaimable === 'AVOIDABLE' ? 'Clear Filter' : 'Inspect Avoidable'}
+                    </button>
                   )}
                 </div>
               </div>
-            </div>
 
-          </div>
-
-          {/* AI Finor Essential vs Avoidable Expense Smart Breakdown Banner */}
-          <div className="glass-panel rounded-3xl p-6 border border-amber-500/30 bg-gradient-to-r from-amber-500/5 via-dark-depth-1 to-brand-500/5 space-y-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-dark-border/40 pb-4">
-              <div>
-                <h3 className="text-sm font-extrabold text-white uppercase tracking-wider flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" />
-                  Finor AI Expense Segregation (Essential vs Avoidable)
-                </h3>
-                <p className="text-[10px] text-gray-400 mt-0.5">
-                  Analyzing spend patterns across {formatExpenseMonthLabel(selectedExpenseMonth)}.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="bg-dark-depth-2 px-3 py-1.5 rounded-xl border border-emerald-500/30 text-right">
-                  <span className="text-[9px] font-bold text-gray-400 block uppercase">🟢 Essential Spend</span>
-                  <span className="text-xs font-black text-emerald-400">{fmt(selectedMonthEssential)}</span>
-                </div>
-                <div className="bg-dark-depth-2 px-3 py-1.5 rounded-xl border border-rose-500/30 text-right">
-                  <span className="text-[9px] font-bold text-rose-400 block uppercase flex items-center gap-1">
-                    <AlertTriangle className="w-3 h-3 text-rose-400" />
-                    ⚠️ Avoidable Spend
-                  </span>
-                  <span className="text-xs font-black text-rose-400">{fmt(selectedMonthAvoidable)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Essential vs Avoidable Visual Ratio Bar */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[10px] font-extrabold">
-                <span className="text-emerald-400">Essential Needs ({selectedMonthExpenses > 0 ? Math.round((selectedMonthEssential / selectedMonthExpenses) * 100) : 100}%)</span>
-                <span className="text-rose-400">Avoidable / Impulse ({selectedMonthExpenses > 0 ? Math.round((selectedMonthAvoidable / selectedMonthExpenses) * 100) : 0}%)</span>
-              </div>
-              <div className="w-full h-3 bg-dark-depth-2 rounded-full overflow-hidden flex border border-dark-border/60">
+              {/* Dual-tone Progress bar */}
+              <div className="w-full h-2.5 bg-dark-depth-2 rounded-full overflow-hidden flex border border-dark-border/60">
                 <div 
                   className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full transition-all duration-500" 
                   style={{ width: `${selectedMonthExpenses > 0 ? Math.round((selectedMonthEssential / selectedMonthExpenses) * 100) : 100}%` }} 
@@ -1229,24 +1345,6 @@ export const Finance: React.FC = () => {
                 />
               </div>
             </div>
-
-            {/* AI Smart Advice Tip */}
-            {selectedMonthAvoidable > 0 && (
-              <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-2xl flex items-center justify-between gap-3 text-xs text-amber-300">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
-                  <span>
-                    <strong>Finor AI Tip:</strong> You spent <strong>{fmt(selectedMonthAvoidable)}</strong> on avoidable items in {formatExpenseMonthLabel(selectedExpenseMonth)}. Cutting this could boost your savings!
-                  </span>
-                </div>
-                <button
-                  onClick={() => setFilterClaimable('AVOIDABLE')}
-                  className="px-3 py-1 rounded-xl bg-amber-500 text-black text-[10px] font-extrabold hover:bg-amber-400 shrink-0 cursor-pointer"
-                >
-                  View Avoidable List
-                </button>
-              </div>
-            )}
           </div>
 
           {/* Analytics Visual Dashboard Header Charts */}
@@ -1449,139 +1547,180 @@ export const Finance: React.FC = () => {
               </div>
             </div>
 
-            {/* Filter Bar */}
+            {/* Filter Console */}
             <div className="p-4 bg-dark-depth-2/30 border-b border-dark-border/40 space-y-3">
               
-              {/* Row 1: Search & Filter Pills */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Row 1: Search & Quick Mode Selectors */}
+              <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
                 {/* Search */}
-                <div className="relative">
+                <div className="relative min-w-[200px] flex-1">
                   <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                   <input
                     type="text"
                     placeholder="Search by description or category..."
                     value={filterSearch}
                     onChange={(e) => setFilterSearch(e.target.value)}
-                    className="w-full bg-dark-depth-2 border border-dark-border rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-brand-500"
+                    className="w-full bg-dark-depth-2 border border-dark-border rounded-xl pl-9 pr-8 py-2 text-xs text-white focus:outline-none focus:border-brand-500 transition-colors"
                   />
                   {filterSearch && (
-                    <button onClick={() => setFilterSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs">×</button>
+                    <button onClick={() => setFilterSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white text-xs cursor-pointer">×</button>
                   )}
                 </div>
 
-                {/* Type Filter */}
-                <div className="flex bg-dark-depth-2 border border-dark-border p-1 rounded-xl gap-1">
-                  {(['ALL', 'EXPENSE', 'INCOME'] as const).map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setFilterType(t)}
-                      className={`flex-1 py-1 rounded-lg text-[10px] font-bold uppercase transition-all ${
-                        filterType === t ? 'bg-brand-500 text-white shadow' : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
+                {/* Filter Pills Group */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Type Filter */}
+                  <div className="flex bg-dark-depth-2 border border-dark-border p-1 rounded-xl gap-1">
+                    {(['ALL', 'EXPENSE', 'INCOME'] as const).map(t => (
+                      <button
+                        key={t}
+                        onClick={() => setFilterType(t)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-all cursor-pointer ${
+                          filterType === t ? 'bg-brand-500 text-white shadow-sm' : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {t}
+                      </button>
+                    ))}
+                  </div>
 
-                {/* Essential/Avoidable Filter Pills */}
-                <div className="flex bg-dark-depth-2 border border-dark-border p-1 rounded-xl gap-1 overflow-x-auto scrollbar-none">
-                  {[
-                    { id: 'ALL', label: 'All Expenses' },
-                    { id: 'AVOIDABLE', label: '⚠️ Avoidable' },
-                    { id: 'ESSENTIAL', label: '🟢 Essential' }
-                  ].map(p => (
-                    <button
-                      key={p.id}
-                      onClick={() => setFilterClaimable(p.id as any)}
-                      className={`flex-1 py-1 px-2.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
-                        filterClaimable === p.id 
-                          ? p.id === 'AVOIDABLE' ? 'bg-rose-500 text-white shadow' : p.id === 'ESSENTIAL' ? 'bg-emerald-500 text-white shadow' : 'bg-brand-500 text-white shadow'
-                          : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                  {/* Essential/Avoidable Filter Pills */}
+                  <div className="flex bg-dark-depth-2 border border-dark-border p-1 rounded-xl gap-1">
+                    {[
+                      { id: 'ALL', label: 'All' },
+                      { id: 'AVOIDABLE', label: '⚠️ Avoidable' },
+                      { id: 'ESSENTIAL', label: '🟢 Essential' }
+                    ].map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => setFilterClaimable(p.id as any)}
+                        className={`py-1 px-2.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all cursor-pointer ${
+                          filterClaimable === p.id 
+                            ? p.id === 'AVOIDABLE' ? 'bg-rose-500 text-white shadow-sm' : p.id === 'ESSENTIAL' ? 'bg-emerald-500 text-white shadow-sm' : 'bg-brand-500 text-white shadow-sm'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
 
-              {/* Row 2: Category & Method Selectors */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                <div>
-                  <select
-                    value={filterCategory}
-                    onChange={(e) => setFilterCategory(e.target.value)}
-                    className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none"
-                  >
-                    <option value="ALL">All Categories</option>
-                    {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <select
-                    value={filterMethod}
-                    onChange={(e) => setFilterMethod(e.target.value)}
-                    className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none"
-                  >
-                    <option value="ALL">All Methods</option>
-                    {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <input
-                    type="date"
-                    value={filterStartDate}
-                    onChange={(e) => setFilterStartDate(e.target.value)}
-                    className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none"
-                    style={{ colorScheme: 'dark' }}
-                    placeholder="Start date"
-                  />
-                </div>
-
-                <div>
-                  <input
-                    type="date"
-                    value={filterEndDate}
-                    onChange={(e) => setFilterEndDate(e.target.value)}
-                    className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none"
-                    style={{ colorScheme: 'dark' }}
-                    placeholder="End date"
-                  />
-                </div>
-              </div>
-
-              {/* Quick Date Helper */}
-              <div className="flex items-center justify-between pt-0.5 text-[10px]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const [y, m] = selectedExpenseMonth.split('-');
-                    const days = new Date(parseInt(y, 10), parseInt(m, 10), 0).getDate();
-                    setFilterStartDate(`${selectedExpenseMonth}-01`);
-                    setFilterEndDate(`${selectedExpenseMonth}-${String(days).padStart(2, '0')}`);
-                  }}
-                  className="text-brand-400 hover:text-brand-300 font-bold transition-colors cursor-pointer flex items-center gap-1"
-                >
-                  <Calendar className="w-3 h-3" />
-                  Filter ledger to {formatExpenseMonthLabel(selectedExpenseMonth)}
-                </button>
-
-                {(filterStartDate || filterEndDate) && (
+                  {/* More Filters Toggle */}
                   <button
-                    type="button"
-                    onClick={() => {
-                      setFilterStartDate('');
-                      setFilterEndDate('');
-                    }}
-                    className="text-gray-400 hover:text-rose-400 font-bold transition-colors cursor-pointer"
+                    onClick={() => setShowMoreFilters(!showMoreFilters)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-[10px] font-bold transition-all cursor-pointer ${
+                      showMoreFilters || (filterCategory !== 'ALL' || filterMethod !== 'ALL' || filterStartDate || filterEndDate)
+                        ? 'bg-brand-500/15 border-brand-500/40 text-brand-300'
+                        : 'bg-dark-depth-2 border-dark-border text-gray-400 hover:text-white'
+                    }`}
                   >
-                    Clear Date Filters
+                    <SlidersHorizontal className="w-3 h-3" />
+                    <span>More Filters</span>
+                    {(filterCategory !== 'ALL' || filterMethod !== 'ALL' || filterStartDate || filterEndDate) && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-brand-400" />
+                    )}
                   </button>
-                )}
+
+                  {/* Reset Filters */}
+                  {(filterSearch || filterType !== 'ALL' || filterClaimable !== 'ALL' || filterCategory !== 'ALL' || filterMethod !== 'ALL' || filterStartDate || filterEndDate) && (
+                    <button
+                      onClick={() => {
+                        setFilterSearch('');
+                        setFilterType('ALL');
+                        setFilterClaimable('ALL');
+                        setFilterCategory('ALL');
+                        setFilterMethod('ALL');
+                        setFilterStartDate('');
+                        setFilterEndDate('');
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-bold hover:bg-rose-500/20 transition-all cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                      <span>Reset</span>
+                    </button>
+                  )}
+                </div>
               </div>
+
+              {/* Row 2: Collapsible More Filters Drawer */}
+              {showMoreFilters && (
+                <div className="pt-3 border-t border-dark-border/40 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-2 duration-150 text-xs">
+                  <div>
+                    <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Category</label>
+                    <select
+                      value={filterCategory}
+                      onChange={(e) => setFilterCategory(e.target.value)}
+                      className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-500 cursor-pointer"
+                    >
+                      <option value="ALL">All Categories</option>
+                      {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">Payment Method</label>
+                    <select
+                      value={filterMethod}
+                      onChange={(e) => setFilterMethod(e.target.value)}
+                      className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-500 cursor-pointer"
+                    >
+                      <option value="ALL">All Methods</option>
+                      {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">From Date</label>
+                    <input
+                      type="date"
+                      value={filterStartDate}
+                      onChange={(e) => setFilterStartDate(e.target.value)}
+                      className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-500 cursor-pointer"
+                      style={{ colorScheme: 'dark' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[9px] text-gray-500 font-bold uppercase block mb-1">To Date</label>
+                    <input
+                      type="date"
+                      value={filterEndDate}
+                      onChange={(e) => setFilterEndDate(e.target.value)}
+                      className="w-full bg-dark-depth-2 border border-dark-border rounded-xl px-3 py-1.5 text-xs text-gray-300 focus:outline-none focus:border-brand-500 cursor-pointer"
+                      style={{ colorScheme: 'dark' }}
+                    />
+                  </div>
+
+                  <div className="sm:col-span-2 lg:col-span-4 flex items-center justify-between pt-1 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const [y, m] = selectedExpenseMonth.split('-');
+                        const days = new Date(parseInt(y, 10), parseInt(m, 10), 0).getDate();
+                        setFilterStartDate(`${selectedExpenseMonth}-01`);
+                        setFilterEndDate(`${selectedExpenseMonth}-${String(days).padStart(2, '0')}`);
+                      }}
+                      className="text-brand-400 hover:text-brand-300 font-bold transition-colors cursor-pointer flex items-center gap-1"
+                    >
+                      <Calendar className="w-3 h-3" />
+                      Filter ledger to {formatExpenseMonthLabel(selectedExpenseMonth)}
+                    </button>
+
+                    {(filterStartDate || filterEndDate) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFilterStartDate('');
+                          setFilterEndDate('');
+                        }}
+                        className="text-gray-400 hover:text-rose-400 font-bold transition-colors cursor-pointer"
+                      >
+                        Clear Date Filters
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
             </div>
 
