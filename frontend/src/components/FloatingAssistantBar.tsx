@@ -161,6 +161,32 @@ export const FloatingAssistantBar: React.FC<FloatingAssistantBarProps> = ({ setA
       };
 
       setMessages(prev => [...prev, assistantMsg]);
+
+      // Sync into finor_ai_chats so it appears in the left sidebar of AI Assistant
+      try {
+        const saved = localStorage.getItem('finor_ai_chats');
+        const parsed = saved ? JSON.parse(saved) : [];
+        const cleanPrompt = promptMessage.replace(/[\r\n]+/g, ' ').trim();
+        const words = cleanPrompt.split(/\s+/);
+        const title = words.slice(0, 6).join(' ') + (words.length > 6 ? '...' : '');
+        const newId = crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).substring(2, 9));
+        const newSession = {
+          id: newId,
+          title: title || 'Quick Assistant Chat',
+          createdAt: Date.now(),
+          messages: [
+            { role: 'user' as const, content: promptMessage, timestamp: userMsg.timestamp, imagePreview: userMsg.imagePreview },
+            { role: 'assistant' as const, content: assistantMsg.content, timestamp: assistantMsg.timestamp }
+          ]
+        };
+        const updated = [newSession, ...(Array.isArray(parsed) ? parsed : [])];
+        localStorage.setItem('finor_ai_chats', JSON.stringify(updated));
+        localStorage.setItem('finor_ai_active_chat_id', newId);
+        apiRequest('/assistant/sessions', {
+          method: 'POST',
+          body: JSON.stringify({ session: newSession })
+        }).catch(() => {});
+      } catch {}
     } catch (err: any) {
       setMessages(prev => [
         ...prev,

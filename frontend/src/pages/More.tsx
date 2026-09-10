@@ -423,6 +423,13 @@ function clearDraftMessage() {
   } catch {}
 }
 
+function generateChatTitle(text: string): string {
+  if (!text || !text.trim()) return 'Image Analysis';
+  const clean = text.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const words = clean.split(' ');
+  return words.slice(0, 6).join(' ') + (words.length > 6 ? '...' : '');
+}
+
 interface ChatSession {
   id: string;
   title: string;
@@ -618,11 +625,19 @@ export const More = ({
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Auto-delete chats older than 2 days
-        const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
-        const validChats = parsed.filter((c: any) => c.createdAt > twoDaysAgo);
-        localStorage.setItem('finor_ai_chats', JSON.stringify(validChats));
-        return validChats;
+        if (Array.isArray(parsed)) {
+          // Auto-delete chats older than 2 days safely
+          const twoDaysAgo = Date.now() - 2 * 24 * 60 * 60 * 1000;
+          const validChats: ChatSession[] = parsed
+            .map((c: any) => ({
+              ...c,
+              createdAt: typeof c.createdAt === 'number' ? c.createdAt : (c.createdAt ? new Date(c.createdAt).getTime() : Date.now()),
+              title: c.title?.trim() || 'New Conversation'
+            }))
+            .filter((c: any) => c.createdAt > twoDaysAgo);
+          localStorage.setItem('finor_ai_chats', JSON.stringify(validChats));
+          return validChats;
+        }
       } catch (e) {
         console.error(e);
       }
@@ -773,13 +788,14 @@ export const More = ({
 
   // Sync activeChatId and load messages
   useEffect(() => {
-    localStorage.setItem('finor_ai_active_chat_id', activeChatId || '');
     if (activeChatId) {
+      localStorage.setItem('finor_ai_active_chat_id', activeChatId);
       const active = chats.find(c => c.id === activeChatId);
       if (active) {
-        setMessages(active.messages);
+        setMessages(active.messages || []);
       }
     } else {
+      localStorage.removeItem('finor_ai_active_chat_id');
       setMessages([]);
     }
     setActiveOrderWorkflow(null); // Clear active workflow state when active chat changes
@@ -798,14 +814,25 @@ export const More = ({
   const updateActiveChatMessages = (newMessages: typeof messages) => {
     if (!activeChatId) return;
     setChats(prev => {
-      const updated = prev.map(c => {
-        if (c.id === activeChatId) {
-          const updatedSession = { ...c, messages: newMessages };
-          syncSessionToCloud(updatedSession);
-          return updatedSession;
-        }
-        return c;
-      });
+      const idx = prev.findIndex(c => c.id === activeChatId);
+      let updated: ChatSession[];
+      if (idx !== -1) {
+        const updatedSession = { ...prev[idx], messages: newMessages };
+        syncSessionToCloud(updatedSession);
+        updated = [...prev];
+        updated[idx] = updatedSession;
+      } else {
+        const firstUser = newMessages.find(m => m.role === 'user');
+        const title = generateChatTitle(firstUser?.content || '');
+        const newSession: ChatSession = {
+          id: activeChatId,
+          title,
+          createdAt: Date.now(),
+          messages: newMessages
+        };
+        syncSessionToCloud(newSession);
+        updated = [newSession, ...prev];
+      }
       localStorage.setItem('finor_ai_chats', JSON.stringify(updated));
       return updated;
     });
@@ -821,23 +848,40 @@ export const More = ({
 
         setChats(prevChats => {
           const mergedMap = new Map<string, ChatSession>();
-          // 1. Add valid local chats
-          prevChats.filter(c => c.createdAt > twoDaysAgo).forEach(c => mergedMap.set(c.id, c));
 
-          // 2. Merge cloud chats: if cloud chat has more messages or is newer, add/overwrite
-          cloudSessions.filter(c => c.createdAt > twoDaysAgo).forEach(c => {
-            const existing = mergedMap.get(c.id);
-            if (!existing || (c.messages && c.messages.length >= existing.messages.length)) {
-              mergedMap.set(c.id, c);
+          // 1. Add valid local chats
+          prevChats.forEach(c => {
+            const created = typeof c.createdAt === 'number' ? c.createdAt : (c.createdAt ? new Date(c.createdAt).getTime() : Date.now());
+            if (created > twoDaysAgo || !c.createdAt) {
+              mergedMap.set(c.id, { ...c, createdAt: created, title: c.title?.trim() || 'New Conversation' });
+            }
+          });
+
+          // 2. Merge cloud chats
+          cloudSessions.forEach(c => {
+            const created = typeof c.createdAt === 'number' ? c.createdAt : (c.createdAt ? new Date(c.createdAt).getTime() : Date.now());
+            if (created > twoDaysAgo || !c.createdAt) {
+              const existing = mergedMap.get(c.id);
+              if (!existing || (c.messages && c.messages.length >= (existing.messages?.length || 0))) {
+                mergedMap.set(c.id, {
+                  ...c,
+                  createdAt: created,
+                  title: c.title?.trim() || existing?.title || 'New Conversation'
+                });
+              }
             }
           });
 
           const merged = Array.from(mergedMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
           localStorage.setItem('finor_ai_chats', JSON.stringify(merged));
 
-          // Auto-select latest chat if none selected
-          if (!activeChatId && merged.length > 0) {
+          // Only auto-select if activeChatId is unset and was previously saved in localStorage
+          const storedActiveId = localStorage.getItem('finor_ai_active_chat_id');
+          if (storedActiveId && merged.some(c => c.id === storedActiveId)) {
+            setActiveChatId(storedActiveId);
+          } else if (storedActiveId === null && merged.length > 0 && !activeChatId) {
             setActiveChatId(merged[0].id);
+            localStorage.setItem('finor_ai_active_chat_id', merged[0].id);
           }
 
           return merged;
@@ -1002,11 +1046,13 @@ export const More = ({
     let currentChatId = activeChatId;
     let currentChats = [...chats];
 
-    // If no active chat, create a new one (Auto-naming)
-    if (!currentChatId) {
-      const words = promptMessage.split(/\s+/);
-      const title = words.slice(0, 5).join(' ') + (words.length > 5 ? '...' : '');
-      const newId = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 15);
+    // Check if the currentChatId actually exists in our chats list
+    const existingIndex = currentChatId ? currentChats.findIndex(c => c.id === currentChatId) : -1;
+
+    if (!currentChatId || existingIndex === -1) {
+      // Create a brand new chat session with an auto-generated title
+      const title = generateChatTitle(promptMessage);
+      const newId = crypto.randomUUID ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).substring(2, 9));
       
       const newChat: ChatSession = {
         id: newId,
@@ -1019,13 +1065,24 @@ export const More = ({
       currentChats = [newChat, ...currentChats];
       setChats(currentChats);
       localStorage.setItem('finor_ai_chats', JSON.stringify(currentChats));
-      syncSessionToCloud(newChat);
+      localStorage.setItem('finor_ai_active_chat_id', newId);
       setActiveChatId(newId);
       setMessages([userMsg]);
+      syncSessionToCloud(newChat);
     } else {
+      // Existing chat: update messages and update title if it was generic
+      const existing = currentChats[existingIndex];
+      let title = existing.title;
+      if (!title || title === 'New Chat' || title === 'New Conversation') {
+        title = generateChatTitle(promptMessage);
+      }
       const updatedMessages = [...messages, userMsg];
+      const updatedChat = { ...existing, title, messages: updatedMessages };
+      currentChats[existingIndex] = updatedChat;
+      setChats(currentChats);
+      localStorage.setItem('finor_ai_chats', JSON.stringify(currentChats));
       setMessages(updatedMessages);
-      updateActiveChatMessages(updatedMessages);
+      syncSessionToCloud(updatedChat);
     }
 
     setSendingChat(true);
@@ -1084,14 +1141,24 @@ export const More = ({
 
           // Sync immediately
           setChats(prevChats => {
-            const updatedChats = prevChats.map(c => {
-              if (c.id === currentChatId) {
-                const updatedSession = { ...c, messages: updated };
-                syncSessionToCloud(updatedSession);
-                return updatedSession;
-              }
-              return c;
-            });
+            const idx = prevChats.findIndex(c => c.id === currentChatId);
+            let updatedChats: ChatSession[];
+            if (idx !== -1) {
+              const updatedSession = { ...prevChats[idx], messages: updated };
+              syncSessionToCloud(updatedSession);
+              updatedChats = [...prevChats];
+              updatedChats[idx] = updatedSession;
+            } else {
+              const title = generateChatTitle(promptMessage);
+              const newSession: ChatSession = {
+                id: currentChatId!,
+                title,
+                createdAt: Date.now(),
+                messages: updated
+              };
+              syncSessionToCloud(newSession);
+              updatedChats = [newSession, ...prevChats];
+            }
             localStorage.setItem('finor_ai_chats', JSON.stringify(updatedChats));
             return updatedChats;
           });
@@ -1114,7 +1181,22 @@ export const More = ({
       setMessages(prev => {
         const updated = [...prev, errMsg];
         setChats(prevChats => {
-          const updatedChats = prevChats.map(c => c.id === currentChatId ? { ...c, messages: updated } : c);
+          const idx = prevChats.findIndex(c => c.id === currentChatId);
+          let updatedChats: ChatSession[];
+          if (idx !== -1) {
+            const updatedSession = { ...prevChats[idx], messages: updated };
+            updatedChats = [...prevChats];
+            updatedChats[idx] = updatedSession;
+          } else {
+            const title = generateChatTitle(promptMessage);
+            const newSession: ChatSession = {
+              id: currentChatId!,
+              title,
+              createdAt: Date.now(),
+              messages: updated
+            };
+            updatedChats = [newSession, ...prevChats];
+          }
           localStorage.setItem('finor_ai_chats', JSON.stringify(updatedChats));
           return updatedChats;
         });
@@ -1161,6 +1243,7 @@ export const More = ({
 
   const handleNewChat = () => {
     setActiveChatId(null);
+    localStorage.removeItem('finor_ai_active_chat_id');
     setMessages([]);
     setIsSidebarOpen(false);
   };
@@ -1904,68 +1987,87 @@ export const More = ({
                     </div>
                   </div>
                 ) : (
-                  chats.map(chat => {
-                    const isEditing = editingChatId === chat.id;
-                    const isActive = activeChatId === chat.id;
-                    return (
-                      <div
-                        key={chat.id}
-                        onClick={() => { if (!isEditing) { setActiveChatId(chat.id); setIsSidebarOpen(false); } }}
-                        className={`group flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
-                          isActive 
-                            ? (isLightMode ? 'bg-indigo-55/70 text-indigo-700 border-l-2 border-indigo-600' : 'bg-brand-500/10 text-brand-400 border-l-2 border-brand-500') 
-                            : (isLightMode ? 'text-slate-650 hover:bg-slate-100 hover:text-slate-900 border-l-2 border-transparent' : 'text-gray-400 hover:bg-dark-depth-3/60 hover:text-white border-l-2 border-transparent')
-                        }`}
-                      >
-                        <div className="flex-1 min-w-0 mr-2" onDoubleClick={() => handleStartRename(chat.id, chat.title)}>
-                          {isEditing ? (
-                            <input
-                              type="text"
-                              value={editTitleText}
-                              onChange={e => setEditTitleText(e.target.value)}
-                              onKeyDown={e => {
-                                if (e.key === 'Enter') handleSaveRename(chat.id);
-                                if (e.key === 'Escape') setEditingChatId(null);
-                              }}
-                              onBlur={() => handleSaveRename(chat.id)}
-                              autoFocus
-                              className={`w-full px-1.5 py-0.5 text-xs rounded border focus:outline-none ${
-                                isLightMode 
-                                  ? 'bg-white border-slate-300 text-slate-850 focus:border-indigo-500' 
-                                  : 'bg-dark-depth-3 border-dark-border text-white focus:border-brand-500'
-                              }`}
-                            />
-                          ) : (
-                            <div className="truncate">
-                              <p className="truncate font-bold leading-normal">{chat.title}</p>
-                              <span className="text-[9px] text-gray-505 block mt-0.5">
-                                {new Date(chat.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </span>
-                            </div>
-                          )}
-                        </div>
+                chats.map(chat => {
+                  const isEditing = editingChatId === chat.id;
+                  const isActive = activeChatId === chat.id;
+                  const displayTitle = chat.title?.trim() || 'New Conversation';
+                  const displayDate = chat.createdAt && !isNaN(new Date(chat.createdAt).getTime())
+                    ? new Date(chat.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : 'Recent';
 
-                        {!isEditing && (
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); handleStartRename(chat.id, chat.title); }}
-                              className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-neutral-800 transition-colors ${isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-gray-400 hover:text-white'}`}
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(e) => handleDeleteChat(chat.id, e)}
-                              className={`p-1 rounded hover:bg-rose-500/10 hover:text-rose-500 transition-colors ${isLightMode ? 'text-slate-500' : 'text-gray-400'}`}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                  return (
+                    <div
+                      key={chat.id}
+                      onClick={() => { 
+                        if (!isEditing) { 
+                          setActiveChatId(chat.id); 
+                          localStorage.setItem('finor_ai_active_chat_id', chat.id);
+                          setIsSidebarOpen(false); 
+                        } 
+                      }}
+                      className={`group flex items-center justify-between p-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-all ${
+                        isActive 
+                          ? (isLightMode ? 'bg-indigo-50 text-indigo-700 border-l-2 border-indigo-600' : 'bg-brand-500/15 text-brand-400 border-l-2 border-brand-500') 
+                          : (isLightMode ? 'text-slate-700 hover:bg-slate-100 hover:text-slate-900 border-l-2 border-transparent' : 'text-gray-400 hover:bg-dark-depth-3/60 hover:text-white border-l-2 border-transparent')
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0 mr-2" onDoubleClick={() => handleStartRename(chat.id, displayTitle)}>
+                        {isEditing ? (
+                          <input
+                            type="text"
+                            value={editTitleText}
+                            onChange={e => setEditTitleText(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') handleSaveRename(chat.id);
+                              if (e.key === 'Escape') setEditingChatId(null);
+                            }}
+                            onBlur={() => handleSaveRename(chat.id)}
+                            autoFocus
+                            className={`w-full px-1.5 py-0.5 text-xs rounded border focus:outline-none ${
+                              isLightMode 
+                                ? 'bg-white border-slate-300 text-slate-800 focus:border-indigo-500' 
+                                : 'bg-dark-depth-3 border-dark-border text-white focus:border-brand-500'
+                            }`}
+                          />
+                        ) : (
+                          <div className="truncate">
+                            <p className={`truncate font-bold leading-normal text-xs ${
+                              isActive
+                                ? (isLightMode ? 'text-indigo-700 font-extrabold' : 'text-brand-400 font-extrabold')
+                                : (isLightMode ? 'text-slate-800 font-bold' : 'text-gray-200 font-semibold')
+                            }`}>
+                              {displayTitle}
+                            </p>
+                            <span className="text-[9px] text-gray-500 block mt-0.5 font-normal">
+                              {displayDate}
+                            </span>
                           </div>
                         )}
                       </div>
-                    );
-                  })
+
+                      {!isEditing && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleStartRename(chat.id, displayTitle); }}
+                            className={`p-1 rounded hover:bg-slate-200 dark:hover:bg-neutral-800 transition-colors ${isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-gray-400 hover:text-white'}`}
+                            title="Rename"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteChat(chat.id, e)}
+                            className={`p-1 rounded hover:bg-rose-500/10 hover:text-rose-500 transition-colors ${isLightMode ? 'text-slate-500' : 'text-gray-400'}`}
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
                 )}
               </div>
               
@@ -2022,26 +2124,37 @@ export const More = ({
                 isLightMode ? 'border-slate-200 bg-white' : 'border-dark-border bg-dark-depth-1'
               }`}>
                 <div className="flex items-center justify-between p-3.5 w-full relative min-h-[52px] gap-2">
-                  {/* Left Side: Menu button on mobile, Finor Title on desktop */}
-                  <div className="flex items-center shrink-0">
+                  {/* Left Side: Menu button on mobile, Finor Title, and New Chat button */}
+                  <div className="flex items-center shrink-0 gap-2">
                     <button
                       type="button"
                       onClick={() => setIsSidebarOpen(true)}
                       className={`md:hidden p-1.5 rounded-lg border transition-all cursor-pointer ${
                         isLightMode 
-                          ? 'border-slate-200 hover:bg-slate-100 text-slate-655' 
+                          ? 'border-slate-200 hover:bg-slate-100 text-slate-700' 
                           : 'border-neutral-800 hover:bg-neutral-800 text-gray-400 hover:text-white'
                       }`}
+                      title="Open Chat List"
                     >
                       <Menu className="w-4 h-4" />
                     </button>
                     
-                    <span className={`text-sm font-extrabold tracking-tight hidden md:flex items-center gap-1.5 ${
+                    <span className={`text-sm font-extrabold tracking-tight hidden sm:flex items-center gap-1.5 ${
                       isLightMode ? 'text-slate-900' : 'text-white'
                     }`}>
                       <Brain className="w-4 h-4 text-brand-500 shrink-0" />
                       <span>Finor AI Coach</span>
                     </span>
+
+                    <button
+                      type="button"
+                      onClick={handleNewChat}
+                      className="px-2.5 py-1 rounded-xl border border-brand-500/30 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm active:scale-95"
+                      title="Start New Chat"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>New Chat</span>
+                    </button>
                   </div>
 
                   {/* Center Content: Model selector */}
